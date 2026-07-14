@@ -755,9 +755,14 @@ su -s /bin/bash - "$CUSTOM_USER" -c "curl -fsSL https://raw.githubusercontent.co
 echo "FluxLinux: Installing pokemon-colorscripts..."
 POKEMON_TEMP="/tmp/pokemon-colorscripts"
 rm -rf "$POKEMON_TEMP"
-git clone https://gitlab.com/phoneybadger/pokemon-colorscripts.git "$POKEMON_TEMP" 2>/dev/null
-cd "$POKEMON_TEMP" && ./install.sh 2>/dev/null
-cd - > /dev/null
+if command -v git >/dev/null 2>&1; then
+    if git clone --depth 1 https://gitlab.com/phoneybadger/pokemon-colorscripts.git "$POKEMON_TEMP" 2>/dev/null; then
+        if cd "$POKEMON_TEMP" 2>/dev/null; then
+            ./install.sh 2>/dev/null
+            cd - > /dev/null
+        fi
+    fi
+fi
 rm -rf "$POKEMON_TEMP"
 
 # Configure .zshrc
