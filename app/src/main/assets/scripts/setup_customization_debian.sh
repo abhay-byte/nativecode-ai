@@ -832,4 +832,4 @@ sleep 1
 
 echo "FluxLinux: Customization Complete!"
 echo "------------------------------------------------"
-read -p "Press Enter to close..."
+exit 0
