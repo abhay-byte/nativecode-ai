@@ -59,15 +59,35 @@ if [ "$ARCH" = "aarch64" ]; then
     mkdir -p "$PREFIX/tmp"
     echo "Downloading wrapper..."
     curl -L -o "$PREFIX/tmp/vulkan-wrapper.deb" "$WRAPPER_URL"
-    echo "Installing wrapper..."
-    dpkg -i "$PREFIX/tmp/vulkan-wrapper.deb" || apt-get install -f -y
-    rm "$PREFIX/tmp/vulkan-wrapper.deb"
+    echo "Extracting wrapper manually to prefix..."
+    mkdir -p "$PREFIX/tmp/wrapper_extracted"
+    dpkg-deb -x "$PREFIX/tmp/vulkan-wrapper.deb" "$PREFIX/tmp/wrapper_extracted" 2>/dev/null
+    cp -r "$PREFIX/tmp/wrapper_extracted/data/data/com.termux/files/usr/"* "$PREFIX/" 2>/dev/null
+    rm -rf "$PREFIX/tmp/wrapper_extracted" "$PREFIX/tmp/vulkan-wrapper.deb"
 else
     echo "FluxLinux: Skipping Vulkan Wrapper (Architecture $ARCH not supported)"
 fi
 
 # 6. Patch com.termux prefix to com.ivarna.nativecode
 echo "FluxLinux: Patching downloaded packages to com.ivarna.nativecode prefix..."
+
+# Patch proot-distro to propagate PROOT_TMP_DIR and LD_LIBRARY_PATH
+PD_LOGIN_FILE="$PREFIX/lib/python3.14/site-packages/proot_distro/commands/login/__init__.py"
+if [ -f "$PD_LOGIN_FILE" ]; then
+  echo "  Patching proot-distro login script..."
+  python -c '
+import os
+filepath = "'"$PD_LOGIN_FILE"'"
+with open(filepath, "r") as f:
+    content = f.read()
+target = "child_env.pop(\"LD_PRELOAD\", None)"
+if target in content and "PROOT_TMP_DIR" not in content:
+    patch = "    if \"PROOT_TMP_DIR\" in os.environ: child_env[\"PROOT_TMP_DIR\"] = os.environ[\"PROOT_TMP_DIR\"]\n    if \"LD_LIBRARY_PATH\" in os.environ: child_env[\"LD_LIBRARY_PATH\"] = os.environ[\"LD_LIBRARY_PATH\"]\n"
+    content = content.replace(target, patch + target)
+    with open(filepath, "w") as f:
+        f.write(content)
+'
+fi
 
 # Patch ELF binaries (RUNPATH) - only scan bin and lib root (maxdepth 1) to avoid pyc/perl scanning
 find "$PREFIX/bin" -type f | while read -r filepath; do

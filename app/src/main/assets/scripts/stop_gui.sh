@@ -8,6 +8,7 @@ export TERMUX_APP__PACKAGE_NAME="com.ivarna.nativecode"
 export TERMUX__PREFIX="/data/data/com.ivarna.nativecode/files/usr"
 export TERMUX__HOME="/data/data/com.ivarna.nativecode/files/home"
 export HOME="/data/data/com.ivarna.nativecode/files/home"
+export PROOT_TMP_DIR="/data/data/com.ivarna.nativecode/files/usr/tmp"
 
 echo "========================================"
 echo "FluxLinux: Stopping GUI for $DISTRO"
