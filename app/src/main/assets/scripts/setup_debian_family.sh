@@ -13,9 +13,15 @@ apt install -y sudo xfce4 xfce4-goodies dbus-x11 tigervnc-standalone-server || e
 
 # 2. Create User 'flux'
 if ! id "flux" &>/dev/null; then
-    useradd -m -s /bin/bash flux
+    useradd -m -s /bin/bash flux 2>/dev/null || {
+        echo "FluxLinux: useradd failed, applying manual fallback..."
+        mkdir -p /home/flux
+        echo "flux:x:1000:1000:flux,,,:/home/flux:/bin/bash" >> /etc/passwd
+        echo "flux:x:1000:" >> /etc/group
+        chown -R 1000:1000 /home/flux
+    }
     echo "flux:flux" | chpasswd
-    usermod -aG sudo flux
+    usermod -aG sudo flux 2>/dev/null || echo "flux ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/flux
 fi
 
 # 3. Configure Sudo

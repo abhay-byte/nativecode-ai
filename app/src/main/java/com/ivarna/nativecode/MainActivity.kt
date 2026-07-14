@@ -343,8 +343,9 @@ class MainActivity : AppCompatActivity() {
                 )
 
                 updateStatus("F. Downloading & Installing Debian Guest...")
-                // Base64 encoded payload for setup_debian_family.sh
-                val debianSetupPayload = "IyEvYmluL2Jhc2gKIyBzZXR1cF9kZWJpYW5fZmFtaWx5LnNoCiMgR2VuZXJpYyBQb3N0LWluc3RhbGwgY29uZmlndXJhdGlvbiBmb3IgRGViaWFuLWJhc2VkIERpc3Ryb3MgKERlYmlhbiwgVWJ1bnR1LCBLYWxpLCBldGMuKQoKRElTVFJPX05BTUU9IiR7MTotZGViaWFufSIKCmVjaG8gIkZsdXhMaW51eDogQ29uZmlndXJpbmcgJHtESVNUUk9fTkFNRX0gKERlYmlhbiBGYW1pbHkpLi4uIgoKIyAxLiBVcGRhdGUgYW5kIEluc3RhbGwgQ29yZSBQYWNrYWdlcwpleHBvcnQgREVCSUFOX0ZST05URU5EPW5vbmludGVyYWN0aXZlCmFwdCB1cGRhdGUgLXkgfHwgZXhpdCAxCmFwdCBpbnN0YWxsIC15IHN1ZG8geGZjZTQgeGZjZTQtZ29vZGllcyBkYnVzLXgxMSB0aWdlcnZuYy1zdGFuZGFsb25lLXNlcnZlciB8fCBleGl0IDEKCiMgMi4gQ3JlYXRlIFVzZXIgJ2ZsdXgnCmlmICEgaWQgImZsdXgiICY+L2Rldi9udWxsOyB0aGVuCiAgICB1c2VyYWRkIC1tIC1zIC9iaW4vYmFzaCBmbHV4CiAgICBlY2hvICJmbHV4OmZsdXgiIHwgY2hwYXNzd2QKICAgIHVzZXJtb2QgLWFHIHN1ZG8gZmx1eApmaQoKIyAzLiBDb25maWd1cmUgU3VkbwplY2hvICJmbHV4IEFMTD0oQUxMKSBOT1BBU1NXRDpBTEwiID4gL2V0Yy9zdWRvZXJzLmQvZmx1eAoKIyA0LiBDb25maWd1cmUgVk5DIGZvciBVc2VyCm1rZGlyIC1wIC9ob21lL2ZsdXgvLnZuYwplY2hvICIjIS9iaW4vYmFzaApleHBvcnQgUFVMU0VfU0VSVkVSPTEyNy4wLjAuMQp4cmRiICRIT01FLy5YcmVzb3VyY2VzCnN0YXJ0eGZjZTQiID4gL2hvbWUvZmx1eC8udm5jL3hzdGFydHVwCmNobW9kICt4IC9ob21lL2ZsdXgvLnZuYy94c3RhcnR1cApjaG93biAtUiBmbHV4OmZsdXggL2hvbWUvZmx1eC8udm5jCgplY2hvICJGbHV4TGludXg6ICR7RElTVFJPX05BTUV9IFNldHVwIENvbXBsZXRlISIK"
+                // Dynamically Base64 encode the setup_debian_family.sh asset at runtime
+                val debianSetupBytes = assets.open("scripts/setup_debian_family.sh").use { it.readBytes() }
+                val debianSetupPayload = Base64.encodeToString(debianSetupBytes, Base64.NO_WRAP)
                 runShellCommand(
                     arrayOf(
                         "/data/data/com.ivarna.nativecode/files/usr/bin/bash",
