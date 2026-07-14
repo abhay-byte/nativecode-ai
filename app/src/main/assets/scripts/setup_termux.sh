@@ -80,7 +80,7 @@ import os
 filepath = "'"$PD_LOGIN_FILE"'"
 with open(filepath, "r") as f:
     content = f.read()
-target = "child_env.pop(\"LD_PRELOAD\", None)"
+target = "    child_env.pop(\"LD_PRELOAD\", None)"
 if target in content and "PROOT_TMP_DIR" not in content:
     patch = "    if \"PROOT_TMP_DIR\" in os.environ: child_env[\"PROOT_TMP_DIR\"] = os.environ[\"PROOT_TMP_DIR\"]\n    if \"LD_LIBRARY_PATH\" in os.environ: child_env[\"LD_LIBRARY_PATH\"] = os.environ[\"LD_LIBRARY_PATH\"]\n"
     content = content.replace(target, patch + target)
