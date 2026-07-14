@@ -1,0 +1,20 @@
+# Ignore Gradle project-specific cache directory
+.gradle
+
+# Ignore Gradle build output directory
+build
+
+# Ignore local properties (sensitive SDK locations)
+local.properties
+
+# Ignore large bootstrap assets and packaging roots
+bootstrap.tar
+bootstrap_root/
+termux-packages/
+
+# Ignore IDE, agent, and memory logs
+.claude/
+.serena/
+.tokensave/
+*.hprof
+*.png
