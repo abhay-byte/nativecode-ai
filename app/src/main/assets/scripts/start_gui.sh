@@ -46,16 +46,16 @@ else
     --exit-idle-time=-1 2>/dev/null
 fi
 
-# Start VirGL server
-echo "FluxLinux: Starting VirGL server..."
-virgl_test_server_android --socket-path "$TERMUX_PREFIX/tmp/.virgl_test" >/dev/null 2>&1 &
-VIRGL_PID=$!
-sleep 2
-
-if [ -S "${TMPDIR}/.virgl_test" ]; then
-  echo "FluxLinux: VirGL socket ready"
+# VirGL is optional. Custom package builds currently omit it; XFCE runs
+# with software rendering until a compatible GPU bundle is available.
+if command -v virgl_test_server_android >/dev/null; then
+  echo "FluxLinux: Starting VirGL server..."
+  virgl_test_server_android --socket-path "$TERMUX_PREFIX/tmp/.virgl_test" >/dev/null 2>&1 &
+  sleep 2
+  test -S "${TMPDIR}/.virgl_test" && echo "FluxLinux: VirGL socket ready" || \
+    echo "FluxLinux: [WARN] VirGL socket not found"
 else
-  echo "FluxLinux: [WARN] VirGL socket not found"
+  echo "FluxLinux: VirGL unavailable; using software rendering"
 fi
 
 # Start X server via app_process (needs system context)
@@ -81,49 +81,18 @@ LANG=en_US.UTF-8 \
 XSERVER_PID=$!
 sleep 3
 
-# Launch X11 activity
-am start -n com.termux.x11/com.termux.x11.MainActivity > /dev/null 2>&1
-sleep 2
+# The loader above owns the X server. Starting the activity through `am` from
+# this app sandbox aborts on current Android builds and prevents guest launch.
 
-# Ensure packages in proot distro
+# Verify guest setup. Installing a hand-picked set of Debian packages with
+# --force-depends can leave the rootfs unbootable, so setup owns installation.
 ROOTFS="$TERMUX_PREFIX/var/lib/proot-distro/containers/$DISTRO/rootfs"
 if [ ! -f "$ROOTFS/usr/bin/startxfce4" ]; then
-  echo "FluxLinux: Missing XFCE packages. Downloading..."
-  mkdir -p "$TMPDIR/debs"
-  cd "$TMPDIR/debs"
-
-  DEB_MIRROR="http://deb.debian.org/debian"
-  for pkg_url in \
-    "/pool/main/x/xfce4/xfce4_4.20.1_all.deb" \
-    "/pool/main/x/xfce4-session/xfce4-session_4.20.2-2_arm64.deb" \
-    "/pool/main/x/xfwm4/xfwm4_4.20.0-1_arm64.deb" \
-    "/pool/main/x/xfdesktop4/xfdesktop4_4.20.1-1_arm64.deb" \
-    "/pool/main/x/xfce4-panel/xfce4-panel_4.20.4-1_arm64.deb" \
-    "/pool/main/x/xfce4-appfinder/xfce4-appfinder_4.20.0-2_arm64.deb" \
-    "/pool/main/x/xfce4-settings/xfce4-settings_4.20.1-1_arm64.deb" \
-    "/pool/main/d/dbus/dbus-x11_1.16.2-2_arm64.deb" \
-    "/pool/main/t/tigervnc/tigervnc-standalone-server_1.15.0+dfsg-2.1~deb13u1_arm64.deb" \
-    "/pool/main/x/xfconf/xfconf_4.20.0-1_arm64.deb" \
-    "/pool/main/x/xfce4-notifyd/xfce4-notifyd_0.9.7-2_arm64.deb" \
-    "/pool/main/x/xinit/xinit_1.4.2-1+b2_arm64.deb" \
-    "/pool/main/x/xorg-server/xserver-xorg-core_21.1.16-1.3+deb13u3_arm64.deb" \
-    "/pool/main/x/xorg-server/xserver-common_21.1.16-1.3+deb13u3_all.deb" \
-    "/pool/main/x/xorg/xserver-xorg_7.7+24+deb13u1_arm64.deb"
-  do
-    fname=$(basename "$pkg_url")
-    if [ ! -f "$fname" ]; then
-      wget -q "$DEB_MIRROR$pkg_url" 2>/dev/null && echo "  OK: $fname" || echo "  FAIL: $fname"
-    fi
-  done
-
-  echo "FluxLinux: Installing packages in $DISTRO..."
-  python "$TERMUX_PREFIX/bin/proot-distro" login "$DISTRO" --shared-tmp -- \
-    bash -c "dpkg -i --force-depends /tmp/debs/*.deb 2>/dev/null; echo DONE" 2>/dev/null
-  rm -rf "$TMPDIR/debs"
-  echo "FluxLinux: Package install complete."
+  echo "FluxLinux: XFCE setup incomplete. Re-run environment setup."
+  exit 1
 fi
 
-echo "FluxLinux: startxfce4=$(test -f $ROOTFS/usr/bin/startxfce4 && echo READY || echo MISSING)"
+echo "FluxLinux: startxfce4=READY"
 
 # Launch XFCE in proot
 if [ "$DISTRO" = "termux" ]; then

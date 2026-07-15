@@ -312,50 +312,32 @@ class MainActivity : AppCompatActivity() {
                 val resolvConf = File(etcDir, "resolv.conf")
                 resolvConf.writeText("nameserver 8.8.8.8\nnameserver 8.8.4.4\n")
 
-                updateStatus("D0. Fixing PRoot Runtime Linker Path...")
-                runShellCommand(
-                    arrayOf(
-                        "/data/data/com.ivarna.nativecode/files/usr/bin/proot",
-                        "-b", "/data/data/com.ivarna.nativecode:/data/data/com.termux",
-                        "/data/data/com.ivarna.nativecode/files/usr/bin/bash", "-c",
-                        "apt-get update -y -o Acquire::Check-Valid-Until=false && apt-get install -y -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold patchelf && patchelf --set-rpath /data/data/com.ivarna.nativecode/files/usr/lib /data/data/com.ivarna.nativecode/files/usr/bin/proot && echo PRoot-RUNPATH-FIXED"
-                    )
-                )
-
                 updateStatus("D. Initializing Host Environment...")
-                runShellCommand(
+                check(runShellCommand(
                     arrayOf(
+                        // Termux packages contain the original com.termux prefix.
+                        // Bind only this install step; host terminal remains native.
                         "/data/data/com.ivarna.nativecode/files/usr/bin/proot",
                         "-b", "/data/data/com.ivarna.nativecode:/data/data/com.termux",
                         "/data/data/com.ivarna.nativecode/files/usr/bin/bash",
                         "/data/data/com.ivarna.nativecode/files/home/setup_termux.sh"
                     )
-                )
+                ) == 0) { "Host environment setup failed" }
 
-                updateStatus("E. Applying Host Terminal Tweaks...")
-                runShellCommand(
-                    arrayOf(
-                        "/data/data/com.ivarna.nativecode/files/usr/bin/proot",
-                        "-b", "/data/data/com.ivarna.nativecode:/data/data/com.termux",
-                        "/data/data/com.ivarna.nativecode/files/usr/bin/bash",
-                        "/data/data/com.ivarna.nativecode/files/home/termux_tweaks.sh"
-                    )
-                )
-
-                updateStatus("F. Downloading & Installing Debian Guest...")
+                updateStatus("E. Downloading & Installing Debian Guest...")
                 // Dynamically Base64 encode the setup_debian_family.sh asset at runtime
                 val debianSetupBytes = assets.open("scripts/setup_debian_family.sh").use { it.readBytes() }
                 val debianSetupPayload = Base64.encodeToString(debianSetupBytes, Base64.NO_WRAP)
-                runShellCommand(
+                check(runShellCommand(
                     arrayOf(
                         "/data/data/com.ivarna.nativecode/files/usr/bin/bash",
                         "/data/data/com.ivarna.nativecode/files/home/flux_install.sh",
                         "debian",
                         debianSetupPayload
                     )
-                )
+                ) == 0) { "Debian guest setup failed" }
 
-                updateStatus("G. Setting Up GPU Hardware Acceleration...")
+                updateStatus("F. Setting Up GPU Hardware Acceleration...")
                 // Copy guest scripts to shared tmp for execution
                 val hwAccelScript = File(File(usrDir, "tmp"), "setup_hw_accel_debian.sh")
                 assets.open("scripts/setup_hw_accel_debian.sh").use { input ->
@@ -365,15 +347,15 @@ class MainActivity : AppCompatActivity() {
                 }
                 hwAccelScript.setExecutable(true)
 
-                runShellCommand(
+                check(runShellCommand(
                     arrayOf(
                         "/data/data/com.ivarna.nativecode/files/usr/bin/python", "/data/data/com.ivarna.nativecode/files/usr/bin/proot-distro",
                         "login", "debian", "--shared-tmp", "--",
                         "env", "FLUX_GPU=virgl", "bash", "/tmp/setup_hw_accel_debian.sh"
                     )
-                )
+                ) == 0) { "GPU setup failed" }
 
-                updateStatus("H. Setting Up Desktop Customizations...")
+                updateStatus("G. Setting Up Desktop Customizations...")
                 val customScript = File(File(usrDir, "tmp"), "setup_customization_debian.sh")
                 assets.open("scripts/setup_customization_debian.sh").use { input ->
                     FileOutputStream(customScript).use { output ->
@@ -382,13 +364,13 @@ class MainActivity : AppCompatActivity() {
                 }
                 customScript.setExecutable(true)
 
-                runShellCommand(
+                check(runShellCommand(
                     arrayOf(
                         "/data/data/com.ivarna.nativecode/files/usr/bin/python", "/data/data/com.ivarna.nativecode/files/usr/bin/proot-distro",
                         "login", "debian", "--shared-tmp", "--",
                         "env", "FLUX_THEME=dark", "bash", "/tmp/setup_customization_debian.sh"
                     )
-                )
+                ) == 0) { "Desktop customization failed" }
 
                 // Complete
                 File(filesDir, "setup_complete").createNewFile()
@@ -427,7 +409,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun runShellCommand(cmd: Array<String>) {
+    private fun runShellCommand(cmd: Array<String>): Int {
         val pb = ProcessBuilder(*cmd)
         val env = pb.environment()
         env["PATH"] = "/data/data/com.ivarna.nativecode/files/usr/bin:/system/bin"
@@ -454,7 +436,7 @@ class MainActivity : AppCompatActivity() {
                 logScrollView.post { logScrollView.fullScroll(View.FOCUS_DOWN) }
             }
         }
-        process.waitFor()
+        return process.waitFor()
     }
 
     private fun startGui() {

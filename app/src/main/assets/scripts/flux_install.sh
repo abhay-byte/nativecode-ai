@@ -31,7 +31,7 @@ if [ "$DISTRO" == "termux" ]; then
     EXIT_CODE=0
 else
     # Check if distro is already installed by looking for its rootfs
-    DISTRO_ROOTFS="/data/data/com.ivarna.nativecode/files/home/.local/share/proot-distro/containers/$DISTRO"
+    DISTRO_ROOTFS="/data/data/com.ivarna.nativecode/files/usr/var/lib/proot-distro/containers/$DISTRO/rootfs"
     
     if [ -d "$DISTRO_ROOTFS" ]; then
         echo "FluxLinux: $DISTRO already installed. Skipping base installation."

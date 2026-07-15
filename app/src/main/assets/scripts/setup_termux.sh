@@ -17,107 +17,18 @@ trap 'echo "FluxLinux: Setup Failed!"' ERR
 
 echo "FluxLinux: Initializing Termux Environment..."
 
-# Force clear any deadlocks from background updates
-echo "FluxLinux: Clearing potential locks..."
-pkill -9 apt || true
-pkill -9 apt-get || true
-pkill -9 dpkg || true
-rm -rf "$PREFIX/var/lib/dpkg/lock"
-rm -rf "$PREFIX/var/lib/dpkg/lock-frontend"
-rm -rf "$PREFIX/var/cache/apt/archives/lock"
-
-# Repair any interrupted installations
-echo "FluxLinux: Repairing package database..."
-dpkg --configure -a || true
-
-# 1. Update Packages
-echo "FluxLinux: Updating packages..."
-apt-get update -y
-
-# 2. Install Core Dependencies
-echo "FluxLinux: Installing core dependencies..."
-apt-get install -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" --allow-change-held-packages -y proot-distro x11-repo pulseaudio wget zsh fastfetch git unzip util-linux
-
-# 3. Install Termux:X11
-echo "FluxLinux: Installing Termux:X11..."
-apt-get install -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" --allow-change-held-packages -y termux-x11-nightly
-
-# 4. Install Hardware Acceleration Tools
-echo "FluxLinux: Installing Hardware Acceleration tools..."
-# Enable TUR repo for advanced packages
-apt-get install -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" --allow-change-held-packages -y tur-repo
-apt-get update -y
-# Install VirGL server and Zink
-apt-get install -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" --allow-change-held-packages -y virglrenderer-android mesa-zink
-
-# 5. Install Mali Vulkan Wrapper
-ARCH=$(dpkg --print-architecture)
-if [ "$ARCH" = "aarch64" ]; then
-    echo "FluxLinux: Installing Vulkan Wrapper for Mali (aarch64)..."
-    WRAPPER_URL="https://github.com/sabamdarif/termux-desktop/releases/download/pipetto-crypto-vulkan-wrapper-android/pipetto-crypto-vulkan-wrapper-android_25.0.0-1_aarch64.deb"
-    
-    mkdir -p "$PREFIX/tmp"
-    echo "Downloading wrapper..."
-    curl -L -o "$PREFIX/tmp/vulkan-wrapper.deb" "$WRAPPER_URL"
-    echo "Extracting wrapper manually to prefix..."
-    mkdir -p "$PREFIX/tmp/wrapper_extracted"
-    dpkg-deb -x "$PREFIX/tmp/vulkan-wrapper.deb" "$PREFIX/tmp/wrapper_extracted" 2>/dev/null
-    cp -r "$PREFIX/tmp/wrapper_extracted/data/data/com.termux/files/usr/"* "$PREFIX/" 2>/dev/null
-    rm -rf "$PREFIX/tmp/wrapper_extracted" "$PREFIX/tmp/vulkan-wrapper.deb"
-else
-    echo "FluxLinux: Skipping Vulkan Wrapper (Architecture $ARCH not supported)"
-fi
-
-# 6. Patch com.termux prefix to com.ivarna.nativecode
-echo "FluxLinux: Patching downloaded packages to com.ivarna.nativecode prefix..."
-
-# Patch proot-distro to propagate PROOT_TMP_DIR and LD_LIBRARY_PATH
-PD_LOGIN_FILE="$PREFIX/lib/python3.14/site-packages/proot_distro/commands/login/__init__.py"
-if [ -f "$PD_LOGIN_FILE" ]; then
-  echo "  Patching proot-distro login script..."
-  python -c '
-import os
-filepath = "'"$PD_LOGIN_FILE"'"
-with open(filepath, "r") as f:
-    content = f.read()
-target = "    child_env.pop(\"LD_PRELOAD\", None)"
-if target in content and "PROOT_TMP_DIR" not in content:
-    patch = "    if \"PROOT_TMP_DIR\" in os.environ: child_env[\"PROOT_TMP_DIR\"] = os.environ[\"PROOT_TMP_DIR\"]\n    if \"LD_LIBRARY_PATH\" in os.environ: child_env[\"LD_LIBRARY_PATH\"] = os.environ[\"LD_LIBRARY_PATH\"]\n"
-    content = content.replace(target, patch + target)
-    with open(filepath, "w") as f:
-        f.write(content)
-'
-fi
-
-# Patch ELF binaries (RUNPATH) - only scan bin and lib root (maxdepth 1) to avoid pyc/perl scanning
-find "$PREFIX/bin" -type f | while read -r filepath; do
-    if file "$filepath" 2>/dev/null | grep -q "ELF"; then
-        old_rpath=$(readelf -d "$filepath" 2>/dev/null | grep RUNPATH | grep -o '\[.*\]' | tr -d '[]')
-        if [ -n "$old_rpath" ] && echo "$old_rpath" | grep -q "com.termux"; then
-            new_rpath=$(echo "$old_rpath" | sed "s|com.termux|com.ivarna.nativecode|g")
-            patchelf --set-rpath "$new_rpath" "$filepath" 2>/dev/null || true
-        fi
-    fi
+required_bins="proot-distro pulseaudio"
+for bin in $required_bins; do
+    command -v "$bin" >/dev/null || {
+        echo "FluxLinux: Missing bundled host dependency: $bin"
+        exit 1
+    }
 done
 
-find "$PREFIX/lib" -maxdepth 1 -type f | while read -r filepath; do
-    if file "$filepath" 2>/dev/null | grep -q "ELF"; then
-        old_rpath=$(readelf -d "$filepath" 2>/dev/null | grep RUNPATH | grep -o '\[.*\]' | tr -d '[]')
-        if [ -n "$old_rpath" ] && echo "$old_rpath" | grep -q "com.termux"; then
-            new_rpath=$(echo "$old_rpath" | sed "s|com.termux|com.ivarna.nativecode|g")
-            patchelf --set-rpath "$new_rpath" "$filepath" 2>/dev/null || true
-        fi
-    fi
-done
-
-# Patch Text files (scripts and configs) - avoid heavy folders
-find "$PREFIX/bin" "$PREFIX/etc" "$PREFIX/libexec" -maxdepth 2 -type f 2>/dev/null | while read -r filepath; do
-    if [ ! -L "$filepath" ] && ! file "$filepath" 2>/dev/null | grep -q "ELF"; then
-        if grep -q "com.termux" "$filepath" 2>/dev/null; then
-            sed -i 's|com.termux|com.ivarna.nativecode|g' "$filepath" 2>/dev/null || true
-        fi
-    fi
-done
+test -f "$PREFIX/libexec/termux-x11/loader.apk" || {
+    echo "FluxLinux: Missing bundled Termux:X11 loader"
+    exit 1
+}
 
 echo "FluxLinux: Setup Complete"
 echo ""
