@@ -50,7 +50,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var startButton: Button
     private lateinit var stopButton: Button
 
-    private val executor = Executors.newSingleThreadExecutor()
+    private val executor = Executors.newCachedThreadPool()
     private val mainHandler = Handler(Looper.getMainLooper())
 
     private val ID_HOME = 1
@@ -448,6 +448,8 @@ class MainActivity : AppCompatActivity() {
         env["TMPDIR"] = "/data/data/com.ivarna.nativecode/files/usr/tmp"
         env["PROOT_TMP_DIR"] = "/data/data/com.ivarna.nativecode/files/usr/tmp"
         env["TERMUX_APP__PACKAGE_NAME"] = "com.ivarna.nativecode"
+        env["TERMUX_X11_APK_PATH"] = applicationInfo.sourceDir
+        env["TERMUX_X11_OVERRIDE_PACKAGE"] = "com.ivarna.nativecode"
         env["TERMUX__PREFIX"] = "/data/data/com.ivarna.nativecode/files/usr"
         env["TERMUX__HOME"] = "/data/data/com.ivarna.nativecode/files/home"
         env["SSL_CERT_FILE"] = "/data/data/com.ivarna.nativecode/files/usr/etc/tls/cert.pem"
@@ -476,6 +478,7 @@ class MainActivity : AppCompatActivity() {
             startService(serviceIntent)
         }
 
+        // Start the shell script in background (starts X server + XFCE)
         executor.execute {
             updateStatus("Starting XFCE4 GUI session...")
             runShellCommand(
@@ -486,9 +489,21 @@ class MainActivity : AppCompatActivity() {
                 )
             )
         }
+
+        // Launch X11 display activity immediately so user sees it open
+        mainHandler.postDelayed({
+            val x11Intent = Intent(this, com.termux.x11.MainActivity::class.java)
+            x11Intent.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            startActivity(x11Intent)
+        }, 500)
     }
 
     private fun stopGui() {
+        // Send ACTION_STOP broadcast so X11 activity closes itself
+        val stopBroadcast = Intent("com.termux.x11.ACTION_STOP")
+        stopBroadcast.setPackage(packageName)
+        sendBroadcast(stopBroadcast)
+
         stopService(Intent(this, BackgroundService::class.java))
 
         executor.execute {
