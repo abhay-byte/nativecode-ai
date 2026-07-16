@@ -5,12 +5,12 @@ plugins {
 
 android {
     namespace = "com.ivarna.nativecode"
-    compileSdk = 34
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.ivarna.nativecode"
         minSdk = 26
-        targetSdk = 28  // Set targetSdk to 28 to bypass Android 10+ W^X SELinux execution block on app files dir
+        targetSdk = 36
         versionCode = 1
         versionName = "1.0"
     }

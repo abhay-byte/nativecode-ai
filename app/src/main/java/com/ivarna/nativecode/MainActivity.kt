@@ -344,10 +344,7 @@ class MainActivity : AppCompatActivity() {
                 updateStatus("D. Initializing Host Environment...")
                 check(runShellCommand(
                     arrayOf(
-                        // Termux packages contain the original com.termux prefix.
-                        // Bind only this install step; host terminal remains native.
                         "/data/data/com.ivarna.nativecode/files/usr/bin/proot",
-                        "-b", "/data/data/com.ivarna.nativecode:/data/data/com.termux",
                         "/data/data/com.ivarna.nativecode/files/usr/bin/bash",
                         "/data/data/com.ivarna.nativecode/files/home/setup_termux.sh"
                     )
@@ -439,10 +436,16 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun runShellCommand(cmd: Array<String>): Int {
-        val pb = ProcessBuilder(*cmd)
+        val adjustedCmd = if (cmd.isNotEmpty() && cmd[0].startsWith("/data/data/")) {
+            arrayOf("/system/bin/linker64") + cmd
+        } else {
+            cmd
+        }
+        val pb = ProcessBuilder(*adjustedCmd)
         val env = pb.environment()
         env["PATH"] = "/data/data/com.ivarna.nativecode/files/usr/bin:/system/bin"
         env["LD_LIBRARY_PATH"] = "/data/data/com.ivarna.nativecode/files/usr/lib:/data/data/com.ivarna.nativecode/files/usr/opt/virglrenderer-android/lib"
+        env["LD_PRELOAD"] = "/data/data/com.ivarna.nativecode/files/usr/lib/libtermux-exec.so"
         env["PREFIX"] = "/data/data/com.ivarna.nativecode/files/usr"
         env["HOME"] = "/data/data/com.ivarna.nativecode/files/home"
         env["TMPDIR"] = "/data/data/com.ivarna.nativecode/files/usr/tmp"
@@ -521,9 +524,10 @@ class MainActivity : AppCompatActivity() {
     private fun initTerminalView() {
         terminalView.setTextSize(40)
 
-        val shellPath = "/data/data/com.ivarna.nativecode/files/usr/bin/bash"
+        val shellPath = "/system/bin/linker64"
         val cwd = File(filesDir, "home").absolutePath
         val args = arrayOf(
+            "/system/bin/linker64",
             "/data/data/com.ivarna.nativecode/files/usr/bin/bash",
             "-l"
         )
@@ -534,6 +538,7 @@ class MainActivity : AppCompatActivity() {
         envMap["TERM"] = "xterm-256color"
         envMap["PREFIX"] = "/data/data/com.ivarna.nativecode/files/usr"
         envMap["LD_LIBRARY_PATH"] = "/data/data/com.ivarna.nativecode/files/usr/lib"
+        envMap["LD_PRELOAD"] = "/data/data/com.ivarna.nativecode/files/usr/lib/libtermux-exec.so"
         envMap["TERMUX_APP__PACKAGE_NAME"] = "com.ivarna.nativecode"
         envMap["TERMUX__PREFIX"] = "/data/data/com.ivarna.nativecode/files/usr"
         envMap["TERMUX__HOME"] = "/data/data/com.ivarna.nativecode/files/home"

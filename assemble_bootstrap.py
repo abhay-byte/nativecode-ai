@@ -13,6 +13,7 @@ loader_src = os.path.join(script_dir, "shell-loader-debug.apk")
 PACKAGES = [
     # Shell & tools
     "bash",
+    "termux-exec",
     "coreutils",
     "findutils",
     "grep",
