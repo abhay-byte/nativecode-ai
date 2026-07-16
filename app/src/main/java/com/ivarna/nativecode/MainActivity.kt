@@ -100,6 +100,33 @@ class MainActivity : AppCompatActivity() {
             )
         }
 
+        val x11ButtonContainer = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            setPadding(0, 0, 0, 16)
+        }
+
+        val launchX11Button = Button(this).apply {
+            text = "Launch X11 Display"
+            setOnClickListener {
+                val intent = Intent(this@MainActivity, com.termux.x11.MainActivity::class.java)
+                startActivity(intent)
+            }
+        }
+
+        val x11PrefsButton = Button(this).apply {
+            text = "X11 Preferences"
+            setOnClickListener {
+                val intent = Intent(this@MainActivity, com.termux.x11.LoriePreferences::class.java)
+                startActivity(intent)
+            }
+        }
+
+        x11ButtonContainer.addView(launchX11Button)
+        x11ButtonContainer.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(16, 1) })
+        x11ButtonContainer.addView(x11PrefsButton)
+        homeLayout.addView(x11ButtonContainer)
+
         statusText = TextView(this).apply {
             text = "FluxLinux: Starting Setup..."
             textSize = 20f

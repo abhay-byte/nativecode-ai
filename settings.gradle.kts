@@ -9,3 +9,5 @@ dependencyResolutionManagement {
 
 rootProject.name = "termux-lib"
 include(":app")
+include(":stub")
+include(":termux-x11")

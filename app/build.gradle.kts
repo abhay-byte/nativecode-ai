@@ -52,4 +52,7 @@ dependencies {
     implementation("com.github.termux:termux-app:v0.118.0")
     // Fix listenable future conflict
     implementation("com.google.guava:listenablefuture:9999.0-empty-to-avoid-conflict-with-guava")
+
+    // Termux X11 module
+    implementation(project(":termux-x11"))
 }
