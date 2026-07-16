@@ -1,6 +1,8 @@
 package com.ivarna.nativecode
 
 import android.graphics.Color
+import android.content.Intent
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -440,6 +442,13 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun startGui() {
+        val serviceIntent = Intent(this, BackgroundService::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(serviceIntent)
+        } else {
+            startService(serviceIntent)
+        }
+
         executor.execute {
             updateStatus("Starting XFCE4 GUI session...")
             runShellCommand(
@@ -453,6 +462,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun stopGui() {
+        stopService(Intent(this, BackgroundService::class.java))
+
         executor.execute {
             updateStatus("Stopping XFCE4 GUI session...")
             runShellCommand(
@@ -564,6 +575,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        stopService(Intent(this, BackgroundService::class.java))
         terminalSession?.finishIfRunning()
     }
 }
