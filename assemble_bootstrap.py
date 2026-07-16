@@ -3,10 +3,11 @@ import subprocess
 import shutil
 import tarfile
 
-output_dir = "/home/abhay/repos/termux-lib/termux-packages/output"
-extract_dir = "/home/abhay/repos/termux-lib/bootstrap_root"
+script_dir = os.path.dirname(os.path.abspath(__file__))
+output_dir = os.path.join(script_dir, "termux-packages/output")
+extract_dir = os.path.join(script_dir, "bootstrap_root")
 target_prefix = "data/data/com.ivarna.nativecode/files"
-loader_src = "/home/abhay/repos/termux-x11/shell-loader/build/outputs/apk/debug/shell-loader-debug.apk"
+loader_src = os.path.join(script_dir, "shell-loader-debug.apk")
 
 # List of packages needed for host runtime and GUI services
 PACKAGES = [
@@ -168,7 +169,7 @@ def verify_bootstrap():
         raise Exception("Verification failed. Some required bootstrap files are missing.")
 
 def create_tarball():
-    tar_path = "/home/abhay/repos/termux-lib/app/src/main/assets/bootstrap.tar"
+    tar_path = os.path.join(script_dir, "app/src/main/assets/bootstrap.tar")
     print(f"[*] Packaging bootstrap into {tar_path}...")
     
     files_dir = os.path.join(extract_dir, target_prefix)

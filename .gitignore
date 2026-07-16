@@ -10,7 +10,9 @@ local.properties
 # Ignore large bootstrap assets and packaging roots
 bootstrap.tar
 bootstrap_root/
-termux-packages/
+termux-packages/*
+!termux-packages/output/
+!termux-packages/output/**
 
 # Ignore IDE, agent, and memory logs
 .claude/
