@@ -819,7 +819,8 @@ public class LoriePreferences extends AppCompatActivity implements PreferenceFra
 
             private String[] getArrayItems(int resourceId, Resources resources) {
                 ArrayList<String> itemList = new ArrayList<>();
-                try(TypedArray typedArray = resources.obtainTypedArray(resourceId)) {
+                TypedArray typedArray = resources.obtainTypedArray(resourceId);
+                try {
                     for (int i = 0; i < typedArray.length(); i++) {
                         int type = typedArray.getType(i);
                         if (type == TypedValue.TYPE_STRING) {
@@ -829,6 +830,8 @@ public class LoriePreferences extends AppCompatActivity implements PreferenceFra
                             itemList.addAll(Arrays.asList(resources.getStringArray(resIdOfArray)));
                         }
                     }
+                } finally {
+                    typedArray.recycle();
                 }
 
                 Object[] objectArray = itemList.toArray();

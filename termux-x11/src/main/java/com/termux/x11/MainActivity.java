@@ -803,6 +803,7 @@ public class MainActivity extends AppCompatActivity {
 
     @Override
     public void onBackPressed() {
+        super.onBackPressed();
     }
 
     public static boolean hasPipPermission(@NonNull Context context) {
