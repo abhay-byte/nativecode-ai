@@ -180,6 +180,19 @@ public class MainActivity extends AppCompatActivity {
         LorieView lorieView = findViewById(R.id.lorieView);
         View lorieParent = (View) lorieView.getParent();
 
+        View backBtn = findViewById(R.id.back_to_home_button);
+        if (backBtn != null) {
+            backBtn.setOnClickListener(v -> {
+                try {
+                    Intent intent = new Intent(this, Class.forName("com.ivarna.nativecode.MainActivity"));
+                    intent.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
+                    startActivity(intent);
+                } catch (Exception e) {
+                    Log.e("MainActivity", "Failed to launch main activity", e);
+                }
+            });
+        }
+
         mInputHandler = new TouchInputHandler(this, new InputEventSender(lorieView));
         mLorieKeyListener = (v, k, e) -> {
             InputDevice dev = e.getDevice();

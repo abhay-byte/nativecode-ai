@@ -25,6 +25,19 @@
             android:visibility="visible"
             android:layout_gravity="center" />
 
+        <ImageButton
+            android:id="@+id/back_to_home_button"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:layout_gravity="top|left"
+            android:layout_margin="16dp"
+            android:src="@android:drawable/ic_menu_revert"
+            android:background="#80000000"
+            android:tint="@android:color/white"
+            android:contentDescription="Back to Home"
+            android:visibility="visible"
+            tools:ignore="HardcodedText,UseAppTint" />
+
         <LinearLayout
             android:id="@+id/stub"
             android:layout_width="match_parent"
