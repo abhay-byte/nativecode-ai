@@ -36,6 +36,12 @@ android {
         viewBinding = true
     }
 
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
+
     lint {
         abortOnError = false
         checkReleaseBuilds = false

@@ -183,10 +183,33 @@ def create_tarball():
         
     print(f"[*] Tarball created successfully. Size: {os.path.getsize(tar_path) / 1024 / 1024:.2f} MB")
 
+def copy_to_jni_libs():
+    jni_dir = os.path.join(script_dir, "app/src/main/jniLibs/arm64-v8a")
+    os.makedirs(jni_dir, exist_ok=True)
+    
+    mapping = {
+        "usr/bin/proot": "libproot.so",
+        "usr/bin/bash": "libbash.so",
+        "usr/libexec/proot/loader": "libloader.so",
+        "usr/libexec/proot/loader32": "libloader32.so"
+    }
+    
+    print("[*] Copying critical binaries to jniLibs...")
+    for src_rel, dest_name in mapping.items():
+        src_path = os.path.join(extract_dir, target_prefix, src_rel)
+        dest_path = os.path.join(jni_dir, dest_name)
+        if os.path.exists(src_path):
+            print(f"  Copying {src_rel} -> {dest_path}")
+            shutil.copy2(src_path, dest_path)
+            os.chmod(dest_path, 0o755)
+        else:
+            print(f"  [WARN] Source {src_rel} not found!")
+
 if __name__ == "__main__":
     clean_and_prepare()
     extract_debs()
     add_loader()
     verify_bootstrap()
+    copy_to_jni_libs()
     create_tarball()
     print("[*] Bootstrap assembly completed successfully!")

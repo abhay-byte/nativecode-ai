@@ -80,7 +80,7 @@ fi
 if [ -z "$TERMUX_X11_APK_PATH" ]; then
   TERMUX_X11_APK_PATH=$(pm path "$PKG" 2>/dev/null | tr -d '\r' | sed 's/^package://')
 fi
-if [ -z "$TERMUX_X11_APK_PATH" ]; then
+if [ -z "$TERMUX_X11_APK_PATH" ] || [ ! -f "$TERMUX_X11_APK_PATH" ]; then
   TERMUX_X11_APK_PATH=$(find /data/app -name "base.apk" -path "*$PKG*" 2>/dev/null | head -1)
 fi
 export TERMUX_X11_APK_PATH
@@ -112,7 +112,7 @@ CLASSPATH="$TERMUX_PREFIX/libexec/termux-x11/loader.apk" \
 TERMUX_X11_APK_PATH="$TERMUX_X11_APK_PATH" \
 TERMUX_X11_OVERRIDE_PACKAGE="$PKG" \
 LANG=en_US.UTF-8 \
-/system/bin/app_process -Xnoimage-dex2oat / \
+/system/bin/app_process / \
   --nice-name="termux-x11" com.termux.x11.Loader :0 -legacy-drawing &
 XSERVER_PID=$!
 echo "FluxLinux: X server PID=$XSERVER_PID"

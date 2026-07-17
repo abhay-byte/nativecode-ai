@@ -187,10 +187,15 @@ public class CmdEntryPoint extends ICmdEntryInterface.Stub {
         ClassLoader loader = CmdEntryPoint.class.getClassLoader();
         URL res = loader != null ? loader.getResource(path) : null;
         String libPath = res != null ? res.getFile().replace("file:", "") : null;
+        if (libPath == null || libPath.contains("base.apk!")) {
+            // Under targetSdk 36, library loading from apk inside app_process namespace fails.
+            // Fall back to the extracted library directory.
+            libPath = "/data/data/com.ivarna.nativecode/lib/libXlorie.so";
+        }
         if (libPath != null) {
             try {
                 System.load(libPath);
-            } catch (Exception e) {
+            } catch (UnsatisfiedLinkError | Exception e) {
                 Log.e("CmdEntryPoint", "Failed to dlopen " + libPath, e);
                 System.err.println("Failed to load native library. Did you install the right apk? Try the universal one.");
                 System.exit(134);

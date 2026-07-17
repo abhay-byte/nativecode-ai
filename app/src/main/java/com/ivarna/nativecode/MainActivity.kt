@@ -329,6 +329,18 @@ class MainActivity : AppCompatActivity() {
                     File(filesDir, "data").deleteRecursively()
                 }
 
+                // Patch proot-distro to preserve PROOT_LOADER environment variable
+                val loginInitPy = File(filesDir, "usr/lib/python3.14/site-packages/proot_distro/commands/login/__init__.py")
+                if (loginInitPy.exists()) {
+                    Log.d("FluxSetup", "Patching proot-distro commands/login/__init__.py...")
+                    var content = loginInitPy.readText()
+                    content = content.replace(
+                        "\"PROOT_NO_SECCOMP\", \"PROOT_VERBOSE\"",
+                        "\"PROOT_NO_SECCOMP\", \"PROOT_VERBOSE\", \"PROOT_LOADER\""
+                    )
+                    loginInitPy.writeText(content)
+                }
+
                 // Re-create critical directory structures
                 File(varDir, "log/apt").mkdirs()
                 File(varDir, "lib/dpkg").mkdirs()
@@ -342,11 +354,14 @@ class MainActivity : AppCompatActivity() {
                 resolvConf.writeText("nameserver 8.8.8.8\nnameserver 8.8.4.4\n")
 
                 updateStatus("D. Initializing Host Environment...")
+                val nativeLibDir = applicationInfo.nativeLibraryDir
+                val prootPath = File(nativeLibDir, "libproot.so").absolutePath
+                val bashPath = File(nativeLibDir, "libbash.so").absolutePath
                 check(runShellCommand(
                     arrayOf(
-                        "/data/data/com.ivarna.nativecode/files/usr/bin/proot",
-                        "/data/data/com.ivarna.nativecode/files/usr/bin/bash",
-                        "/data/data/com.ivarna.nativecode/files/home/setup_termux.sh"
+                        prootPath,
+                        bashPath,
+                        File(homeDir, "setup_termux.sh").absolutePath
                     )
                 ) == 0) { "Host environment setup failed" }
 
@@ -356,8 +371,8 @@ class MainActivity : AppCompatActivity() {
                 val debianSetupPayload = Base64.encodeToString(debianSetupBytes, Base64.NO_WRAP)
                 check(runShellCommand(
                     arrayOf(
-                        "/data/data/com.ivarna.nativecode/files/usr/bin/bash",
-                        "/data/data/com.ivarna.nativecode/files/home/flux_install.sh",
+                        bashPath,
+                        File(homeDir, "flux_install.sh").absolutePath,
                         "debian",
                         debianSetupPayload
                     )
@@ -443,7 +458,10 @@ class MainActivity : AppCompatActivity() {
         }
         val pb = ProcessBuilder(*adjustedCmd)
         val env = pb.environment()
-        env["PATH"] = "/data/data/com.ivarna.nativecode/files/usr/bin:/system/bin"
+        val nativeLibDir = applicationInfo.nativeLibraryDir
+        env["PATH"] = "$nativeLibDir:/data/data/com.ivarna.nativecode/files/usr/bin:/system/bin"
+        env["PD_PROOT_BIN"] = File(nativeLibDir, "libproot.so").absolutePath
+        env["PROOT_LOADER"] = File(nativeLibDir, "libloader.so").absolutePath
         env["LD_LIBRARY_PATH"] = "/data/data/com.ivarna.nativecode/files/usr/lib:/data/data/com.ivarna.nativecode/files/usr/opt/virglrenderer-android/lib"
         env["LD_PRELOAD"] = "/data/data/com.ivarna.nativecode/files/usr/lib/libtermux-exec.so"
         env["PREFIX"] = "/data/data/com.ivarna.nativecode/files/usr"
@@ -484,9 +502,11 @@ class MainActivity : AppCompatActivity() {
         // Start the shell script in background (starts X server + XFCE)
         executor.execute {
             updateStatus("Starting XFCE4 GUI session...")
+            val nativeLibDir = applicationInfo.nativeLibraryDir
+            val bashPath = File(nativeLibDir, "libbash.so").absolutePath
             runShellCommand(
                 arrayOf(
-                    "/data/data/com.ivarna.nativecode/files/usr/bin/bash",
+                    bashPath,
                     "/data/data/com.ivarna.nativecode/files/home/start_gui.sh",
                     "debian"
                 )
@@ -511,9 +531,11 @@ class MainActivity : AppCompatActivity() {
 
         executor.execute {
             updateStatus("Stopping XFCE4 GUI session...")
+            val nativeLibDir = applicationInfo.nativeLibraryDir
+            val bashPath = File(nativeLibDir, "libbash.so").absolutePath
             runShellCommand(
                 arrayOf(
-                    "/data/data/com.ivarna.nativecode/files/usr/bin/bash",
+                    bashPath,
                     "/data/data/com.ivarna.nativecode/files/home/stop_gui.sh",
                     "debian"
                 )
@@ -524,16 +546,18 @@ class MainActivity : AppCompatActivity() {
     private fun initTerminalView() {
         terminalView.setTextSize(40)
 
-        val shellPath = "/system/bin/linker64"
+        val nativeLibDir = applicationInfo.nativeLibraryDir
+        val shellPath = File(nativeLibDir, "libbash.so").absolutePath
         val cwd = File(filesDir, "home").absolutePath
         val args = arrayOf(
-            "/system/bin/linker64",
-            "/data/data/com.ivarna.nativecode/files/usr/bin/bash",
+            shellPath,
             "-l"
         )
         
         val envMap = HashMap(System.getenv())
-        envMap["PATH"] = "/data/data/com.ivarna.nativecode/files/usr/bin:/system/bin"
+        envMap["PATH"] = "$nativeLibDir:/data/data/com.ivarna.nativecode/files/usr/bin:/system/bin"
+        envMap["PD_PROOT_BIN"] = File(nativeLibDir, "libproot.so").absolutePath
+        envMap["PROOT_LOADER"] = File(nativeLibDir, "libloader.so").absolutePath
         envMap["HOME"] = "/data/data/com.ivarna.nativecode/files/home"
         envMap["TERM"] = "xterm-256color"
         envMap["PREFIX"] = "/data/data/com.ivarna.nativecode/files/usr"
