@@ -158,9 +158,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var workspaceTabBarScroll: HorizontalScrollView
     private lateinit var workspaceHubLayout: LinearLayout
     private lateinit var workspaceDirTreeLayout: LinearLayout
-    private lateinit var workspaceDirTreeScroll: ScrollView
     private lateinit var workspaceGitDiffLayout: LinearLayout
-    private lateinit var workspaceGitDiffScroll: ScrollView
     private lateinit var workspaceProjectNameTv: TextView
     private lateinit var workspaceProjectIconIv: ImageView
 
@@ -2694,9 +2692,6 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
-        
-        workspaceDirTreeScroll.visibility = View.GONE
-        workspaceGitDiffScroll.visibility = View.GONE
         
         refreshWorkspaceDirTree()
         refreshGitDiffTree()
