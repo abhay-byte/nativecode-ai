@@ -688,7 +688,7 @@ class OnboardingActivity : AppCompatActivity() {
         root.addView(title)
 
         completeText = TextView(this).apply {
-            text = "Guest OS: Debian 12 (Ready)\nNodeJS: v26 (Ready)\nAI packages: opencode-ai, @openai/codex"
+            text = "Guest OS: Debian Trixie (Ready)\nNodeJS: v26 (Ready)\nAI packages: opencode-ai, @openai/codex"
             textSize = 14f
             setTextColor(NC.ON_SURF_VAR)
             gravity = Gravity.CENTER
