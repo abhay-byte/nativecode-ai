@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en" style=""><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0" name="viewport"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=block" rel="stylesheet"/><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&amp;family=JetBrains+Mono:wght@400;600&amp;display=swap" rel="stylesheet"/><script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script><script id="tailwind-config">try{
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "tertiary-fixed": "#ffdcc6",
+                      "outline-variant": "#4a4455",
+                      "surface-variant": "#37333e",
+                      "on-tertiary-container": "#ffe0cd",
+                      "on-primary-container": "#ede0ff",
+                      "on-primary-fixed-variant": "#5a00c6",
+                      "on-secondary-fixed-variant": "#004e5c",
+                      "on-surface-variant": "#ccc3d8",
+                      "secondary": "#4cd7f6",
+                      "surface-container-highest": "#37333e",
+                      "primary-fixed": "#eaddff",
+                      "on-primary-fixed": "#25005a",
+                      "on-secondary": "#003640",
+                      "error": "#ffb4ab",
+                      "on-secondary-container": "#00424e",
+                      "secondary-fixed-dim": "#4cd7f6",
+                      "on-secondary-fixed": "#001f26",
+                      "surface-container-low": "#1d1a24",
+                      "secondary-fixed": "#acedff",
+                      "primary": "#d2bbff",
+                      "secondary-container": "#03b5d3",
+                      "on-error-container": "#ffdad6",
+                      "on-tertiary-fixed": "#301400",
+                      "outline": "#958da1",
+                      "error-container": "#93000a",
+                      "on-tertiary": "#4f2500",
+                      "on-background": "#e8dfee",
+                      "tertiary-fixed-dim": "#ffb784",
+                      "surface-container-lowest": "#100d16",
+                      "on-error": "#690005",
+                      "primary-container": "#7c3aed",
+                      "tertiary-container": "#a15100",
+                      "surface-dim": "#15121b",
+                      "on-tertiary-fixed-variant": "#713700",
+                      "background": "#15121b",
+                      "inverse-surface": "#e8dfee",
+                      "on-primary": "#3f008e",
+                      "primary-fixed-dim": "#d2bbff",
+                      "surface-tint": "#d2bbff",
+                      "surface-container-high": "#2c2833",
+                      "on-surface": "#e8dfee",
+                      "inverse-primary": "#732ee4",
+                      "tertiary": "#ffb784",
+                      "surface-container": "#221e28",
+                      "surface": "#15121b",
+                      "surface-bright": "#3c3742",
+                      "inverse-on-surface": "#332f39"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.25rem",
+                      "lg": "0.5rem",
+                      "xl": "0.75rem",
+                      "full": "9999px"
+              },
+              "spacing": {
+                      "xl": "32px",
+                      "margin-mobile": "16px",
+                      "base": "4px",
+                      "sm": "8px",
+                      "lg": "24px",
+                      "gutter": "16px",
+                      "margin-desktop": "32px",
+                      "md": "16px",
+                      "2xl": "48px",
+                      "xs": "4px"
+              },
+              "fontFamily": {
+                      "body-md": [
+                              "Inter"
+                      ],
+                      "code-md": [
+                              "JetBrains Mono"
+                      ],
+                      "headline-lg": [
+                              "Inter"
+                      ],
+                      "headline-md": [
+                              "Inter"
+                      ],
+                      "headline-lg-mobile": [
+                              "Inter"
+                      ],
+                      "body-lg": [
+                              "Inter"
+                      ],
+                      "label-caps": [
+                              "JetBrains Mono"
+                      ],
+                      "headline-sm": [
+                              "Inter"
+                      ],
+                      "code-sm": [
+                              "JetBrains Mono"
+                      ]
+              },
+              "fontSize": {
+                      "body-md": [
+                              "14px",
+                              {
+                                      "lineHeight": "20px",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "code-md": [
+                              "14px",
+                              {
+                                      "lineHeight": "20px",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "headline-lg": [
+                              "32px",
+                              {
+                                      "lineHeight": "40px",
+                                      "letterSpacing": "-0.02em",
+                                      "fontWeight": "700"
+                              }
+                      ],
+                      "headline-md": [
+                              "24px",
+                              {
+                                      "lineHeight": "32px",
+                                      "letterSpacing": "-0.01em",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "headline-lg-mobile": [
+                              "24px",
+                              {
+                                      "lineHeight": "32px",
+                                      "letterSpacing": "-0.02em",
+                                      "fontWeight": "700"
+                              }
+                      ],
+                      "body-lg": [
+                              "16px",
+                              {
+                                      "lineHeight": "24px",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "label-caps": [
+                              "11px",
+                              {
+                                      "lineHeight": "16px",
+                                      "letterSpacing": "0.05em",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "headline-sm": [
+                              "18px",
+                              {
+                                      "lineHeight": "24px",
+                                      "letterSpacing": "0em",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "code-sm": [
+                              "12px",
+                              {
+                                      "lineHeight": "16px",
+                                      "fontWeight": "400"
+                              }
+                      ]
+              }
+      },
+          },
+        }
+      }catch(_e){}</script><meta charset="utf-8"/></head><body class="font-body-md text-body-md min-h-screen flex flex-col md:flex-row pb-24 md:pb-0">
+<!-- NavigationDrawer (Web) -->
+<nav class="hidden md:flex h-screen w-80 fixed left-0 top-0 bg-surface-container-low border-r border-outline-variant flex-col py-lg z-40">
+<div class="px-md mb-lg">
+<h1 class="font-headline-md text-headline-md text-primary font-bold">NativeCode</h1>
+</div>
+<div class="flex items-center gap-md px-md mb-xl">
+<img class="w-10 h-10 rounded-full object-cover border border-outline-variant" data-alt="A small circular avatar placeholder image for a developer profile, showing an abstract geometric pattern in dark blue and electric violet." src="./pr_avatar.png"/>
+<div>
+<p class="font-headline-sm text-headline-sm text-primary">Dev Environment</p>
+<p class="font-body-md text-body-md text-on-surface-variant opacity-80">Debian 12 | ARM64</p>
+</div>
+<span class="ml-auto px-2 py-1 rounded bg-secondary-container/20 text-secondary font-label-caps text-label-caps">Active</span>
+</div>
+<div class="flex flex-col gap-sm px-md flex-1 overflow-y-auto">
+<a class="flex items-center gap-md px-md py-sm rounded-lg text-on-surface-variant hover:bg-surface-variant transition-colors" href="#">
+<span class="material-symbols-outlined">folder</span>
+<span class="">Local Files</span>
+</a>
+<a class="flex items-center gap-md px-md py-sm rounded-lg bg-secondary-container text-on-secondary-container border-l-4 border-primary transition-colors" href="#">
+<span class="material-symbols-outlined">cloud_download</span>
+<span class="">Remote Repos</span>
+</a>
+<a class="flex items-center gap-md px-md py-sm rounded-lg text-on-surface-variant hover:bg-surface-variant transition-colors" href="#">
+<span class="material-symbols-outlined">smart_toy</span>
+<span class="">AI Models</span>
+</a>
+<a class="flex items-center gap-md px-md py-sm rounded-lg text-on-surface-variant hover:bg-surface-variant transition-colors" href="#">
+<span class="material-symbols-outlined">description</span>
+<span class="">System Logs</span>
+</a>
+</div>
+</nav>
+<!-- TopAppBar (Mobile) -->
+<header class="md:hidden flex justify-between items-center px-md py-sm w-full z-50 bg-surface-dim border-b border-outline-variant sticky top-0">
+<div class="flex items-center gap-sm">
+<span class="material-symbols-outlined text-secondary">memory</span>
+<span class="font-headline-md text-headline-md font-bold text-primary">NativeCode</span>
+</div>
+<span class="material-symbols-outlined text-secondary">account_circle</span>
+</header>
+<!-- Main Content Canvas -->
+<main class="flex-1 md:ml-80 p-margin-mobile md:p-margin-desktop max-w-[1200px] w-full mx-auto">
+<header class="mb-xl flex flex-col md:flex-row md:items-center justify-between gap-md">
+<div>
+<h1 class="font-headline-lg-mobile md:font-headline-lg text-headline-lg-mobile md:text-headline-lg text-primary">Git Operations</h1>
+<p class="font-body-lg text-body-lg text-on-surface-variant mt-sm">Manage repository connections and branches.</p>
+</div>
+<div class="flex gap-md">
+<button class="px-md py-sm rounded-full bg-surface-container border border-outline-variant text-on-surface hover:brightness-110 transition-all font-headline-sm text-headline-sm flex items-center gap-sm">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">file_download</span>
+                    Clone Repository
+                </button>
+<button class="px-md py-sm rounded-full bg-primary-container text-on-primary-container hover:brightness-110 transition-all font-headline-sm text-headline-sm flex items-center gap-sm">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">publish</span>
+                    Push
+                </button>
+</div>
+</header>
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-gutter">
+<!-- Auth Section -->
+<section class="lg:col-span-7 glass-panel rounded-xl p-lg flex flex-col gap-lg bg-surface-container border border-outline-variant/30">
+<div>
+<h2 class="font-headline-md text-headline-md text-on-surface mb-sm flex items-center gap-sm">
+<span class="material-symbols-outlined text-secondary">terminal</span>
+                        Terminal Authentication
+                    </h2>
+<p class="font-body-md text-body-md text-on-surface-variant">Authenticate using the GitHub CLI interactive flow.</p>
+</div>
+<div class="bg-[#050505] rounded-lg p-md font-code-md text-code-md text-on-surface overflow-x-auto border border-outline-variant relative shadow-inner">
+<div class="flex gap-2 mb-sm">
+<div class="w-3 h-3 rounded-full bg-error"></div>
+<div class="w-3 h-3 rounded-full bg-tertiary"></div>
+<div class="w-3 h-3 rounded-full bg-secondary"></div>
+</div>
+<div class="flex flex-col gap-1 whitespace-pre-wrap">
+<div><span class="text-primary font-bold">~</span> <span class="text-secondary">$</span> gh auth login</div>
+<div class="text-on-surface-variant">? What account do you want to log into? <span class="text-secondary">GitHub.com</span></div>
+<div class="text-on-surface-variant">? What is your preferred protocol for Git operations? <span class="text-secondary">HTTPS</span></div>
+<div class="text-on-surface-variant">? How would you like to authenticate GitHub CLI? <span class="text-secondary">Login with a web browser</span></div>
+<div class="mt-2 text-primary font-bold">! First copy your one-time code: <span class="text-on-surface bg-surface-variant px-1 rounded">ABCD-1234</span></div>
+<div class="text-on-surface-variant">- Press Enter to open github.com in your browser...</div>
+</div>
+</div>
+<div class="mt-auto pt-md flex flex-col sm:flex-row items-center justify-between gap-md">
+<div class="font-code-md text-code-md text-on-surface-variant flex items-center gap-sm">
+<span class="material-symbols-outlined text-outline">content_copy</span>
+                    Code: <strong class="text-on-surface tracking-widest bg-surface-variant px-2 py-1 rounded">ABCD-1234</strong>
+</div>
+<button class="w-full sm:w-auto px-lg py-sm rounded-full bg-primary-container text-on-primary-container hover:brightness-110 transition-all font-headline-sm text-headline-sm shadow-lg shadow-primary-container/20 flex items-center justify-center gap-sm">
+<span class="material-symbols-outlined">open_in_browser</span>
+                        Open Browser to Login
+                    </button>
+</div>
+</section>
+<!-- Branches Section -->
+<section class="lg:col-span-5 glass-panel rounded-xl p-lg flex flex-col h-full bg-surface-container border border-outline-variant/30">
+<div class="mb-lg flex justify-between items-center">
+<h2 class="font-headline-md text-headline-md text-on-surface flex items-center gap-sm">
+<span class="material-symbols-outlined text-secondary" data-original-icon="account">account_tree</span>
+                        Active Branches
+                    </h2>
+<button class="text-on-surface-variant hover:text-primary transition-colors flex items-center gap-xs text-code-sm font-code-sm bg-surface-variant/50 px-2 py-1 rounded">
+<span class="material-symbols-outlined text-[16px]">sync</span> git fetch
+                    </button>
+</div>
+<div class="bg-[#050505] rounded-lg p-md font-code-md text-code-md text-on-surface overflow-x-auto flex-1 border border-outline-variant relative group shadow-inner">
+<span class="absolute top-2 right-2 px-2 py-1 rounded bg-surface-variant/50 text-on-surface-variant font-code-sm text-code-sm opacity-0 group-hover:opacity-100 transition-opacity">$ git branch</span>
+<ul class="flex flex-col gap-1 whitespace-pre mt-4">
+<li class="flex items-center gap-sm hover:bg-surface-variant/50 px-2 py-1 rounded cursor-pointer text-on-surface-variant transition-colors">
+<span>  main</span>
+</li>
+<li class="flex items-center gap-sm px-2 py-1 rounded text-primary font-bold cursor-pointer">
+<span>* feature/auth</span>
+</li>
+<li class="flex items-center gap-sm hover:bg-surface-variant/50 px-2 py-1 rounded cursor-pointer text-on-surface-variant opacity-80 transition-colors">
+<span>  fix/login-bug</span>
+</li>
+</ul>
+</div>
+</section>
+</div>
+</main>
+<!-- BottomNavBar (Mobile-->
+<nav class="md:hidden fixed bottom-8 left-1/2 -translate-x-1/2 w-[90%] max-w-md z-50 flex justify-around items-center py-sm px-md bg-surface-container/80 backdrop-blur-xl rounded-full border border-white/10 shadow-2xl"><a class="flex items-center justify-center text-on-surface-variant p-3 hover:scale-110 transition-transform" href="#">
+<span class="material-symbols-outlined">dashboard</span>
+</a>
+<a class="flex items-center justify-center text-on-surface-variant p-3 hover:scale-110 transition-transform" href="#">
+<span class="material-symbols-outlined">folder_open</span>
+</a>
+<a class="flex items-center justify-center text-on-surface-variant p-3 hover:scale-110 transition-transform" href="#">
+<span class="material-symbols-outlined">terminal</span>
+</a>
+<a class="flex items-center justify-center bg-primary-container text-on-primary-container rounded-full w-12 h-12 transition-transform hover:scale-110" href="#">
+<span class="material-symbols-outlined">alt_route</span>
+</a>
+<a class="flex items-center justify-center text-on-surface-variant p-3 hover:scale-110 transition-transform" href="#">
+<span class="material-symbols-outlined">settings</span>
+</a></nav>
+</body></html>

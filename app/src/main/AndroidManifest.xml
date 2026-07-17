@@ -17,47 +17,18 @@
         <activity
             android:name=".MainActivity"
             android:configChanges="orientation|keyboardHidden|screenSize|screenLayout|smallestScreenSize"
+            android:windowSoftInputMode="adjustResize"
+            android:exported="false" />
+
+        <activity
+            android:name=".OnboardingActivity"
+            android:configChanges="orientation|keyboardHidden|screenSize"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-
-        <activity
-            android:name=".ArchitectureSelectionActivity"
-            android:configChanges="orientation|keyboardHidden|screenSize"
-            android:exported="false" />
-
-        <activity
-            android:name=".FileExplorerActivity"
-            android:configChanges="orientation|keyboardHidden|screenSize"
-            android:exported="false" />
-
-        <activity
-            android:name=".FileViewerActivity"
-            android:configChanges="orientation|keyboardHidden|screenSize"
-            android:exported="false" />
-
-        <activity
-            android:name=".TerminalWithSidebarActivity"
-            android:configChanges="orientation|keyboardHidden|screenSize"
-            android:exported="false" />
-
-        <activity
-            android:name=".GitOperationsActivity"
-            android:configChanges="orientation|keyboardHidden|screenSize"
-            android:exported="false" />
-
-        <activity
-            android:name=".CodeDiffViewerActivity"
-            android:configChanges="orientation|keyboardHidden|screenSize"
-            android:exported="false" />
-
-        <activity
-            android:name=".SettingsHubActivity"
-            android:configChanges="orientation|keyboardHidden|screenSize"
-            android:exported="false" />
 
         <service
             android:name=".BackgroundService"

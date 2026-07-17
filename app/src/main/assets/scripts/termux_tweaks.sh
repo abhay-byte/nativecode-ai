@@ -53,22 +53,13 @@ EOF
 }
 
 install_nerd_font() {
-    echo "🔤 Installing Meslo Nerd Font (default)..."
+    echo "🔤 Installing JetBrains Mono Nerd Font (offline)..."
     mkdir -p ~/.termux
-    TMPFONT="$HOME/tmpfont"
-    mkdir -p "$TMPFONT" && cd "$TMPFONT" || exit 1
-
-    curl -fsSL -o font.zip https://github.com/ryanoasis/nerd-fonts/releases/latest/download/Meslo.zip
-    unzip -jo font.zip "*Regular.ttf" -d ~/.termux
-    FONTFILE=$(ls ~/.termux/*Regular.ttf | head -n 1)
-    if [ -n "$FONTFILE" ]; then
-        mv -f "$FONTFILE" ~/.termux/font.ttf
-        echo "✅ Font installed as Termux default."
+    if [ -f ~/.termux/font.ttf ]; then
+        echo "✅ Font already deployed."
     else
-        echo "❌ No Regular font found!"
+        echo "⚠️ Font file not found."
     fi
-
-    cd ~ && rm -rf "$TMPFONT"
     termux-reload-settings || true
 }
 

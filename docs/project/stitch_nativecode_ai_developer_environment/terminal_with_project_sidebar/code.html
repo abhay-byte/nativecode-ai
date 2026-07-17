@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0" name="viewport"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=block" rel="stylesheet"/><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&amp;family=JetBrains+Mono:wght@400;600&amp;display=swap" rel="stylesheet"/><script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script><script id="tailwind-config">try{
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "tertiary-fixed": "#ffdcc6",
+                        "outline-variant": "#4a4455",
+                        "surface-variant": "#37333e",
+                        "on-tertiary-container": "#ffe0cd",
+                        "on-primary-container": "#ede0ff",
+                        "on-primary-fixed-variant": "#5a00c6",
+                        "on-secondary-fixed-variant": "#004e5c",
+                        "on-surface-variant": "#ccc3d8",
+                        "secondary": "#4cd7f6",
+                        "surface-container-highest": "#37333e",
+                        "primary-fixed": "#eaddff",
+                        "on-primary-fixed": "#25005a",
+                        "on-secondary": "#003640",
+                        "error": "#ffb4ab",
+                        "on-secondary-container": "#00424e",
+                        "secondary-fixed-dim": "#4cd7f6",
+                        "on-secondary-fixed": "#001f26",
+                        "surface-container-low": "#1d1a24",
+                        "secondary-fixed": "#acedff",
+                        "primary": "#d2bbff",
+                        "secondary-container": "#03b5d3",
+                        "on-error-container": "#ffdad6",
+                        "on-tertiary-fixed": "#301400",
+                        "outline": "#958da1",
+                        "error-container": "#93000a",
+                        "on-tertiary": "#4f2500",
+                        "on-background": "#e8dfee",
+                        "tertiary-fixed-dim": "#ffb784",
+                        "surface-container-lowest": "#100d16",
+                        "on-error": "#690005",
+                        "primary-container": "#7c3aed",
+                        "tertiary-container": "#a15100",
+                        "surface-dim": "#15121b",
+                        "on-tertiary-fixed-variant": "#713700",
+                        "background": "#15121b",
+                        "inverse-surface": "#e8dfee",
+                        "on-primary": "#3f008e",
+                        "primary-fixed-dim": "#d2bbff",
+                        "surface-tint": "#d2bbff",
+                        "surface-container-high": "#2c2833",
+                        "on-surface": "#e8dfee",
+                        "inverse-primary": "#732ee4",
+                        "tertiary": "#ffb784",
+                        "surface-container": "#221e28",
+                        "surface": "#15121b",
+                        "surface-bright": "#3c3742",
+                        "inverse-on-surface": "#332f39"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "xl": "32px",
+                        "margin-mobile": "16px",
+                        "base": "4px",
+                        "sm": "8px",
+                        "lg": "24px",
+                        "gutter": "16px",
+                        "margin-desktop": "32px",
+                        "md": "16px",
+                        "2xl": "48px",
+                        "xs": "4px"
+                    },
+                    "fontFamily": {
+                        "body-md": ["Inter"],
+                        "code-md": ["JetBrains Mono"],
+                        "headline-lg": ["Inter"],
+                        "headline-md": ["Inter"],
+                        "headline-lg-mobile": ["Inter"],
+                        "body-lg": ["Inter"],
+                        "label-caps": ["JetBrains Mono"],
+                        "headline-sm": ["Inter"],
+                        "code-sm": ["JetBrains Mono"]
+                    },
+                    "fontSize": {
+                        "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "code-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "headline-lg": ["32px", { "lineHeight": "40px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "headline-md": ["24px", { "lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+                        "headline-lg-mobile": ["24px", { "lineHeight": "32px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "body-lg": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],
+                        "label-caps": ["11px", { "lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600" }],
+                        "headline-sm": ["18px", { "lineHeight": "24px", "letterSpacing": "0em", "fontWeight": "600" }],
+                        "code-sm": ["12px", { "lineHeight": "16px", "fontWeight": "400" }]
+                    }
+                },
+            },
+        }
+    }catch(_e){}</script>
+<style>
+        .drawer-open {
+            transform: translateX(0);
+        }
+        .drawer-closed {
+            transform: translateX(-100%);
+        }
+        .backdrop-open {
+            opacity: 1;
+            pointer-events: auto;
+        }
+        .backdrop-closed {
+            opacity: 0;
+            pointer-events: none;
+        }
+    </style>
+</head><body class="font-body-md text-body-md antialiased relative h-screen flex flex-col overflow-hidden bg-background">
+<!-- Overlay Backdrop -->
+<div class="fixed inset-0 bg-black/50 z-40 backdrop-closed transition-opacity duration-300" id="drawerBackdrop" onclick="toggleDrawer()"></div>
+<!-- Navigation Drawer -->
+<div class="fixed inset-y-0 left-0 w-72 bg-surface-container-low border-r border-outline-variant z-50 flex flex-col drawer-closed transition-transform duration-300" id="navDrawer">
+<div class="p-4 border-b border-outline-variant flex justify-between items-center h-14">
+<h2 class="font-headline-sm text-headline-sm text-on-surface">Project Directory</h2>
+<button class="text-on-surface-variant hover:text-primary transition-colors" onclick="toggleDrawer()">
+<span class="material-symbols-outlined">close</span>
+</button>
+</div>
+<div class="flex-1 overflow-y-auto p-4 flex flex-col gap-2">
+<div class="flex items-center gap-3 text-on-surface py-2 cursor-pointer hover:bg-surface-variant rounded px-2">
+<span class="material-symbols-outlined text-secondary" style="font-variation-settings: 'FILL' 1;">folder</span>
+<span>app</span>
+</div>
+<div class="flex items-center gap-3 text-on-surface py-2 cursor-pointer hover:bg-surface-variant rounded px-2">
+<span class="material-symbols-outlined text-secondary" style="font-variation-settings: 'FILL' 1;">folder</span>
+<span>gradle</span>
+</div>
+<div class="flex items-center gap-3 text-on-surface-variant py-2 cursor-pointer hover:bg-surface-variant rounded px-2 ml-4">
+<span class="material-symbols-outlined text-outline">description</span>
+<span>build.gradle.kts</span>
+</div>
+<div class="flex items-center gap-3 text-on-surface-variant py-2 cursor-pointer hover:bg-surface-variant rounded px-2 ml-4">
+<span class="material-symbols-outlined text-outline">description</span>
+<span>settings.gradle.kts</span>
+</div>
+<div class="flex items-center gap-3 text-on-surface-variant py-2 cursor-pointer hover:bg-surface-variant rounded px-2 ml-4">
+<span class="material-symbols-outlined text-outline">description</span>
+<span>gradle.properties</span>
+</div>
+</div>
+</div>
+<!-- Top Navigation / Header -->
+<header class="flex justify-between items-center px-md py-sm w-full z-30 bg-surface-dim border-b border-outline-variant flex-shrink-0 h-14">
+<div class="flex items-center gap-4">
+<button class="text-on-surface-variant hover:text-primary transition-colors flex items-center justify-center" onclick="toggleDrawer()">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">menu</span>
+</button>
+<button class="text-on-surface-variant hover:text-primary transition-colors flex items-center justify-center">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">arrow_back</span>
+</button>
+<div class="flex items-center gap-2">
+<h1 class="font-headline-sm text-headline-sm text-on-surface">Terminal</h1>
+<div class="bg-surface-container-high border border-outline-variant rounded px-2 py-1 flex items-center gap-1 cursor-pointer hover:bg-surface-variant transition-colors ml-2">
+<span class="font-code-sm text-code-sm text-secondary">Agent: Bash</span>
+<span class="material-symbols-outlined text-[16px] text-on-surface-variant">arrow_drop_down</span>
+</div>
+</div>
+</div>
+<div class="flex items-center gap-4 text-on-surface-variant">
+<span class="material-symbols-outlined cursor-pointer hover:text-primary transition-colors" style="font-variation-settings: 'FILL' 0;">more_vert</span>
+</div>
+</header>
+<!-- Main Terminal Area -->
+<main class="flex-1 overflow-y-auto terminal-bg p-md flex flex-col font-code-md text-code-md relative z-10">
+<!-- Terminal Output History -->
+<div class="flex flex-col gap-2 pb-4">
+<div class="flex gap-2 text-on-surface-variant">
+<span class="text-secondary opacity-70">nativecode@device:~$</span>
+<span class="text-on-surface">aider --model claude-3.5-sonnet</span>
+</div>
+<div class="mt-2 text-on-surface-variant">
+<p class="">Aider v0.26.1</p>
+<p class="">Model: <span class="text-secondary">claude-3.5-sonnet</span></p>
+<p class="">Git repo: .git with 42 files</p>
+<p class="">Repo-map: using 1024 tokens</p>
+<p class="">Use /help for help, run "aider --help" to see cmd line args</p>
+</div>
+<div class="mt-4 flex gap-2">
+<span class="text-primary opacity-80">aider&gt;</span>
+<span class="text-on-surface">Please analyze the current directory and suggest optimizations for the UI components.</span>
+</div>
+<div class="mt-4 p-4 border border-outline-variant bg-[#151823] rounded flex flex-col gap-3">
+<div class="flex items-center gap-2 text-secondary">
+<span class="material-symbols-outlined animate-spin text-[18px]">progress_activity</span>
+<span class="font-code-md text-code-md">[AI is thinking...]</span>
+</div>
+<div class="text-on-surface-variant mt-2 border-l-2 border-secondary pl-3">
+<p class="">I've analyzed the UI components in your directory. Here are a few immediate suggestions:</p>
+<br/>
+<p class="">1. <span class="text-primary">Button.tsx</span>: The hover state relies on standard opacity shifts. Consider using the new Electric Violet gradient approach defined in the updated design system.</p>
+<p class="">2. <span class="text-primary">Card.tsx</span>: You have hardcoded hex values instead of using the Tailwind theme tokens (`bg-surface-container`).</p>
+<br/>
+<p class="">Would you like me to refactor `Button.tsx` first to align with the Glassmorphism specs?</p>
+</div>
+</div>
+<div class="mt-4 flex gap-2 items-center">
+<span class="text-primary opacity-80">aider&gt;</span>
+<span class="text-on-surface flex items-center h-5">
+<span class="inline-block w-2 h-4 bg-secondary cursor-blink ml-1"></span>
+</span>
+</div>
+</div>
+<!-- Spacer to push input bar to bottom if content is short -->
+<div class="flex-1"></div>
+</main>
+<!-- Keyboard Toolbar -->
+<div class="bg-surface-container-high border-t border-outline-variant px-md py-2 flex gap-2 overflow-x-auto flex-shrink-0 relative z-20">
+<button class="bg-surface px-3 py-1 rounded border border-outline-variant font-label-caps text-label-caps text-on-surface-variant hover:text-on-surface hover:border-primary transition-all whitespace-nowrap">Tab</button>
+<button class="bg-surface px-3 py-1 rounded border border-outline-variant font-label-caps text-label-caps text-on-surface-variant hover:text-on-surface hover:border-primary transition-all whitespace-nowrap">Ctrl</button>
+<button class="bg-surface px-3 py-1 rounded border border-outline-variant font-label-caps text-label-caps text-on-surface-variant hover:text-on-surface hover:border-primary transition-all whitespace-nowrap">Alt</button>
+<button class="bg-surface px-3 py-1 rounded border border-outline-variant font-label-caps text-label-caps text-on-surface-variant hover:text-on-surface hover:border-primary transition-all whitespace-nowrap">Esc</button>
+<button class="bg-surface px-3 py-1 rounded border border-outline-variant font-label-caps text-label-caps text-on-surface-variant hover:text-on-surface hover:border-primary transition-all whitespace-nowrap">/</button>
+</div>
+<!-- Input Bar -->
+<div class="bg-background p-md flex gap-3 flex-shrink-0 relative z-20 pb-6 md:pb-md items-center">
+<button class="flex-1 flex items-center justify-center gap-2 text-on-surface-variant hover:text-secondary p-3 transition-colors rounded border border-dashed border-outline-variant hover:bg-surface-variant hover:border-secondary">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">attach_file</span>
+<span class="font-label-caps text-label-caps">Add context (Images/Files)</span>
+</button>
+</div>
+<script>
+        function toggleDrawer() {
+            const drawer = document.getElementById('navDrawer');
+            const backdrop = document.getElementById('drawerBackdrop');
+            
+            if (drawer.classList.contains('drawer-closed')) {
+                drawer.classList.remove('drawer-closed');
+                drawer.classList.add('drawer-open');
+                backdrop.classList.remove('backdrop-closed');
+                backdrop.classList.add('backdrop-open');
+            } else {
+                drawer.classList.remove('drawer-open');
+                drawer.classList.add('drawer-closed');
+                backdrop.classList.remove('backdrop-open');
+                backdrop.classList.add('backdrop-closed');
+            }
+        }
+    </script>
+</body></html>

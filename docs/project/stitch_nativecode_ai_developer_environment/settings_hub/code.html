@@ -1,0 +1,261 @@
+<!DOCTYPE html><html lang="en" class="dark" style=""><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&amp;family=JetBrains+Mono:wght@400;600&amp;display=swap" rel="stylesheet"><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=block" rel="stylesheet"><script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script><script id="tailwind-config">try{
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "tertiary-fixed": "#ffdcc6",
+                        "outline-variant": "#4a4455",
+                        "surface-variant": "#37333e",
+                        "on-tertiary-container": "#ffe0cd",
+                        "on-primary-container": "#ede0ff",
+                        "on-primary-fixed-variant": "#5a00c6",
+                        "on-secondary-fixed-variant": "#004e5c",
+                        "on-surface-variant": "#ccc3d8",
+                        "secondary": "#4cd7f6",
+                        "surface-container-highest": "#37333e",
+                        "primary-fixed": "#eaddff",
+                        "on-primary-fixed": "#25005a",
+                        "on-secondary": "#003640",
+                        "error": "#ffb4ab",
+                        "on-secondary-container": "#00424e",
+                        "secondary-fixed-dim": "#4cd7f6",
+                        "on-secondary-fixed": "#001f26",
+                        "surface-container-low": "#1d1a24",
+                        "secondary-fixed": "#acedff",
+                        "primary": "#d2bbff",
+                        "secondary-container": "#03b5d3",
+                        "on-error-container": "#ffdad6",
+                        "on-tertiary-fixed": "#301400",
+                        "outline": "#958da1",
+                        "error-container": "#93000a",
+                        "on-tertiary": "#4f2500",
+                        "on-background": "#e8dfee",
+                        "tertiary-fixed-dim": "#ffb784",
+                        "surface-container-lowest": "#100d16",
+                        "on-error": "#690005",
+                        "primary-container": "#7c3aed",
+                        "tertiary-container": "#a15100",
+                        "surface-dim": "#15121b",
+                        "on-tertiary-fixed-variant": "#713700",
+                        "background": "#15121b",
+                        "inverse-surface": "#e8dfee",
+                        "on-primary": "#3f008e",
+                        "primary-fixed-dim": "#d2bbff",
+                        "surface-tint": "#d2bbff",
+                        "surface-container-high": "#2c2833",
+                        "on-surface": "#e8dfee",
+                        "inverse-primary": "#732ee4",
+                        "tertiary": "#ffb784",
+                        "surface-container": "#221e28",
+                        "surface": "#15121b",
+                        "surface-bright": "#3c3742",
+                        "inverse-on-surface": "#332f39"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "xl": "32px",
+                        "margin-mobile": "16px",
+                        "base": "4px",
+                        "sm": "8px",
+                        "lg": "24px",
+                        "gutter": "16px",
+                        "margin-desktop": "32px",
+                        "md": "16px",
+                        "2xl": "48px",
+                        "xs": "4px"
+                    },
+                    "fontFamily": {
+                        "body-md": ["Inter"],
+                        "code-md": ["JetBrains Mono"],
+                        "headline-lg": ["Inter"],
+                        "headline-md": ["Inter"],
+                        "headline-lg-mobile": ["Inter"],
+                        "body-lg": ["Inter"],
+                        "label-caps": ["JetBrains Mono"],
+                        "headline-sm": ["Inter"],
+                        "code-sm": ["JetBrains Mono"]
+                    },
+                    "fontSize": {
+                        "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "code-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "headline-lg": ["32px", { "lineHeight": "40px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "headline-md": ["24px", { "lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+                        "headline-lg-mobile": ["24px", { "lineHeight": "32px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "body-lg": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],
+                        "label-caps": ["11px", { "lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600" }],
+                        "headline-sm": ["18px", { "lineHeight": "24px", "letterSpacing": "0em", "fontWeight": "600" }],
+                        "code-sm": ["12px", { "lineHeight": "16px", "fontWeight": "400" }]
+                    }
+                }
+            }
+        }
+    }catch(_e){}</script><meta charset="utf-8"></head><body class="min-h-screen flex flex-col font-body-md text-body-md antialiased overflow-x-hidden">
+<!-- TopAppBar -->
+<header class="flex justify-between items-center px-md py-sm w-full z-50 bg-surface-dim dark:bg-surface-dim border-b border-outline-variant dark:border-outline-variant">
+<div class="flex items-center gap-sm">
+<span class="material-symbols-outlined text-secondary dark:text-secondary text-2xl">memory</span>
+<h1 class="font-headline-md text-headline-md font-bold text-primary dark:text-primary">NativeCode</h1>
+</div>
+<button class="text-on-surface-variant dark:text-on-surface-variant hover:bg-surface-variant dark:hover:bg-surface-variant p-2 rounded-full transition-colors">
+<span class="material-symbols-outlined text-2xl">account_circle</span>
+</button>
+</header>
+<div class="flex flex-1 overflow-hidden h-[calc(100vh-65px)]">
+<!-- NavigationDrawer (Hidden on mobile) -->
+<nav class="hidden md:flex flex-col h-full py-lg w-80 docked left-0 border-r border-outline-variant bg-surface-container-low dark:bg-surface-container-low">
+<div class="px-md mb-lg">
+<div class="flex items-center gap-md mb-sm">
+<img alt="Developer Profile" class="w-12 h-12 rounded-full border border-primary p-0.5 object-cover" data-alt="A sleek, futuristic avatar profile picture for a developer in a high-tech IDE environment. Dark mode aesthetic with electric violet and neon cyan glowing accents. The avatar should look professional yet cyberpunk-inspired." src="https://lh3.googleusercontent.com/aida-public/AB6AXuC-sUEMHQj4HXmsQApjD9t2XLNGh0PMrtej6jXZGK6woHl3zQsq2yoc-8qyXOCg5oG3KmGJRgK3-0uBUi5q5YIRNSYBAX_1anF8Zve0x9Q1oon6e46KDEI6AKgCoCA4lLZCwY_59f36D724iMQAQsKMiONyM3higq4bVdQ_znAlmd0mFn5L3s8n_hiy846NZ7PWyESB1zUUIgfoozOx9T8k2QA1mX_VdEu9ZdLKiACBR0bqmJSGrdYbZg">
+<div>
+<h2 class="font-headline-md text-headline-md text-primary">Dev Environment</h2>
+<p class="font-code-sm text-code-sm text-on-surface-variant">Debian 12 | ARM64</p>
+</div>
+</div>
+<span class="inline-block px-2 py-1 bg-secondary/10 text-secondary font-label-caps text-label-caps rounded-full border border-secondary/20">Active</span>
+</div>
+<ul class="flex-1 space-y-2 px-sm">
+<li class="">
+<a class="flex items-center gap-md px-md py-sm rounded-lg text-on-surface-variant hover:bg-surface-variant transition-colors" href="#">
+<span class="material-symbols-outlined">folder</span>
+<span class="font-body-md text-body-md">Local Files</span>
+</a>
+</li>
+<li class="">
+<a class="flex items-center gap-md px-md py-sm rounded-lg text-on-surface-variant hover:bg-surface-variant transition-colors" href="#">
+<span class="material-symbols-outlined">cloud_download</span>
+<span class="font-body-md text-body-md">Remote Repos</span>
+</a>
+</li>
+<li class="">
+<a class="flex items-center gap-md px-md py-sm rounded-lg text-on-surface-variant hover:bg-surface-variant transition-colors" href="#">
+<span class="material-symbols-outlined">smart_toy</span>
+<span class="font-body-md text-body-md">AI Models</span>
+</a>
+</li>
+<li class="">
+<a class="flex items-center gap-md px-md py-sm rounded-lg text-on-surface-variant hover:bg-surface-variant transition-colors" href="#">
+<span class="material-symbols-outlined">description</span>
+<span class="font-body-md text-body-md">System Logs</span>
+</a>
+</li>
+</ul>
+</nav>
+<!-- Main Content -->
+<main class="flex-1 overflow-y-auto p-margin-mobile md:p-margin-desktop bg-[#0B0E14] relative">
+<div class="max-w-4xl mx-auto space-y-xl relative z-10">
+<header class="mb-xl">
+<h2 class="font-headline-lg-mobile md:font-headline-lg text-headline-lg-mobile md:text-headline-lg text-on-background mb-sm">Settings Hub</h2>
+<p class="text-on-surface-variant font-body-lg text-body-lg">Configure your development environment and preferences.</p>
+</header>
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-md md:gap-lg">
+<!-- Environment Card -->
+<section class="glass-panel rounded-xl p-lg flex flex-col justify-between">
+<div>
+<div class="flex items-center gap-sm mb-md">
+<span class="material-symbols-outlined text-secondary">terminal</span>
+<h3 class="font-headline-sm text-headline-sm text-on-background">Environment</h3>
+</div>
+<div class="space-y-sm mb-lg">
+<div class="flex justify-between items-center bg-[#151823] p-sm rounded-lg border border-outline-variant/50">
+<span class="text-on-surface-variant">Container Method</span>
+<span class="font-code-md text-code-md text-primary">PRoot</span>
+</div>
+<div class="flex justify-between items-center bg-[#151823] p-sm rounded-lg border border-outline-variant/50">
+<span class="text-on-surface-variant">OS Version</span>
+<span class="font-code-md text-code-md text-primary">Debian 12</span>
+</div>
+</div>
+</div>
+<div class="flex flex-col sm:flex-row gap-sm mt-auto">
+<button class="flex-1 py-2 px-4 rounded-full bg-[#1E2230] border border-[#2D3344] text-on-background font-body-md text-body-md hover:bg-surface-variant transition-colors text-center">Reset Environment</button>
+<button class="flex-1 py-2 px-4 rounded-full bg-error-container/20 border border-error/50 text-error font-body-md text-body-md hover:bg-error-container/40 transition-colors text-center">Destroy Container</button>
+</div>
+</section>
+<!-- AI Tools Card -->
+<section class="glass-panel rounded-xl p-lg flex flex-col justify-between relative overflow-hidden">
+<div class="absolute -right-10 -top-10 w-32 h-32 bg-primary/10 rounded-full blur-2xl pointer-events-none"></div>
+<div>
+<div class="flex items-center gap-sm mb-md relative z-10">
+<span class="material-symbols-outlined text-primary">smart_toy</span>
+<h3 class="font-headline-sm text-headline-sm text-on-background">AI Tools</h3>
+</div>
+<p class="text-on-surface-variant mb-sm">Installed Models:</p>
+<div class="flex flex-wrap gap-sm mb-lg relative z-10">
+<span class="px-3 py-1 bg-secondary/10 text-secondary font-code-sm text-code-sm rounded border border-secondary/20">Claude</span>
+<span class="px-3 py-1 bg-secondary/10 text-secondary font-code-sm text-code-sm rounded border border-secondary/20">Aider</span>
+<span class="px-3 py-1 bg-secondary/10 text-secondary font-code-sm text-code-sm rounded border border-secondary/20">Cline</span>
+</div>
+</div>
+<button class="w-full py-2 px-4 rounded-full bg-primary-container text-on-primary-container font-body-md text-body-md hover:brightness-110 transition-all text-center mt-auto relative z-10">Manage CLI Tools</button>
+</section>
+<!-- Appearance Card -->
+<section class="glass-panel rounded-xl p-lg">
+<div class="flex items-center gap-sm mb-md">
+<span class="material-symbols-outlined text-tertiary">palette</span>
+<h3 class="font-headline-sm text-headline-sm text-on-background">Appearance</h3>
+</div>
+<div class="space-y-md">
+<div>
+<label class="block text-on-surface-variant text-sm mb-1">Theme</label>
+<select class="w-full bg-[#151823] border-b-2 border-outline-variant text-on-background font-body-md text-body-md p-2 focus:border-secondary focus:ring-0 rounded-t-lg input-glow transition-colors appearance-none">
+<option>Midnight Aurora (Dark)</option>
+<option>Abyss (Deep Dark)</option>
+<option>Solarized (Light)</option>
+</select>
+</div>
+<div>
+<label class="block text-on-surface-variant text-sm mb-1">Editor Font Size</label>
+<div class="flex items-center gap-md">
+<input class="flex-1 accent-secondary" max="24" min="10" type="range" value="14">
+<span class="font-code-md text-code-md text-primary w-12 text-right">14px</span>
+</div>
+</div>
+</div>
+</section>
+<!-- Account Card -->
+<section class="glass-panel rounded-xl p-lg flex flex-col justify-between">
+<div>
+<div class="flex items-center gap-sm mb-md">
+<span class="material-symbols-outlined text-secondary">account_circle</span>
+<h3 class="font-headline-sm text-headline-sm text-on-background">Account Connections</h3>
+</div>
+<div class="flex items-center justify-between bg-[#151823] p-md rounded-lg border border-outline-variant/50 mb-lg">
+<div class="flex items-center gap-md">
+<span class="material-symbols-outlined text-on-background">code</span>
+<div>
+<p class="font-body-md text-body-md text-on-background">GitHub</p>
+<p class="font-code-sm text-code-sm text-secondary">Connected (dev_ninja)</p>
+</div>
+</div>
+<span class="material-symbols-outlined text-secondary" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+</div>
+</div>
+<button class="w-full py-2 px-4 rounded-full bg-[#1E2230] border border-[#2D3344] text-on-surface-variant font-body-md text-body-md hover:text-error hover:border-error/50 transition-colors text-center mt-auto">Disconnect GitHub</button>
+</section>
+</div>
+</div>
+</main>
+</div>
+<!-- BottomNavBar (Mobile Only) -->
+<nav class="md:hidden fixed bottom-8 left-1/2 -translate-x-1/2 w-[90%] max-w-md z-50 flex justify-around items-center py-sm px-md bg-surface-container/80 dark:bg-surface-container/80 rounded-full backdrop-blur-xl border border-white/10 dark:border-white/10 shadow-2xl"><a class="flex items-center justify-center text-on-surface-variant p-3 hover:scale-110 transition-transform" href="#">
+  <span class="material-symbols-outlined">dashboard</span>
+</a>
+<a class="flex items-center justify-center text-on-surface-variant p-3 hover:scale-110 transition-transform" href="#">
+  <span class="material-symbols-outlined">folder_open</span>
+</a>
+<a class="flex items-center justify-center text-on-surface-variant p-3 hover:scale-110 transition-transform" href="#">
+  <span class="material-symbols-outlined">terminal</span>
+</a>
+<a class="flex items-center justify-center text-on-surface-variant p-3 hover:scale-110 transition-transform" href="#">
+  <span class="material-symbols-outlined">alt_route</span>
+</a>
+<a class="flex items-center justify-center bg-primary-container text-on-primary-container rounded-full w-12 h-12 transition-transform hover:scale-110 duration-100" href="#">
+  <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">settings</span>
+</a></nav>
+</body></html>

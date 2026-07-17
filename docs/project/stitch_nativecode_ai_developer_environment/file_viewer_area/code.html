@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>File Viewer - NativeCode</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&amp;family=JetBrains+Mono:wght@400;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-surface-variant": "#ccc3d8",
+                        "surface-dim": "#15121b",
+                        "surface-container-low": "#1d1a24",
+                        "on-secondary-container": "#00424e",
+                        "on-background": "#e8dfee",
+                        "tertiary-fixed": "#ffdcc6",
+                        "outline": "#958da1",
+                        "on-tertiary-fixed-variant": "#713700",
+                        "tertiary-container": "#a15100",
+                        "secondary-fixed": "#acedff",
+                        "on-primary-container": "#ede0ff",
+                        "on-surface": "#e8dfee",
+                        "surface-bright": "#3c3742",
+                        "secondary-fixed-dim": "#4cd7f6",
+                        "surface-variant": "#37333e",
+                        "inverse-surface": "#e8dfee",
+                        "secondary-container": "#03b5d3",
+                        "on-tertiary": "#4f2500",
+                        "primary-fixed": "#eaddff",
+                        "on-primary-fixed-variant": "#5a00c6",
+                        "primary-container": "#7c3aed",
+                        "surface-container-high": "#2c2833",
+                        "error": "#ffb4ab",
+                        "on-error": "#690005",
+                        "secondary": "#4cd7f6",
+                        "on-tertiary-container": "#ffe0cd",
+                        "error-container": "#93000a",
+                        "on-primary-fixed": "#25005a",
+                        "surface-container-lowest": "#100d16",
+                        "on-secondary": "#003640",
+                        "on-secondary-fixed": "#001f26",
+                        "inverse-on-surface": "#332f39",
+                        "tertiary-fixed-dim": "#ffb784",
+                        "surface-container-highest": "#37333e",
+                        "on-secondary-fixed-variant": "#004e5c",
+                        "primary": "#d2bbff",
+                        "on-error-container": "#ffdad6",
+                        "on-tertiary-fixed": "#301400",
+                        "outline-variant": "#4a4455",
+                        "surface-tint": "#d2bbff",
+                        "surface": "#15121b",
+                        "on-primary": "#3f008e",
+                        "tertiary": "#ffb784",
+                        "inverse-primary": "#732ee4",
+                        "background": "#15121b",
+                        "surface-container": "#221e28",
+                        "primary-fixed-dim": "#d2bbff"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "base": "4px",
+                        "xs": "4px",
+                        "margin-mobile": "16px",
+                        "xl": "32px",
+                        "2xl": "48px",
+                        "margin-desktop": "32px",
+                        "gutter": "16px",
+                        "sm": "8px",
+                        "md": "16px",
+                        "lg": "24px"
+                    },
+                    "fontFamily": {
+                        "headline-lg-mobile": ["Inter"],
+                        "code-md": ["JetBrains Mono"],
+                        "body-lg": ["Inter"],
+                        "code-sm": ["JetBrains Mono"],
+                        "label-caps": ["JetBrains Mono"],
+                        "headline-md": ["Inter"],
+                        "headline-lg": ["Inter"],
+                        "body-md": ["Inter"],
+                        "headline-sm": ["Inter"]
+                    },
+                    "fontSize": {
+                        "headline-lg-mobile": ["24px", { "lineHeight": "32px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "code-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "body-lg": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],
+                        "code-sm": ["12px", { "lineHeight": "16px", "fontWeight": "400" }],
+                        "label-caps": ["11px", { "lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600" }],
+                        "headline-md": ["24px", { "lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+                        "headline-lg": ["32px", { "lineHeight": "40px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "headline-sm": ["18px", { "lineHeight": "24px", "letterSpacing": "0em", "fontWeight": "600" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        body {
+            background-color: #0B0E14; /* Deep Void Base */
+            color: #e8dfee;
+            margin: 0;
+            font-family: 'Inter', sans-serif;
+            overflow-x: hidden;
+        }
+        .glass-panel {
+            background: rgba(21, 24, 35, 0.8);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .code-block {
+            background-color: #050505;
+        }
+        .card-panel {
+            background-color: #151823;
+            border: 1px solid #2D3344;
+        }
+    </style>
+</head>
+<body class="flex flex-col min-h-screen relative pb-[100px]">
+<!-- TopAppBar -->
+<header class="bg-surface-dim dark:bg-surface-dim docked full-width top-0 flat no shadows flex justify-between items-center px-md py-sm w-full z-50 sticky">
+<button class="text-secondary dark:text-secondary hover:bg-surface-variant dark:hover:bg-surface-variant p-2 rounded-full transition-colors flex items-center justify-center">
+<span class="material-symbols-outlined" data-icon="arrow_back">arrow_back</span>
+</button>
+<div class="font-headline-md text-headline-md font-bold text-primary dark:text-primary truncate max-w-[60%]">
+            main.rs
+        </div>
+<button class="text-secondary dark:text-secondary hover:bg-surface-variant dark:hover:bg-surface-variant p-2 rounded-full transition-colors flex items-center justify-center">
+<span class="material-symbols-outlined" data-icon="more_vert">more_vert</span>
+</button>
+</header>
+<!-- Main Content Area -->
+<main class="flex-grow p-margin-mobile md:p-margin-desktop space-y-xl max-w-7xl mx-auto w-full">
+<!-- Image Viewer (Bento Grid Style) -->
+<section class="card-panel rounded-xl overflow-hidden relative group">
+<div class="absolute top-sm right-sm z-10 flex gap-2">
+<span class="bg-surface-container-highest/80 backdrop-blur-md px-2 py-1 rounded font-label-caps text-label-caps text-on-surface">PNG</span>
+</div>
+<div class="h-64 md:h-96 w-full flex items-center justify-center bg-surface-container-lowest p-md relative overflow-hidden">
+<img alt="Preview" class="max-h-full max-w-full object-contain cursor-zoom-in hover:scale-105 transition-transform duration-300" data-alt="A highly detailed futuristic interface design schematic displayed on a dark background. The schematic features glowing cyan and violet geometric lines, data visualization charts, and technical callouts. The aesthetic is cybernetic, precise, and high-contrast, fitting a deep void dark mode environment." src="./screenshot_demo.png"/>
+</div>
+<div class="p-md flex justify-between items-center border-t border-outline-variant/30">
+<div class="flex items-center gap-sm text-on-surface-variant font-body-md text-body-md">
+<span class="material-symbols-outlined text-[18px]" data-icon="image">image</span>
+<span>1920x1080 • 2.4 MB</span>
+</div>
+<div class="flex gap-2">
+<button class="p-2 rounded bg-surface-variant hover:bg-surface-bright transition-colors text-on-surface" title="Download">
+<span class="material-symbols-outlined text-[20px]" data-icon="download">download</span>
+</button>
+</div>
+</div>
+</section>
+<!-- Audio Player (Sleek Visualizer) -->
+<section class="card-panel rounded-xl p-md flex flex-col gap-md">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-md">
+<div class="w-12 h-12 rounded bg-primary-container flex items-center justify-center text-on-primary-container">
+<span class="material-symbols-outlined text-[24px]" data-icon="music_note" data-weight="fill" style="font-variation-settings: 'FILL' 1;">music_note</span>
+</div>
+<div>
+<h3 class="font-headline-sm text-headline-sm text-on-surface m-0">system_boot.wav</h3>
+<p class="font-code-sm text-code-sm text-on-surface-variant m-0">Audio • 0:14</p>
+</div>
+</div>
+<span class="bg-surface-container-highest px-2 py-1 rounded font-label-caps text-label-caps text-on-surface">WAV</span>
+</div>
+<!-- Waveform Mockup -->
+<div class="w-full h-16 flex items-end gap-1 opacity-80 py-2">
+<!-- Creating a mock waveform with varying heights -->
+<script>
+                    for(let i=0; i<40; i++) {
+                        let h = Math.random() * 100;
+                        let active = i < 15 ? 'bg-primary' : 'bg-surface-variant';
+                        document.write(`<div class="w-full rounded-full ${active}" style="height: ${Math.max(10, h)}%"></div>`);
+                    }
+                </script>
+</div>
+<div class="flex items-center justify-between gap-md">
+<span class="font-code-sm text-code-sm text-on-surface-variant">0:04</span>
+<div class="flex items-center gap-sm">
+<button class="p-2 rounded-full hover:bg-surface-variant text-on-surface transition-colors">
+<span class="material-symbols-outlined" data-icon="fast_rewind">fast_rewind</span>
+</button>
+<button class="w-10 h-10 rounded-full bg-primary flex items-center justify-center text-on-primary hover:brightness-110 transition-all shadow-[0_0_15px_rgba(124,58,237,0.3)]">
+<span class="material-symbols-outlined" data-icon="play_arrow" data-weight="fill" style="font-variation-settings: 'FILL' 1;">play_arrow</span>
+</button>
+<button class="p-2 rounded-full hover:bg-surface-variant text-on-surface transition-colors">
+<span class="material-symbols-outlined" data-icon="fast_forward">fast_forward</span>
+</button>
+</div>
+<span class="font-code-sm text-code-sm text-on-surface-variant">0:14</span>
+</div>
+</section>
+<!-- Video Player -->
+<section class="card-panel rounded-xl overflow-hidden group">
+<div class="relative aspect-video bg-black flex items-center justify-center">
+<img alt="Video Thumbnail" class="w-full h-full object-cover opacity-60" data-alt="A dramatic, high-contrast video still showing a futuristic cityscape at night. The scene is illuminated by neon cyan and electric violet lights reflecting off rain-slicked dark streets. The atmosphere is cinematic and moody, matching a sophisticated dark mode aesthetic." src="./logo_demo.png"/>
+<!-- Play Overlay -->
+<div class="absolute inset-0 flex items-center justify-center bg-black/40 group-hover:bg-black/20 transition-colors">
+<button class="w-16 h-16 rounded-full bg-surface-container/50 backdrop-blur-md flex items-center justify-center border border-white/10 hover:scale-110 transition-transform text-white">
+<span class="material-symbols-outlined text-[32px]" data-icon="play_arrow" data-weight="fill" style="font-variation-settings: 'FILL' 1;">play_arrow</span>
+</button>
+</div>
+<!-- Controls Overlay (Bottom) -->
+<div class="absolute bottom-0 left-0 right-0 p-sm glass-panel flex flex-col gap-sm opacity-0 group-hover:opacity-100 transition-opacity">
+<!-- Progress -->
+<div class="w-full h-1 bg-surface-variant rounded-full overflow-hidden cursor-pointer">
+<div class="h-full bg-secondary w-1/3 relative">
+<div class="absolute right-0 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-white shadow-[0_0_8px_#4cd7f6]"></div>
+</div>
+</div>
+<!-- Controls -->
+<div class="flex justify-between items-center text-white">
+<div class="flex items-center gap-sm">
+<button class="p-1 hover:text-secondary transition-colors"><span class="material-symbols-outlined text-[20px]" data-icon="pause">pause</span></button>
+<span class="font-code-sm text-code-sm">01:23 / 04:56</span>
+</div>
+<div class="flex items-center gap-sm">
+<button class="p-1 hover:text-secondary transition-colors"><span class="material-symbols-outlined text-[20px]" data-icon="volume_up">volume_up</span></button>
+<button class="p-1 hover:text-secondary transition-colors"><span class="material-symbols-outlined text-[20px]" data-icon="fullscreen">fullscreen</span></button>
+</div>
+</div>
+</div>
+</div>
+<div class="p-md flex justify-between items-center bg-surface-container-lowest">
+<div>
+<h3 class="font-body-lg text-body-lg text-on-surface m-0">demo_recording.mp4</h3>
+<p class="font-code-sm text-code-sm text-on-surface-variant m-0">1920x1080 • H.264 • 45 MB</p>
+</div>
+<span class="bg-surface-variant px-2 py-1 rounded font-label-caps text-label-caps text-on-surface">MP4</span>
+</div>
+</section>
+<!-- Code Viewer -->
+<section class="code-block rounded-xl overflow-hidden border border-outline-variant/30 flex flex-col">
+<div class="flex justify-between items-center p-sm border-b border-outline-variant/30 bg-surface-container-low">
+<div class="flex items-center gap-sm px-sm">
+<span class="material-symbols-outlined text-[18px] text-tertiary" data-icon="terminal">terminal</span>
+<span class="font-code-md text-code-md text-on-surface">main.rs</span>
+</div>
+<div class="flex gap-2">
+<button class="flex items-center gap-1 px-3 py-1.5 rounded bg-surface-variant hover:bg-surface-bright transition-colors text-on-surface font-label-caps text-label-caps">
+<span class="material-symbols-outlined text-[14px]" data-icon="content_copy">content_copy</span>
+                        COPY
+                    </button>
+</div>
+</div>
+<div class="p-md overflow-x-auto">
+<pre class="font-code-md text-code-md leading-relaxed m-0 text-on-surface-variant"><span class="text-outline select-none pr-4 border-r border-outline-variant/30 mr-4 inline-block text-right w-8">1</span><span class="text-primary">fn</span> <span class="text-secondary">main</span>() {
+<span class="text-outline select-none pr-4 border-r border-outline-variant/30 mr-4 inline-block text-right w-8">2</span>    <span class="text-tertiary">println!</span>(<span class="text-[#acedff]">"Hello from the Deep Void!"</span>);
+<span class="text-outline select-none pr-4 border-r border-outline-variant/30 mr-4 inline-block text-right w-8">3</span>    
+<span class="text-outline select-none pr-4 border-r border-outline-variant/30 mr-4 inline-block text-right w-8">4</span>    <span class="text-primary">let</span> active_state = <span class="text-primary-container">true</span>;
+<span class="text-outline select-none pr-4 border-r border-outline-variant/30 mr-4 inline-block text-right w-8">5</span>    <span class="text-primary">if</span> active_state {
+<span class="text-outline select-none pr-4 border-r border-outline-variant/30 mr-4 inline-block text-right w-8">6</span>        <span class="text-secondary">initialize_system</span>();
+<span class="text-outline select-none pr-4 border-r border-outline-variant/30 mr-4 inline-block text-right w-8">7</span>    }
+<span class="text-outline select-none pr-4 border-r border-outline-variant/30 mr-4 inline-block text-right w-8">8</span>}</pre>
+</div>
+</section>
+</main>
+<!-- BottomNavBar (Shared Component Execution) -->
+<!-- Active State Logic: 'folder_open' represents files/viewer -->
+<nav class="fixed bottom-lg mx-auto w-[90%] rounded-full backdrop-blur-xl border border-white/10 dark:border-white/10 shadow-2xl bg-surface-container/80 dark:bg-surface-container/80 fixed bottom-lg left-1/2 -translate-x-1/2 w-[90%] max-w-md z-50 flex justify-around items-center py-sm px-md md:hidden">
+<a class="flex items-center justify-center text-on-surface-variant p-3 hover:scale-110 transition-transform" href="#">
+<span class="material-symbols-outlined" data-icon="dashboard">dashboard</span>
+</a>
+<a class="flex items-center justify-center bg-primary-container text-on-primary-container rounded-full p-3 hover:scale-110 transition-transform scale-95 duration-100" href="#">
+<span class="material-symbols-outlined" data-icon="folder_open">folder_open</span>
+</a>
+<a class="flex items-center justify-center text-on-surface-variant p-3 hover:scale-110 transition-transform" href="#">
+<span class="material-symbols-outlined" data-icon="terminal">terminal</span>
+</a>
+<a class="flex items-center justify-center text-on-surface-variant p-3 hover:scale-110 transition-transform" href="#">
+<span class="material-symbols-outlined" data-icon="alt_route">alt_route</span>
+</a>
+<a class="flex items-center justify-center text-on-surface-variant p-3 hover:scale-110 transition-transform" href="#">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+</a>
+</nav>
+</body></html>

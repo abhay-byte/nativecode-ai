@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Architecture Selection - NativeCode</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&amp;family=JetBrains+Mono:wght@400;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "tertiary-fixed": "#ffdcc6",
+                        "outline-variant": "#4a4455",
+                        "surface-variant": "#37333e",
+                        "on-tertiary-container": "#ffe0cd",
+                        "on-primary-container": "#ede0ff",
+                        "on-primary-fixed-variant": "#5a00c6",
+                        "on-secondary-fixed-variant": "#004e5c",
+                        "on-surface-variant": "#ccc3d8",
+                        "secondary": "#4cd7f6",
+                        "surface-container-highest": "#37333e",
+                        "primary-fixed": "#eaddff",
+                        "on-primary-fixed": "#25005a",
+                        "on-secondary": "#003640",
+                        "error": "#ffb4ab",
+                        "on-secondary-container": "#00424e",
+                        "secondary-fixed-dim": "#4cd7f6",
+                        "on-secondary-fixed": "#001f26",
+                        "surface-container-low": "#1d1a24",
+                        "secondary-fixed": "#acedff",
+                        "primary": "#d2bbff",
+                        "secondary-container": "#03b5d3",
+                        "on-error-container": "#ffdad6",
+                        "on-tertiary-fixed": "#301400",
+                        "outline": "#958da1",
+                        "error-container": "#93000a",
+                        "on-tertiary": "#4f2500",
+                        "on-background": "#e8dfee",
+                        "tertiary-fixed-dim": "#ffb784",
+                        "surface-container-lowest": "#100d16",
+                        "on-error": "#690005",
+                        "primary-container": "#7c3aed",
+                        "tertiary-container": "#a15100",
+                        "surface-dim": "#15121b",
+                        "on-tertiary-fixed-variant": "#713700",
+                        "background": "#15121b",
+                        "inverse-surface": "#e8dfee",
+                        "on-primary": "#3f008e",
+                        "primary-fixed-dim": "#d2bbff",
+                        "surface-tint": "#d2bbff",
+                        "surface-container-high": "#2c2833",
+                        "on-surface": "#e8dfee",
+                        "inverse-primary": "#732ee4",
+                        "tertiary": "#ffb784",
+                        "surface-container": "#221e28",
+                        "surface": "#15121b",
+                        "surface-bright": "#3c3742",
+                        "inverse-on-surface": "#332f39"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "xl": "32px",
+                        "margin-mobile": "16px",
+                        "base": "4px",
+                        "sm": "8px",
+                        "lg": "24px",
+                        "gutter": "16px",
+                        "margin-desktop": "32px",
+                        "md": "16px",
+                        "2xl": "48px",
+                        "xs": "4px"
+                    },
+                    "fontFamily": {
+                        "body-md": ["Inter"],
+                        "code-md": ["JetBrains Mono"],
+                        "headline-lg": ["Inter"],
+                        "headline-md": ["Inter"],
+                        "headline-lg-mobile": ["Inter"],
+                        "body-lg": ["Inter"],
+                        "label-caps": ["JetBrains Mono"],
+                        "headline-sm": ["Inter"],
+                        "code-sm": ["JetBrains Mono"]
+                    },
+                    "fontSize": {
+                        "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "code-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "headline-lg": ["32px", { "lineHeight": "40px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "headline-md": ["24px", { "lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+                        "headline-lg-mobile": ["24px", { "lineHeight": "32px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "body-lg": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],
+                        "label-caps": ["11px", { "lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600" }],
+                        "headline-sm": ["18px", { "lineHeight": "24px", "letterSpacing": "0em", "fontWeight": "600" }],
+                        "code-sm": ["12px", { "lineHeight": "16px", "fontWeight": "400" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        body {
+            background-color: #0B0E14; /* Deep Void Base */
+            color: #e8dfee;
+            margin: 0;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow-x: hidden;
+        }
+        
+        .card-panel {
+            background-color: #151823;
+            border: 1px solid #2D3344;
+            transition: all 0.3s ease;
+        }
+        
+        .card-panel:hover {
+            border-color: theme('colors.secondary');
+            box-shadow: 0 8px 24px rgba(3, 181, 211, 0.15); /* Glow */
+            transform: translateY(-2px);
+        }
+        
+        .card-active {
+            border-color: theme('colors.primary');
+            box-shadow: 0 8px 24px rgba(124, 58, 237, 0.2);
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .card-active::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 0;
+            bottom: 0;
+            width: 3px;
+            background-color: theme('colors.primary');
+        }
+
+        .ambient-glow {
+            position: absolute;
+            width: 40vw;
+            height: 40vw;
+            border-radius: 50%;
+            filter: blur(100px);
+            opacity: 0.1;
+            pointer-events: none;
+            z-index: -1;
+        }
+    </style>
+</head>
+<body class="font-body-md text-body-md antialiased relative selection:bg-primary-container selection:text-on-primary-container">
+<!-- Ambient Background Effects -->
+<div class="ambient-glow bg-primary top-[-20%] left-[-10%]"></div>
+<div class="ambient-glow bg-secondary bottom-[-20%] right-[-10%]"></div>
+<!-- Onboarding Layout (Navigation Shell Suppressed per rules for Transactional/Onboarding) -->
+<main class="flex-grow flex items-center justify-center p-margin-mobile md:p-margin-desktop min-h-screen relative z-10">
+<div class="w-full max-w-2xl flex flex-col items-center">
+<!-- Header Section -->
+<div class="text-center mb-xl">
+<div class="inline-flex items-center justify-center p-3 rounded-xl bg-surface-container mb-md border border-outline-variant/30">
+<span class="material-symbols-outlined text-primary text-3xl" data-icon="memory">memory</span>
+</div>
+<h1 class="font-headline-lg-mobile md:font-headline-lg text-headline-lg-mobile md:text-headline-lg text-on-surface mb-sm">
+                    NativeCode AI Dev Environment
+                </h1>
+<p class="font-body-lg text-body-lg text-on-surface-variant max-w-lg mx-auto">
+                    Choose your isolation method to configure your workspace.
+                </p>
+</div>
+<!-- Architecture Options Grid -->
+<div class="grid grid-cols-1 md:grid-cols-2 gap-lg w-full mb-2xl">
+<!-- Option A: PROOT -->
+<button class="card-panel rounded-xl p-lg flex flex-col text-left group w-full card-active" onclick="selectCard(this)">
+<div class="flex justify-between items-start w-full mb-md">
+<div class="p-2 rounded-lg bg-surface-container-high text-primary">
+<span class="material-symbols-outlined" data-icon="shield">shield</span>
+</div>
+<span class="font-label-caps text-label-caps bg-primary-container/20 text-primary px-2 py-1 rounded">RECOMMENDED</span>
+</div>
+<h2 class="font-headline-sm text-headline-sm text-on-surface mb-xs group-hover:text-primary transition-colors">
+                        PROOT
+                    </h2>
+<p class="font-body-md text-body-md text-on-surface-variant flex-grow">
+                        No root required. Bypasses W^X via JNI. Ideal for most standard development tasks and AI model testing.
+                    </p>
+<div class="mt-md pt-sm border-t border-outline-variant/50 w-full flex items-center justify-between text-on-surface-variant">
+<span class="font-code-sm text-code-sm">User Space</span>
+<span class="material-symbols-outlined text-[16px]" data-icon="check_circle">check_circle</span>
+</div>
+</button>
+<!-- Option B: CHROOT -->
+<button class="card-panel rounded-xl p-lg flex flex-col text-left group w-full" onclick="selectCard(this)">
+<div class="flex justify-between items-start w-full mb-md">
+<div class="p-2 rounded-lg bg-surface-container-high text-secondary">
+<span class="material-symbols-outlined" data-icon="lock_open">lock_open</span>
+</div>
+</div>
+<h2 class="font-headline-sm text-headline-sm text-on-surface mb-xs group-hover:text-secondary transition-colors">
+                        CHROOT
+                    </h2>
+<p class="font-body-md text-body-md text-on-surface-variant flex-grow">
+                        Requires Root access. Delivers native performance and full hardware acceleration for heavy workloads.
+                    </p>
+<div class="mt-md pt-sm border-t border-outline-variant/50 w-full flex items-center justify-between text-on-surface-variant">
+<span class="font-code-sm text-code-sm">Kernel Space</span>
+<span class="material-symbols-outlined text-[16px]" data-icon="speed">speed</span>
+</div>
+</button>
+</div>
+<!-- Action Area -->
+<div class="flex flex-col items-center w-full max-w-sm gap-md">
+<button class="w-full bg-primary-container text-on-primary-container font-headline-sm text-headline-sm py-sm px-lg rounded-full hover:brightness-110 transition-all shadow-[0_0_15px_rgba(124,58,237,0.3)] hover:shadow-[0_0_25px_rgba(124,58,237,0.5)]">
+                    Initialize Environment
+                </button>
+<button class="w-full text-on-surface-variant font-body-md text-body-md hover:text-on-surface transition-colors">
+                    Advanced Settings
+                </button>
+</div>
+</div>
+</main>
+<script>
+        function selectCard(clickedElement) {
+            const cards = document.querySelectorAll('.card-panel');
+            cards.forEach(card => card.classList.remove('card-active'));
+            clickedElement.classList.add('card-active');
+        }
+    </script>
+</body></html>
