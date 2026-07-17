@@ -305,7 +305,7 @@ class MainActivity : AppCompatActivity() {
             bottomNavigation.menu.findItem(bottomNavigation.selectedItemId)?.isChecked = false
             bottomNavigation.visibility = View.GONE
             if (::drawerLayout.isInitialized) drawerLayout.setDrawerLockMode(androidx.drawerlayout.widget.DrawerLayout.LOCK_MODE_LOCKED_CLOSED)
-        } else if (id == ID_PROJECT_CREATE || id == ID_PROJECTS_LIST) {
+        } else if (id == ID_PROJECT_CREATE) {
             if (::backBtn.isInitialized) backBtn.visibility = View.VISIBLE
             if (::menuBtn.isInitialized) menuBtn.visibility = View.GONE
             if (::addTerminalBtn.isInitialized) addTerminalBtn.visibility = View.GONE
@@ -393,6 +393,29 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
+        selectBottomNavItem(id)
+    }
+
+    private fun selectBottomNavItem(id: Int) {
+        if (::bottomNavigation.isInitialized) {
+            val hasItem = try {
+                bottomNavigation.menu.findItem(id) != null
+            } catch (e: Exception) {
+                false
+            }
+            if (hasItem) {
+                bottomNavigation.setOnItemSelectedListener(null)
+                bottomNavigation.selectedItemId = id
+                bottomNavigation.setOnItemSelectedListener { item ->
+                    val pageId = item.itemId
+                    if (pageStack.isEmpty() || pageStack.peek() != pageId) {
+                        pageStack.push(pageId)
+                    }
+                    navigateToPage(pageId)
+                    true
+                }
+            }
+        }
     }
 
     override fun onBackPressed() {
@@ -419,7 +442,6 @@ class MainActivity : AppCompatActivity() {
         if (fileViewerScrollView.visibility == View.VISIBLE || diffViewerScrollView.visibility == View.VISIBLE) {
             val prevPage = if (fileViewerScrollView.visibility == View.VISIBLE) ID_FILES else ID_GIT
             navigateToPage(prevPage)
-            bottomNavigation.selectedItemId = prevPage
             return
         }
 
@@ -434,7 +456,6 @@ class MainActivity : AppCompatActivity() {
 
         if (::scriptsScrollView.isInitialized && scriptsScrollView.visibility == View.VISIBLE) {
             navigateToPage(ID_SETTINGS)
-            bottomNavigation.selectedItemId = ID_SETTINGS
             return
         }
 
@@ -442,9 +463,6 @@ class MainActivity : AppCompatActivity() {
             pageStack.pop()
             val prevPage = pageStack.peek()
             navigateToPage(prevPage)
-            if (prevPage != ID_TERMINAL) {
-                bottomNavigation.selectedItemId = prevPage
-            }
         } else {
             super.onBackPressed()
         }
