@@ -813,20 +813,6 @@ class MainActivity : AppCompatActivity() {
 
         // Resources
         homeLayout.addView(buildResourcesCard())
-
-        // Projects
-        homeLayout.addView(buildRecentProjectsSection())
-
-        // Go to all projects button
-        val allProjectsBtn = secondaryButton("📁 Go to All Projects") {
-            if (pageStack.isEmpty() || pageStack.peek() != ID_PROJECTS_LIST) {
-                pageStack.push(ID_PROJECTS_LIST)
-            }
-            navigateToPage(ID_PROJECTS_LIST)
-        }.apply {
-            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(8); bottomMargin = dp(16) }
-        }
-        homeLayout.addView(allProjectsBtn)
     }
 
     private fun buildFileExplorerLayout() {
@@ -2289,10 +2275,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun defaultProjects(): List<Project> {
-        return listOf(
-            Project("MyAndroidApp", "", "/home/flux/projects/MyAndroidApp"),
-            Project("API_Server", "", "/home/flux/projects/API_Server")
-        )
+        return emptyList()
     }
 
     private fun saveProjects(list: List<Project>) {
@@ -3314,6 +3297,42 @@ class MainActivity : AppCompatActivity() {
             }
         }
         projectSettingsLayout.addView(saveBtn)
+
+        projectSettingsLayout.addView(spacer(16))
+        val removeBtn = TextView(this).apply {
+            text = "Remove Project"
+            textSize = 15f
+            setTextColor(Color.WHITE)
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            background = roundedBg(Color.parseColor("#ba1a1a"), Color.parseColor("#ba1a1a"), dp(24))
+            setPadding(dp(16), dp(12), dp(16), dp(12))
+            setOnClickListener {
+                val list = getProjects().toMutableList()
+                val idx = list.indexOfFirst { it.path == activeProjectPath }
+                if (idx >= 0) {
+                    list.removeAt(idx)
+                    saveProjects(list)
+                    Toast.makeText(this@MainActivity, "Project removed.", Toast.LENGTH_SHORT).show()
+                    activeProjectName = ""
+                    activeProjectPath = ""
+                    while (pageStack.isNotEmpty() && (
+                        pageStack.peek() == ID_PROJECT_WORKSPACE ||
+                        pageStack.peek() == ID_PROJECT_SETTINGS ||
+                        pageStack.peek() == ID_PROJECT_DIR_TREE ||
+                        pageStack.peek() == ID_PROJECT_GIT_DIFF
+                    )) {
+                        pageStack.pop()
+                    }
+                    if (pageStack.isEmpty()) {
+                        pageStack.push(ID_HOME)
+                    }
+                    val nextPage = pageStack.peek()
+                    navigateToPage(nextPage)
+                }
+            }
+        }
+        projectSettingsLayout.addView(removeBtn)
     }
 
     private fun buildWorkspaceKeyboardToolbar(): LinearLayout {
