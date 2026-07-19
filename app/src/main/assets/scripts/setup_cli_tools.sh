@@ -8,7 +8,7 @@ echo ">>> Starting AI CLI Tools Provisioning..."
 apt-get update
 apt-get install -y curl git ca-certificates python3 build-essential
 
-# Run NVM and Node installation as flux user
+# Run NVM, Node, and npm-based tools as flux user
 su - flux -c '
 export NVM_DIR="$HOME/.nvm"
 if [ ! -d "$NVM_DIR" ]; then
@@ -29,18 +29,48 @@ nvm alias default 26
 echo ">>> Node version: $(node -v)"
 echo ">>> NPM version: $(npm -v)"
 
-# Install latest global npm packages: opencode-ai and @openai/codex
-echo ">>> Installing global npm packages: opencode-ai & @openai/codex for flux user..."
-npm install -g opencode-ai @openai/codex --unsafe-perm
+# Install npm-based AI CLI tools
+echo ">>> Installing npm AI CLI tools..."
+npm install -g opencode-ai @openai/codex @qwen-code/qwen-code --unsafe-perm
 
-# Ensure NVM loader is added to shell startup scripts
+# Ensure NVM loader and PATH are in shell startup scripts
 for RC in .zshrc .bashrc; do
     [ -f "$HOME/$RC" ] || touch "$HOME/$RC"
     if ! grep -q "NVM_DIR" "$HOME/$RC"; then
-        echo "" >> "$HOME/$RC"
-        echo "export NVM_DIR=\"\$HOME/.nvm\"" >> "$HOME/$RC"
-        echo "[ -s \"\$NVM_DIR/nvm.sh\" ] && \\. \"\$NVM_DIR/nvm.sh\"" >> "$HOME/$RC"
-        echo "[ -s \"\$NVM_DIR/bash_completion\" ] && \\. \"\$NVM_DIR/bash_completion\"" >> "$HOME/$RC"
+        cat >> "$HOME/$RC" << '"'"'NVMBLOCK'"'"'
+
+export NVM_DIR="$HOME/.nvm"
+[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+[ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"
+NVMBLOCK
+    fi
+done
+'
+
+# Install curl-based AI CLI tools (agy, claude-code, grok, kiro) as flux user
+su - flux -c '
+
+echo ">>> Installing agy (Antigravity)..."
+curl -fsSL https://antigravity.google/cli/install.sh | bash || echo "WARN: agy install failed"
+
+echo ">>> Installing claude-code..."
+curl -fsSL https://claude.ai/install.sh | bash || echo "WARN: claude install failed"
+
+echo ">>> Installing grok CLI..."
+curl -fsSL https://x.ai/cli/install.sh | bash || echo "WARN: grok install failed"
+
+echo ">>> Installing kiro CLI..."
+curl -fsSL https://cli.kiro.dev/install | bash || echo "WARN: kiro install failed"
+
+# Add common install dirs to PATH in both shells
+for RC in .zshrc .bashrc; do
+    [ -f "$HOME/$RC" ] || touch "$HOME/$RC"
+    if ! grep -q "# ai-cli-paths" "$HOME/$RC"; then
+        cat >> "$HOME/$RC" << '"'"'PATHBLOCK'"'"'
+
+# ai-cli-paths
+export PATH="$HOME/.local/bin:$HOME/bin:$HOME/.cargo/bin:$PATH"
+PATHBLOCK
     fi
 done
 '

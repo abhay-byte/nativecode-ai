@@ -65,6 +65,12 @@ class MainActivity : AppCompatActivity() {
     private val sessionsList = ArrayList<TerminalSession>()
     private var activeSessionIndex = -1
 
+    private var termFontSize = 40
+    private var workspaceFontSize = 40
+    private var scriptFontSize = 40
+    private val MIN_FONT_SIZE = 10
+    private val MAX_FONT_SIZE = 72
+
     private lateinit var viewClient: TerminalViewClient
     private lateinit var sessionClient: TerminalSessionClient
 
@@ -1515,7 +1521,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun runScriptInTerminal(scriptName: String, runInDebian: Boolean) {
-        scriptInstallTerminalView.setTextSize(40)
+        scriptInstallTerminalView.setTextSize(scriptFontSize)
         val nld     = applicationInfo.nativeLibraryDir
         val shell   = File(nld, "libbash.so").absolutePath
         val cwd     = File(filesDir, "home").absolutePath
@@ -1546,7 +1552,14 @@ class MainActivity : AppCompatActivity() {
         val env = envMap.map { "${it.key}=${it.value}" }.toTypedArray()
 
         val scriptViewClient = object : TerminalViewClient {
-            override fun onScale(scale: Float): Float = scale
+            override fun onScale(scale: Float): Float {
+                if (scale < 0.9f || scale > 1.1f) {
+                    scriptFontSize = (scriptFontSize * scale).toInt().coerceIn(MIN_FONT_SIZE, MAX_FONT_SIZE)
+                    scriptInstallTerminalView.setTextSize(scriptFontSize)
+                    return 1.0f
+                }
+                return scale
+            }
             override fun onSingleTapUp(e: MotionEvent) {}
             override fun shouldBackButtonBeMappedToEscape(): Boolean = false
             override fun shouldEnforceCharBasedInput(): Boolean      = false
@@ -2552,7 +2565,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun initTerminalView() {
-        terminalView.setTextSize(40)
+        terminalView.setTextSize(termFontSize)
         try {
             val tf = Typeface.createFromAsset(assets, "fonts/font.ttf")
             terminalView.setTypeface(tf)
@@ -2561,7 +2574,14 @@ class MainActivity : AppCompatActivity() {
         }
 
         viewClient = object : TerminalViewClient {
-            override fun onScale(scale: Float): Float = scale
+            override fun onScale(scale: Float): Float {
+                if (scale < 0.9f || scale > 1.1f) {
+                    termFontSize = (termFontSize * scale).toInt().coerceIn(MIN_FONT_SIZE, MAX_FONT_SIZE)
+                    terminalView.setTextSize(termFontSize)
+                    return 1.0f
+                }
+                return scale
+            }
             override fun onSingleTapUp(e: MotionEvent) {
                 terminalView.requestFocus()
                 val imm = getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
@@ -3449,10 +3469,16 @@ class MainActivity : AppCompatActivity() {
         val shell = File(nld, "libbash.so").absolutePath
         val cwd = File(filesDir, "home").absolutePath
         
+        val envInit = "export PATH=/home/flux/.local/bin:/home/flux/bin:/home/flux/.cargo/bin:\\\$PATH && export NVM_DIR=/home/flux/.nvm && [ -s /home/flux/.nvm/nvm.sh ] && . /home/flux/.nvm/nvm.sh"
         val toolCmd = when (type) {
-            "opencode" -> "export NVM_DIR=/home/flux/.nvm && [ -s /home/flux/.nvm/nvm.sh ] && . /home/flux/.nvm/nvm.sh && cd $activeProjectPath && exec opencode"
-            "codex" -> "export NVM_DIR=/home/flux/.nvm && [ -s /home/flux/.nvm/nvm.sh ] && . /home/flux/.nvm/nvm.sh && cd $activeProjectPath && exec codex"
-            else -> "cd $activeProjectPath && exec zsh"
+            "opencode"    -> "$envInit && cd $activeProjectPath && exec opencode"
+            "codex"       -> "$envInit && cd $activeProjectPath && exec codex"
+            "agy"         -> "$envInit && cd $activeProjectPath && exec agy"
+            "claude-code" -> "$envInit && cd $activeProjectPath && exec claude"
+            "qwen-code"   -> "$envInit && cd $activeProjectPath && exec qwen"
+            "grok"        -> "$envInit && cd $activeProjectPath && exec grok"
+            "kiro"        -> "$envInit && cd $activeProjectPath && exec kiro-cli"
+            else          -> "cd $activeProjectPath && exec zsh"
         }
 
         val args = arrayOf(shell, "-c", "exec python /data/data/com.ivarna.nativecode/files/usr/bin/proot-distro login debian --shared-tmp --user flux -- zsh -c \"$toolCmd\"")
@@ -3625,13 +3651,23 @@ class MainActivity : AppCompatActivity() {
                 setOnClickListener {
                     val popup = PopupMenu(this@MainActivity, this)
                     popup.menu.add("Debian Shell")
-                    popup.menu.add("opencode AI")
-                    popup.menu.add("codex Search")
+                    popup.menu.add("opencode")
+                    popup.menu.add("codex")
+                    popup.menu.add("agy")
+                    popup.menu.add("claude-code")
+                    popup.menu.add("qwen-code")
+                    popup.menu.add("grok")
+                    popup.menu.add("kiro")
                     popup.setOnMenuItemClickListener { item ->
                         val type = when(item.title) {
-                            "opencode AI" -> "opencode"
-                            "codex Search" -> "codex"
-                            else -> "shell"
+                            "opencode"    -> "opencode"
+                            "codex"       -> "codex"
+                            "agy"         -> "agy"
+                            "claude-code" -> "claude-code"
+                            "qwen-code"   -> "qwen-code"
+                            "grok"        -> "grok"
+                            "kiro"        -> "kiro"
+                            else          -> "shell"
                         }
                         createWorkspaceTerminalTab(type)
                         true
@@ -3727,14 +3763,21 @@ class MainActivity : AppCompatActivity() {
             layoutParams = FrameLayout.LayoutParams(MATCH, MATCH)
         }
         registerForContextMenu(workspaceTerminalView)
-        workspaceTerminalView.setTextSize(40)
+        workspaceTerminalView.setTextSize(workspaceFontSize)
         try {
             val tf = Typeface.createFromAsset(assets, "fonts/font.ttf")
             workspaceTerminalView.setTypeface(tf)
         } catch (e: Exception) {}
         
         val workspaceViewClient = object : TerminalViewClient {
-            override fun onScale(scale: Float): Float = scale
+            override fun onScale(scale: Float): Float {
+                if (scale < 0.9f || scale > 1.1f) {
+                    workspaceFontSize = (workspaceFontSize * scale).toInt().coerceIn(MIN_FONT_SIZE, MAX_FONT_SIZE)
+                    workspaceTerminalView.setTextSize(workspaceFontSize)
+                    return 1.0f
+                }
+                return scale
+            }
             override fun onSingleTapUp(e: MotionEvent) {
                 workspaceTerminalView.requestFocus()
                 val imm = getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
@@ -3776,44 +3819,103 @@ class MainActivity : AppCompatActivity() {
 
         workspaceHubLayout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER
-            setPadding(dp(24))
+            gravity = Gravity.CENTER_HORIZONTAL
+            setPadding(dp(16), dp(20), dp(16), dp(20))
             layoutParams = FrameLayout.LayoutParams(MATCH, MATCH)
         }
-        
+
         val hubTitle = TextView(this).apply {
-            text = "Select a Development Environment"
-            textSize = 16f
-            setTextColor(NC.ON_SURFACE)
-            typeface = Typeface.DEFAULT_BOLD
-            setPadding(0, 0, 0, dp(16))
+            text = "Select AI Tool"
+            textSize = 20f
+            setTextColor(NC.ON_SURF_VAR)
+            typeface = Typeface.MONOSPACE
+            gravity = Gravity.CENTER
+            setPadding(0, 0, 0, dp(20))
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
         }
         workspaceHubLayout.addView(hubTitle)
 
-        for ((title, type, desc, color) in listOf(
-            StatusCardData("opencode", "opencode", "Claude AI Agent Harness", NC.PRIMARY_CON),
-            StatusCardData("codex", "codex", "Codex AI Search & Autocomplete", NC.SECONDARY),
-            StatusCardData("shell", "shell", "Linux Guest Debian Shell", NC.TERTIARY)
-        )) {
-            val pillCard = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                background = roundedBg(NC.SURFACE, NC.BORDER, dp(10))
-                setPadding(dp(14))
-                layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(12) }
-                setOnClickListener {
-                    createWorkspaceTerminalTab(type)
-                }
-            }
-            val cardHeader = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-            val nameTv = TextView(this).apply { text = title.uppercase(); textSize = 15f; setTextColor(color); typeface = Typeface.DEFAULT_BOLD; layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f) }
-            val goTv = TextView(this).apply { text = "LAUNCH \u2794"; textSize = 11f; setTextColor(NC.ON_SURF_VAR); typeface = Typeface.MONOSPACE }
-            cardHeader.addView(nameTv); cardHeader.addView(goTv); pillCard.addView(cardHeader)
+        data class AiToolDef(val type: String, val label: String, val desc: String, val iconUrl: String?)
 
-            val descTv = TextView(this).apply { text = desc; textSize = 12f; setTextColor(NC.ON_SURF_VAR); setPadding(0, dp(4), 0, 0) }
-            pillCard.addView(descTv)
-            
-            workspaceHubLayout.addView(pillCard)
+        val aiTools = listOf(
+            AiToolDef("opencode",    "opencode",    "Claude Agent",   "https://www.applivery.com/wp-content/uploads/2026/01/open-code.png"),
+            AiToolDef("codex",       "codex",       "OpenAI Codex",   "https://raw.githubusercontent.com/lobehub/lobe-icons/refs/heads/master/packages/static-png/dark/codex-color.png"),
+            AiToolDef("agy",         "agy",         "Antigravity",    "https://cdn.jsdelivr.net/npm/@lobehub/icons-static-png@latest/dark/antigravity-color.png"),
+            AiToolDef("claude-code", "claude-code", "Claude Code",    "https://raw.githubusercontent.com/lobehub/lobe-icons/refs/heads/master/packages/static-png/dark/claudecode-color.png"),
+            AiToolDef("qwen-code",   "qwen-code",   "Qwen Code",      "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/webp/qwen.webp"),
+            AiToolDef("grok",        "grok",        "Grok CLI",       "https://uxwing.com/wp-content/themes/uxwing/download/brands-and-social-media/grok-ai-icon.png"),
+            AiToolDef("kiro",        "kiro",        "Kiro CLI",       "https://kiro.dev/icon.svg?fe599162bb293ea0"),
+            AiToolDef("shell",       "shell",       "Debian Shell",   null)
+        )
+
+        fun makeToolCard(tool: AiToolDef): LinearLayout {
+            val card = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER
+                background = roundedBg(NC.SURFACE, NC.BORDER, dp(12))
+                setPadding(dp(16), dp(20), dp(16), dp(18))
+                layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f).apply {
+                    setMargins(dp(5), dp(5), dp(5), dp(5))
+                }
+                setOnClickListener { createWorkspaceTerminalTab(tool.type) }
+            }
+
+            val iconSize = dp(64)
+            val iconView = ImageView(this).apply {
+                layoutParams = LinearLayout.LayoutParams(iconSize, iconSize).apply { bottomMargin = dp(10) }
+                scaleType = ImageView.ScaleType.FIT_CENTER
+            }
+
+            val filename = if (tool.type == "qwen-code") "qwen-code.webp" else "${tool.type}.png"
+            try {
+                assets.open("images/cli/$filename").use {
+                    val bmp = android.graphics.BitmapFactory.decodeStream(it)
+                    if (bmp != null) iconView.setImageBitmap(bmp)
+                }
+            } catch (_: Exception) {
+                iconView.setImageResource(android.R.drawable.ic_menu_manage)
+            }
+
+            card.addView(iconView)
+
+            val nameTv = TextView(this).apply {
+                text = tool.label
+                textSize = 16f
+                setTextColor(NC.ON_SURFACE)
+                typeface = Typeface.DEFAULT_BOLD
+                gravity = Gravity.CENTER
+            }
+            card.addView(nameTv)
+
+            val descTv = TextView(this).apply {
+                text = tool.desc
+                textSize = 12f
+                setTextColor(NC.ON_SURF_VAR)
+                gravity = Gravity.CENTER
+                setPadding(0, dp(2), 0, 0)
+            }
+            card.addView(descTv)
+
+            return card
         }
+
+        // Build rows of 2
+        aiTools.chunked(2).forEach { pair ->
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(4) }
+            }
+            pair.forEach { tool -> row.addView(makeToolCard(tool)) }
+            if (pair.size == 1) {
+                // pad empty slot
+                val spacer = android.view.View(this).apply {
+                    layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f).apply { setMargins(dp(5), dp(5), dp(5), dp(5)) }
+                }
+                row.addView(spacer)
+            }
+            workspaceHubLayout.addView(row)
+        }
+
         centerFrame.addView(workspaceHubLayout)
         mainArea.addView(centerFrame)
 
