@@ -89,6 +89,7 @@ class MainActivity : AppCompatActivity() {
     // Sub-pages (pushed on stack)
     private lateinit var fileViewerScrollView: ScrollView
     private lateinit var diffViewerScrollView: ScrollView
+    private lateinit var diffViewerContainer: LinearLayout
     private lateinit var scriptsScrollView: ScrollView
     private lateinit var scriptsLayout: LinearLayout
 
@@ -1650,96 +1651,11 @@ class MainActivity : AppCompatActivity() {
             layoutParams = FrameLayout.LayoutParams(MATCH, MATCH)
             visibility = View.GONE
         }
-        val container = LinearLayout(this).apply {
+        diffViewerContainer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(16))
         }
-        diffViewerScrollView.addView(container)
-
-        // Diff card
-        val diffCard = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            background = roundedBg(NC.SURFACE, NC.BORDER, dp(10))
-            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
-        }
-
-        // Card header with file path + stat badges
-        val cardHeader = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
-            setBackgroundColor(NC.SURFACE_VAR); setPadding(dp(12), dp(10), dp(12), dp(10))
-        }
-        val pathTv = TextView(this).apply {
-            text = "app/src/main/.../MainActivity.kt"; textSize = 11f
-            setTextColor(NC.ON_SURF_VAR); typeface = Typeface.MONOSPACE
-            layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
-        }
-        val removedBadge = textBadge("-1", Color.parseColor("#3d1212"), NC.ERROR)
-        val addedBadge = textBadge("+2", Color.parseColor("#0d2a2a"), NC.SECONDARY)
-        removedBadge.layoutParams = LinearLayout.LayoutParams(WRAP, WRAP).apply { rightMargin = dp(6) }
-        cardHeader.addView(pathTv); cardHeader.addView(removedBadge); cardHeader.addView(addedBadge)
-        diffCard.addView(cardHeader)
-
-        // Diff table
-        val hScroll = HorizontalScrollView(this).apply {
-            setBackgroundColor(NC.LOGBG)
-            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
-        }
-        val table = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            layoutParams = ViewGroup.LayoutParams(MATCH, WRAP)
-        }
-
-        data class DiffRow(val type: Int, val old: String, val new_: String, val code: String)
-        val rows = listOf(
-            DiffRow(0, "11", "11", "class MainActivity : AppCompatActivity() {"),
-            DiffRow(1, "12", "",   "    val oldState = \"loading\""),
-            DiffRow(2, "",   "12", "    val newState = \"ready\""),
-            DiffRow(2, "",   "13", "    val isReady = true"),
-            DiffRow(0, "13", "14", "    override fun onCreate() {")
-        )
-
-        for (row in rows) {
-            val (type, old, new_, code) = row
-            val bg = when (type) {
-                1 -> Color.argb(50, 147, 0, 10)
-                2 -> Color.argb(50, 3, 181, 211)
-                else -> Color.TRANSPARENT
-            }
-            val marker = when (type) { 1 -> "-"; 2 -> "+"; else -> " " }
-            val markerColor = when (type) { 1 -> NC.ERROR; 2 -> NC.SECONDARY; else -> NC.OUTLINE }
-            val codeColor = when (type) { 1 -> NC.ON_SURF_VAR; else -> NC.ON_SURFACE }
-
-            val tableRow = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
-                setBackgroundColor(bg); setPadding(0, dp(3), dp(12), dp(3))
-            }
-            val oldLn = lineNumCell(old); val newLn = lineNumCell(new_)
-            val markerTv = TextView(this).apply {
-                text = marker; textSize = 12f; setTextColor(markerColor); typeface = Typeface.MONOSPACE
-                gravity = Gravity.CENTER; layoutParams = LinearLayout.LayoutParams(dp(24), WRAP)
-            }
-            val codeTv = TextView(this).apply {
-                text = code; textSize = 12f; setTextColor(codeColor); typeface = Typeface.MONOSPACE
-                if (type == 1) paintFlags = paintFlags or android.graphics.Paint.STRIKE_THRU_TEXT_FLAG
-            }
-            tableRow.addView(oldLn); tableRow.addView(newLn); tableRow.addView(markerTv); tableRow.addView(codeTv)
-            table.addView(tableRow)
-        }
-        hScroll.addView(table)
-        diffCard.addView(hScroll)
-        container.addView(diffCard)
-
-        // Bottom action bar
-        container.addView(spacer(16))
-        val bottomBar = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.END or Gravity.CENTER_VERTICAL
-            setPadding(0, dp(12), 0, dp(16))
-        }
-        val discardBtn = outlineBtn("Discard")
-        val commitBtn = primaryBtn("Commit Changes")
-        discardBtn.layoutParams = LinearLayout.LayoutParams(WRAP, WRAP).apply { rightMargin = dp(12) }
-        bottomBar.addView(discardBtn); bottomBar.addView(commitBtn)
-        container.addView(bottomBar)
+        diffViewerScrollView.addView(diffViewerContainer)
     }
 
     // ── Helper Sub-page Actions ──────────────────────────────────────────────
@@ -1762,6 +1678,11 @@ class MainActivity : AppCompatActivity() {
         settingsHubScrollView.visibility = View.GONE
         diffViewerScrollView.visibility = View.GONE
 
+        if (::projectGitDiffScrollView.isInitialized) projectGitDiffScrollView.visibility = View.GONE
+        if (::projectWorkspaceLayout.isInitialized) projectWorkspaceLayout.visibility = View.GONE
+        if (::projectSettingsScrollView.isInitialized) projectSettingsScrollView.visibility = View.GONE
+        if (::projectDirTreeScrollView.isInitialized) projectDirTreeScrollView.visibility = View.GONE
+
         fileViewerScrollView.visibility = View.VISIBLE
     }
 
@@ -1783,7 +1704,412 @@ class MainActivity : AppCompatActivity() {
         settingsHubScrollView.visibility = View.GONE
         fileViewerScrollView.visibility = View.GONE
 
+        if (::projectGitDiffScrollView.isInitialized) projectGitDiffScrollView.visibility = View.GONE
+        if (::projectWorkspaceLayout.isInitialized) projectWorkspaceLayout.visibility = View.GONE
+        if (::projectSettingsScrollView.isInitialized) projectSettingsScrollView.visibility = View.GONE
+        if (::projectDirTreeScrollView.isInitialized) projectDirTreeScrollView.visibility = View.GONE
+
         diffViewerScrollView.visibility = View.VISIBLE
+        loadDiffForFile(name)
+    }
+
+    private val TYPE_CONTEXT = 0
+    private val TYPE_DEL     = 1
+    private val TYPE_ADD     = 2
+    private val TYPE_HUNK    = 3
+
+    private data class ParsedDiffRow(val type: Int, val old: String, val new_: String, val code: String)
+
+    private fun loadDiffForFile(name: String) {
+        diffViewerContainer.removeAllViews()
+        val loadingTv = TextView(this).apply {
+            text = "Loading diff for $name..."
+            setTextColor(NC.ON_SURF_VAR)
+            textSize = 14f
+            setPadding(dp(16), dp(16), dp(16), dp(16))
+        }
+        diffViewerContainer.addView(loadingTv)
+
+        executor.execute {
+            val nld = applicationInfo.nativeLibraryDir
+            val bash = File(nld, "libbash.so").absolutePath
+            val gitCmd = "cd $activeProjectPath && git diff HEAD -- \"$name\""
+            val pb = ProcessBuilder(bash, "-c", "exec python /data/data/com.ivarna.nativecode/files/usr/bin/proot-distro login debian --shared-tmp --user flux -- zsh -c \"$gitCmd\"")
+            val env = pb.environment()
+            env["PATH"] = "$nld:/data/data/com.ivarna.nativecode/files/usr/bin:/system/bin"
+            env["PD_PROOT_BIN"] = File(nld, "libproot.so").absolutePath
+            env["PROOT_LOADER"] = File(nld, "libloader.so").absolutePath
+            env["LD_LIBRARY_PATH"] = "/data/data/com.ivarna.nativecode/files/usr/lib"
+            env["LD_PRELOAD"] = "/data/data/com.ivarna.nativecode/files/usr/lib/libtermux-exec.so"
+            env["HOME"] = "/data/data/com.ivarna.nativecode/files/home"
+            env["PREFIX"] = "/data/data/com.ivarna.nativecode/files/usr"
+            env["TERMUX__PREFIX"] = "/data/data/com.ivarna.nativecode/files/usr"
+            env["TERMUX__HOME"] = "/data/data/com.ivarna.nativecode/files/home"
+            env["TERMUX_APP__PACKAGE_NAME"] = "com.ivarna.nativecode"
+            env["GIT_PAGER"] = "cat"
+            env["GIT_TERMINAL_PROMPT"] = "0"
+            env["TERM"] = "dumb"
+            pb.redirectErrorStream(true)
+
+            try {
+                val proc = pb.start()
+                val lines = ArrayList<String>()
+                proc.inputStream.bufferedReader().useLines { seq ->
+                    seq.forEach { lines.add(it) }
+                }
+                proc.waitFor()
+
+                var filteredLines = lines.filter { line ->
+                    line.startsWith("diff ") || line.startsWith("index ") ||
+                    line.startsWith("--- ") || line.startsWith("+++ ") ||
+                    line.startsWith("@@") || line.startsWith("+") ||
+                    line.startsWith("-") || line.startsWith(" ") ||
+                    line.startsWith("\\") || line.startsWith("new file") ||
+                    line.startsWith("deleted file") || line.startsWith("Binary")
+                }
+
+                if (filteredLines.isEmpty()) {
+                    val untrackedCmd = "cd $activeProjectPath && [ -f \"$name\" ] && git diff --no-index /dev/null \"$name\""
+                    val pbUntracked = ProcessBuilder(bash, "-c", "exec python /data/data/com.ivarna.nativecode/files/usr/bin/proot-distro login debian --shared-tmp --user flux -- zsh -c \"$untrackedCmd\"")
+                    val envUntracked = pbUntracked.environment()
+                    envUntracked.putAll(env)
+                    pbUntracked.redirectErrorStream(true)
+                    val procUntracked = pbUntracked.start()
+                    val linesUntracked = ArrayList<String>()
+                    procUntracked.inputStream.bufferedReader().useLines { seq ->
+                        seq.forEach { linesUntracked.add(it) }
+                    }
+                    procUntracked.waitFor()
+                    val filteredUntracked = linesUntracked.filter { line ->
+                        line.startsWith("diff ") || line.startsWith("index ") ||
+                        line.startsWith("--- ") || line.startsWith("+++ ") ||
+                        line.startsWith("@@") || line.startsWith("+") ||
+                        line.startsWith("-") || line.startsWith(" ") ||
+                        line.startsWith("\\") || line.startsWith("new file") ||
+                        line.startsWith("deleted file") || line.startsWith("Binary")
+                    }
+                    if (filteredUntracked.isNotEmpty()) {
+                        filteredLines = filteredUntracked
+                    }
+                }
+
+                mainHandler.post {
+                    renderDiffLines(name, filteredLines)
+                }
+            } catch (e: Exception) {
+                mainHandler.post {
+                    diffViewerContainer.removeAllViews()
+                    val errorTv = TextView(this@MainActivity).apply {
+                        text = "Error running git diff: ${e.message}"
+                        setTextColor(NC.ERROR)
+                        setPadding(dp(16), dp(16), dp(16), dp(16))
+                    }
+                    diffViewerContainer.addView(errorTv)
+                }
+            }
+        }
+    }
+
+    private fun renderDiffLines(fileName: String, lines: List<String>) {
+        diffViewerContainer.removeAllViews()
+
+        if (lines.isEmpty() || (lines.size == 1 && lines[0].trim().isEmpty())) {
+            val noChanges = TextView(this).apply {
+                text = "No changes detected in $fileName"
+                setTextColor(NC.ON_SURF_VAR)
+                setPadding(dp(16), dp(16), dp(16), dp(16))
+            }
+            diffViewerContainer.addView(noChanges)
+            return
+        }
+
+        val isBinary = lines.any { it.startsWith("Binary files") || it.contains("differ") }
+        if (isBinary) {
+            val binaryTv = TextView(this).apply {
+                text = "Binary file changes. No preview available."
+                setTextColor(NC.ON_SURF_VAR)
+                setPadding(dp(16), dp(16), dp(16), dp(16))
+            }
+            diffViewerContainer.addView(binaryTv)
+            return
+        }
+
+        var additions = 0
+        var deletions = 0
+        val diffRows = ArrayList<ParsedDiffRow>()
+
+        var oldLineNum = 0
+        var newLineNum = 0
+
+        for (line in lines) {
+            if (line.startsWith("diff --git") || line.startsWith("index ") || line.startsWith("new file mode") || line.startsWith("deleted file mode")) {
+                continue
+            }
+            if (line.startsWith("--- ") || line.startsWith("+++ ")) {
+                continue
+            }
+
+            if (line.startsWith("@@")) {
+                val parts = line.split(" ")
+                if (parts.size >= 3) {
+                    val oldPart = parts[1].removePrefix("-").split(",")
+                    val newPart = parts[2].removePrefix("+").split(",")
+                    oldLineNum = oldPart[0].toIntOrNull() ?: 0
+                    newLineNum = newPart[0].toIntOrNull() ?: 0
+                }
+                diffRows.add(ParsedDiffRow(type = TYPE_HUNK, old = "", new_ = "", code = line))
+                continue
+            }
+
+            if (line.startsWith("+")) {
+                additions++
+                diffRows.add(ParsedDiffRow(type = TYPE_ADD, old = "", new_ = newLineNum.toString(), code = line.substring(1)))
+                newLineNum++
+            } else if (line.startsWith("-")) {
+                deletions++
+                diffRows.add(ParsedDiffRow(type = TYPE_DEL, old = oldLineNum.toString(), new_ = "", code = line.substring(1)))
+                oldLineNum++
+            } else {
+                if (line.startsWith("\\")) continue
+                val code = if (line.startsWith(" ")) line.substring(1) else line
+                diffRows.add(ParsedDiffRow(type = TYPE_CONTEXT, old = oldLineNum.toString(), new_ = newLineNum.toString(), code = code))
+                oldLineNum++
+                newLineNum++
+            }
+        }
+
+        val diffCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = roundedBg(NC.SURFACE, NC.BORDER, dp(10))
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
+        }
+
+        val cardHeader = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setBackgroundColor(NC.SURFACE_VAR)
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+        }
+        val pathTv = TextView(this).apply {
+            text = fileName
+            textSize = 12f
+            setTextColor(NC.ON_SURF_VAR)
+            typeface = Typeface.MONOSPACE
+            layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
+        }
+        val removedBadge = textBadge("-$deletions", Color.parseColor("#3d1212"), NC.ERROR)
+        val addedBadge = textBadge("+$additions", Color.parseColor("#0d2a2a"), NC.SECONDARY)
+        removedBadge.layoutParams = LinearLayout.LayoutParams(WRAP, WRAP).apply { rightMargin = dp(6) }
+        cardHeader.addView(pathTv)
+        if (deletions > 0) cardHeader.addView(removedBadge)
+        if (additions > 0) cardHeader.addView(addedBadge)
+        diffCard.addView(cardHeader)
+
+        val hScroll = HorizontalScrollView(this).apply {
+            setBackgroundColor(NC.LOGBG)
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
+        }
+        val table = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = ViewGroup.LayoutParams(MATCH, WRAP)
+        }
+
+        for (row in diffRows) {
+            val tableRow = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(0, dp(3), dp(12), dp(3))
+            }
+
+            when (row.type) {
+                TYPE_HUNK -> {
+                    tableRow.setBackgroundColor(Color.argb(30, 255, 255, 255))
+                    val hunkTv = TextView(this@MainActivity).apply {
+                        text = row.code
+                        textSize = 11f
+                        setTextColor(NC.OUTLINE)
+                        typeface = Typeface.MONOSPACE
+                        setPadding(dp(12), dp(2), dp(12), dp(2))
+                    }
+                    tableRow.addView(hunkTv)
+                }
+                else -> {
+                    val bg = when (row.type) {
+                        TYPE_DEL -> Color.argb(50, 147, 0, 10)
+                        TYPE_ADD -> Color.argb(50, 3, 181, 211)
+                        else -> Color.TRANSPARENT
+                    }
+                    tableRow.setBackgroundColor(bg)
+
+                    val oldLn = lineNumCell(row.old)
+                    val newLn = lineNumCell(row.new_)
+
+                    val marker = when (row.type) {
+                        TYPE_DEL -> "-"
+                        TYPE_ADD -> "+"
+                        else -> " "
+                    }
+                    val markerColor = when (row.type) {
+                        TYPE_DEL -> NC.ERROR
+                        TYPE_ADD -> NC.SECONDARY
+                        else -> NC.OUTLINE
+                    }
+                    val codeColor = when (row.type) {
+                        TYPE_DEL -> NC.ON_SURF_VAR
+                        else -> NC.ON_SURFACE
+                    }
+
+                    val markerTv = TextView(this@MainActivity).apply {
+                        text = marker
+                        textSize = 12f
+                        setTextColor(markerColor)
+                        typeface = Typeface.MONOSPACE
+                        gravity = Gravity.CENTER
+                        layoutParams = LinearLayout.LayoutParams(dp(24), WRAP)
+                    }
+                    val codeTv = TextView(this@MainActivity).apply {
+                        text = row.code
+                        textSize = 12f
+                        setTextColor(codeColor)
+                        typeface = Typeface.MONOSPACE
+                        if (row.type == TYPE_DEL) paintFlags = paintFlags or android.graphics.Paint.STRIKE_THRU_TEXT_FLAG
+                    }
+
+                    tableRow.addView(oldLn)
+                    tableRow.addView(newLn)
+                    tableRow.addView(markerTv)
+                    tableRow.addView(codeTv)
+                }
+            }
+            table.addView(tableRow)
+        }
+
+        hScroll.addView(table)
+        diffCard.addView(hScroll)
+        diffViewerContainer.addView(diffCard)
+
+        diffViewerContainer.addView(spacer(16))
+        val bottomBar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.END or Gravity.CENTER_VERTICAL
+            setPadding(0, dp(12), 0, dp(16))
+        }
+        val discardBtn = outlineBtn("Discard")
+        discardBtn.setOnClickListener {
+            discardChanges(fileName)
+        }
+        val commitBtn = primaryBtn("Commit Changes")
+        commitBtn.setOnClickListener {
+            showCommitDialog(fileName)
+        }
+        discardBtn.layoutParams = LinearLayout.LayoutParams(WRAP, WRAP).apply { rightMargin = dp(12) }
+        bottomBar.addView(discardBtn)
+        bottomBar.addView(commitBtn)
+        diffViewerContainer.addView(bottomBar)
+    }
+
+    private fun discardChanges(fileName: String) {
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("Discard Changes")
+            .setMessage("Are you sure you want to discard changes in $fileName?")
+            .setPositiveButton("Discard") { _, _ ->
+                executor.execute {
+                    val nld = applicationInfo.nativeLibraryDir
+                    val bash = File(nld, "libbash.so").absolutePath
+                    val discardCmd = "cd $activeProjectPath && (git checkout -- \"$fileName\" || rm -rf \"$fileName\")"
+                    val pb = ProcessBuilder(bash, "-c", "exec python /data/data/com.ivarna.nativecode/files/usr/bin/proot-distro login debian --shared-tmp --user flux -- zsh -c \"$discardCmd\"")
+                    val env = pb.environment()
+                    env["PATH"] = "$nld:/data/data/com.ivarna.nativecode/files/usr/bin:/system/bin"
+                    env["PD_PROOT_BIN"] = File(nld, "libproot.so").absolutePath
+                    env["PROOT_LOADER"] = File(nld, "libloader.so").absolutePath
+                    env["LD_LIBRARY_PATH"] = "/data/data/com.ivarna.nativecode/files/usr/lib"
+                    env["LD_PRELOAD"] = "/data/data/com.ivarna.nativecode/files/usr/lib/libtermux-exec.so"
+                    env["HOME"] = "/data/data/com.ivarna.nativecode/files/home"
+                    env["PREFIX"] = "/data/data/com.ivarna.nativecode/files/usr"
+                    env["TERMUX__PREFIX"] = "/data/data/com.ivarna.nativecode/files/usr"
+                    env["TERMUX__HOME"] = "/data/data/com.ivarna.nativecode/files/home"
+                    env["TERMUX_APP__PACKAGE_NAME"] = "com.ivarna.nativecode"
+                    env["GIT_PAGER"] = "cat"
+                    env["GIT_TERMINAL_PROMPT"] = "0"
+                    env["TERM"] = "dumb"
+                    pb.redirectErrorStream(true)
+                    try {
+                        val proc = pb.start()
+                        proc.waitFor()
+                        mainHandler.post {
+                            onBackPressed()
+                            refreshGitDiffTree()
+                        }
+                    } catch (e: Exception) {
+                        mainHandler.post {
+                            Toast.makeText(this@MainActivity, "Failed to discard: ${e.message}", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun showCommitDialog(fileName: String) {
+        val input = EditText(this).apply {
+            hint = "Commit message"
+            setPadding(dp(16), dp(16), dp(16), dp(16))
+        }
+        val container = FrameLayout(this).apply {
+            addView(input, FrameLayout.LayoutParams(MATCH, WRAP).apply {
+                leftMargin = dp(16)
+                rightMargin = dp(16)
+                topMargin = dp(8)
+                bottomMargin = dp(8)
+            })
+        }
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("Commit changes")
+            .setView(container)
+            .setPositiveButton("Commit") { _, _ ->
+                val msg = input.text.toString().trim()
+                if (msg.isEmpty()) {
+                    Toast.makeText(this, "Commit message cannot be empty", Toast.LENGTH_SHORT).show()
+                    return@setPositiveButton
+                }
+                executor.execute {
+                    val nld = applicationInfo.nativeLibraryDir
+                    val bash = File(nld, "libbash.so").absolutePath
+                    val commitCmd = "cd $activeProjectPath && git add \"$fileName\" && git commit -m \"$msg\""
+                    val pb = ProcessBuilder(bash, "-c", "exec python /data/data/com.ivarna.nativecode/files/usr/bin/proot-distro login debian --shared-tmp --user flux -- zsh -c \"$commitCmd\"")
+                    val env = pb.environment()
+                    env["PATH"] = "$nld:/data/data/com.ivarna.nativecode/files/usr/bin:/system/bin"
+                    env["PD_PROOT_BIN"] = File(nld, "libproot.so").absolutePath
+                    env["PROOT_LOADER"] = File(nld, "libloader.so").absolutePath
+                    env["LD_LIBRARY_PATH"] = "/data/data/com.ivarna.nativecode/files/usr/lib"
+                    env["LD_PRELOAD"] = "/data/data/com.ivarna.nativecode/files/usr/lib/libtermux-exec.so"
+                    env["HOME"] = "/data/data/com.ivarna.nativecode/files/home"
+                    env["PREFIX"] = "/data/data/com.ivarna.nativecode/files/usr"
+                    env["TERMUX__PREFIX"] = "/data/data/com.ivarna.nativecode/files/usr"
+                    env["TERMUX__HOME"] = "/data/data/com.ivarna.nativecode/files/home"
+                    env["TERMUX_APP__PACKAGE_NAME"] = "com.ivarna.nativecode"
+                    env["GIT_PAGER"] = "cat"
+                    env["GIT_TERMINAL_PROMPT"] = "0"
+                    env["TERM"] = "dumb"
+                    pb.redirectErrorStream(true)
+                    try {
+                        val proc = pb.start()
+                        proc.waitFor()
+                        mainHandler.post {
+                            Toast.makeText(this@MainActivity, "Committed successfully", Toast.LENGTH_SHORT).show()
+                            onBackPressed()
+                            refreshGitDiffTree()
+                        }
+                    } catch (e: Exception) {
+                        mainHandler.post {
+                            Toast.makeText(this@MainActivity, "Commit failed: ${e.message}", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     // ── Shared widget builders (ported from old activities) ─────────────────────
@@ -2984,7 +3310,15 @@ class MainActivity : AppCompatActivity() {
             env["PD_PROOT_BIN"] = File(nld, "libproot.so").absolutePath
             env["PROOT_LOADER"] = File(nld, "libloader.so").absolutePath
             env["LD_LIBRARY_PATH"] = "/data/data/com.ivarna.nativecode/files/usr/lib"
+            env["LD_PRELOAD"] = "/data/data/com.ivarna.nativecode/files/usr/lib/libtermux-exec.so"
             env["HOME"] = "/data/data/com.ivarna.nativecode/files/home"
+            env["PREFIX"] = "/data/data/com.ivarna.nativecode/files/usr"
+            env["TERMUX__PREFIX"] = "/data/data/com.ivarna.nativecode/files/usr"
+            env["TERMUX__HOME"] = "/data/data/com.ivarna.nativecode/files/home"
+            env["TERMUX_APP__PACKAGE_NAME"] = "com.ivarna.nativecode"
+            env["GIT_PAGER"] = "cat"
+            env["GIT_TERMINAL_PROMPT"] = "0"
+            env["TERM"] = "dumb"
             pb.redirectErrorStream(true)
             try {
                 val proc = pb.start()
@@ -2993,14 +3327,24 @@ class MainActivity : AppCompatActivity() {
                     seq.forEach { lines.add(it) }
                 }
                 proc.waitFor()
+                Log.d("GitDiff", "refreshGitDiffTree: read ${lines.size} lines")
+                for (line in lines) {
+                    Log.d("GitDiff", "  line: '$line' (len=${line.length})")
+                }
                 
+                val filteredLines = lines.filter { line ->
+                    line.length > 3 && line[2] == ' ' && 
+                    (line[0] in listOf('M', 'A', 'D', 'R', 'C', 'U', '?', '!', ' ')) &&
+                    (line[1] in listOf('M', 'A', 'D', 'R', 'C', 'U', '?', '!', ' '))
+                }
+
                 mainHandler.post {
                     workspaceGitDiffLayout.removeAllViews()
-                    if (lines.isEmpty()) {
+                    if (filteredLines.isEmpty()) {
                         val noChanges = TextView(this@MainActivity).apply { text = "No changes detected"; setTextColor(NC.ON_SURF_VAR); setPadding(dp(12), dp(12), dp(12), dp(12)) }
                         workspaceGitDiffLayout.addView(noChanges)
                     } else {
-                        for (line in lines) {
+                        for (line in filteredLines) {
                             if (line.trim().isEmpty()) continue
                             val status = line.take(2)
                             val file = line.substring(3)
