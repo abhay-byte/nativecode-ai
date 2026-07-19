@@ -838,7 +838,7 @@ class MainActivity : AppCompatActivity() {
             itemTextColor = tintList
             menu.add(Menu.NONE, ID_PROJECT_WORKSPACE, Menu.NONE, "Workspace").setIcon(R.drawable.ic_home)
             menu.add(Menu.NONE, ID_PROJECT_DIR_TREE, Menu.NONE, "Directory").setIcon(R.drawable.ic_folder)
-            menu.add(Menu.NONE, ID_PROJECT_GIT_DIFF, Menu.NONE, "Git Diff").setIcon(R.drawable.ic_git)
+            menu.add(Menu.NONE, ID_PROJECT_GIT_DIFF, Menu.NONE, "Diff").setIcon(R.drawable.ic_git)
             menu.add(Menu.NONE, ID_PROJECT_SETTINGS, Menu.NONE, "Settings").setIcon(R.drawable.ic_settings)
         }
 
@@ -3571,20 +3571,23 @@ class MainActivity : AppCompatActivity() {
         projectSettingsLayout.addView(header)
 
         val previewContainer = FrameLayout(this).apply {
-            layoutParams = LinearLayout.LayoutParams(dp(64), dp(64)).apply {
+            layoutParams = LinearLayout.LayoutParams(dp(120), dp(120)).apply {
                 gravity = Gravity.CENTER_HORIZONTAL
-                bottomMargin = dp(16)
+                bottomMargin = dp(24)
             }
+            background = roundedBg(NC.SURFACE, NC.BORDER, dp(60))
+            clipToOutline = true
+            outlineProvider = android.view.ViewOutlineProvider.BACKGROUND
         }
         projectSettingsLayout.addView(previewContainer)
 
         fun updatePreview(iconStr: String) {
             previewContainer.removeAllViews()
             if (iconStr.isEmpty()) {
-                val tv = TextView(this@MainActivity).apply { text = "📁"; textSize = 36f; gravity = Gravity.CENTER }
+                val tv = TextView(this@MainActivity).apply { text = "📁"; textSize = 48f; gravity = Gravity.CENTER }
                 previewContainer.addView(tv)
             } else if (iconStr.length <= 4 && !iconStr.startsWith("/") && !iconStr.startsWith("http")) {
-                val tv = TextView(this@MainActivity).apply { text = iconStr; textSize = 36f; gravity = Gravity.CENTER }
+                val tv = TextView(this@MainActivity).apply { text = iconStr; textSize = 48f; gravity = Gravity.CENTER }
                 previewContainer.addView(tv)
             } else {
                 val iv = ImageView(this@MainActivity).apply {
@@ -3612,14 +3615,14 @@ class MainActivity : AppCompatActivity() {
                             if (bitmap != null) iv.setImageBitmap(bitmap)
                             else {
                                 previewContainer.removeAllViews()
-                                val tv = TextView(this@MainActivity).apply { text = "📁"; textSize = 36f; gravity = Gravity.CENTER }
+                                val tv = TextView(this@MainActivity).apply { text = "📁"; textSize = 48f; gravity = Gravity.CENTER }
                                 previewContainer.addView(tv)
                             }
                         }
                     } catch (e: Exception) {
                         mainHandler.post {
                             previewContainer.removeAllViews()
-                            val tv = TextView(this@MainActivity).apply { text = "📁"; textSize = 36f; gravity = Gravity.CENTER }
+                            val tv = TextView(this@MainActivity).apply { text = "📁"; textSize = 48f; gravity = Gravity.CENTER }
                             previewContainer.addView(tv)
                         }
                     }
@@ -3627,24 +3630,12 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        projectSettingsLayout.addView(TextView(this).apply { text = "Project Icon (Link, Emoji, or File)"; setTextColor(NC.ON_SURF_VAR); textSize = 13f; setPadding(0, 0, 0, dp(4)) })
-        val iconRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(24) }
-        }
-        
         val proj = getProjects().find { it.path == activeProjectPath }
         val currentIcon = proj?.icon ?: ""
         updatePreview(currentIcon)
 
         configIconInput = EditText(this).apply {
             setText(currentIcon)
-            setHintTextColor(NC.OUTLINE)
-            setTextColor(NC.ON_SURFACE)
-            background = roundedBg(NC.SURFACE, NC.BORDER, dp(6))
-            setPadding(dp(12), dp(10), dp(12), dp(10))
-            layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f).apply { rightMargin = dp(8) }
             addTextChangedListener(object : android.text.TextWatcher {
                 override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
                 override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
@@ -3658,10 +3649,13 @@ class MainActivity : AppCompatActivity() {
         val chooseIconBtn = secondaryButton("Browse") {
             activeIconInput = configIconInput
             projectIconPickerLauncher.launch("image/*")
+        }.apply {
+            layoutParams = LinearLayout.LayoutParams(WRAP, WRAP).apply {
+                gravity = Gravity.CENTER_HORIZONTAL
+                bottomMargin = dp(32)
+            }
         }
-        iconRow.addView(configIconInput)
-        iconRow.addView(chooseIconBtn)
-        projectSettingsLayout.addView(iconRow)
+        projectSettingsLayout.addView(chooseIconBtn)
 
         val saveBtn = primaryButton("Save Configuration") {
             val newIcon = configIconInput.text.toString().trim()
@@ -3673,6 +3667,10 @@ class MainActivity : AppCompatActivity() {
                 saveProjects(list)
                 Toast.makeText(this, "Configuration saved successfully!", Toast.LENGTH_SHORT).show()
                 onBackPressed()
+            }
+        }.apply {
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply {
+                bottomMargin = dp(16)
             }
         }
         projectSettingsLayout.addView(saveBtn)
