@@ -12,12 +12,14 @@
         android:roundIcon="@mipmap/ic_launcher"
         android:label="NativeCode"
         android:supportsRtl="true"
+        android:enableOnBackInvokedCallback="true"
         android:theme="@style/Theme.Material3.DayNight.NoActionBar">
 
         <activity
             android:name=".MainActivity"
             android:configChanges="orientation|keyboardHidden|screenSize|screenLayout|smallestScreenSize"
-            android:windowSoftInputMode="adjustResize"
+            android:windowSoftInputMode="adjustResize|stateHidden"
+            android:launchMode="singleTask"
             android:exported="false" />
 
         <activity
@@ -32,6 +34,18 @@
 
         <service
             android:name=".BackgroundService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="specialUse" />
+
+        <service
+            android:name=".AppTerminalService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="specialUse" />
+
+        <service
+            android:name=".ProjectTerminalService"
             android:enabled="true"
             android:exported="false"
             android:foregroundServiceType="specialUse" />
