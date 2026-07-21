@@ -1,46 +1,3 @@
-<!-- headroom:rtk-instructions -->
-# RTK (Rust Token Killer) - Token-Optimized Commands
-
-When running shell commands, **always prefix with `rtk`**. This reduces context
-usage by 60-90% with zero behavior change. If rtk has no filter for a command,
-it passes through unchanged — so it is always safe to use.
-
-## Key Commands
-```bash
-# Git (59-80% savings)
-rtk git status          rtk git diff            rtk git log
-
-# Files & Search (60-75% savings)
-rtk ls <path>           rtk read <file>         rtk grep <pattern>
-rtk find <pattern>      rtk diff <file>
-
-# Test (90-99% savings) — shows failures only
-rtk pytest tests/       rtk cargo test          rtk test <cmd>
-
-# Build & Lint (80-90% savings) — shows errors only
-rtk tsc                 rtk lint                rtk cargo build
-rtk prettier --check    rtk mypy                rtk ruff check
-
-# Analysis (70-90% savings)
-rtk err <cmd>           rtk log <file>          rtk json <file>
-rtk summary <cmd>       rtk deps                rtk env
-
-# GitHub (26-87% savings)
-rtk gh pr view <n>      rtk gh run list         rtk gh issue list
-
-# Infrastructure (85% savings)
-rtk docker ps           rtk kubectl get         rtk docker logs <c>
-
-# Package managers (70-90% savings)
-rtk pip list            rtk pnpm install        rtk npm run <script>
-```
-
-## Rules
-- In command chains, prefix each segment: `rtk git add . && rtk git commit -m "msg"`
-- For debugging, use raw command without rtk prefix
-- `rtk proxy <cmd>` runs command without filtering but tracks usage
-<!-- /headroom:rtk-instructions -->
-
 <!-- context7 -->
 Use Context7 MCP to fetch current documentation whenever the user asks about a library, framework, SDK, API, CLI tool, or cloud service -- even well-known ones like React, Next.js, Prisma, Express, Tailwind, Django, or Spring Boot. This includes API syntax, configuration, version migration, library-specific debugging, setup instructions, and CLI tool usage. Use even when you think you know the answer -- your training data may not reflect recent changes. Prefer this over web search for library docs.
 
@@ -111,25 +68,24 @@ All communication ultra-compressed:
 |------|------|
 | `ctx_stats` / `ctx_doctor` / `ctx_upgrade` / `ctx_purge` / `ctx_insight` | Meta |
 
-### Shell via ctx_execute — NOT raw Shell/Bash
+### Shell via ctx_execute ONLY — Raw Shell Completely Disabled
 
-STRICT RULE: Raw shell execution is prohibited for commands that produce inspectable/filterable output (tests, builds, logs, file searching, git log, directory listings). You MUST execute them inside `ctx_execute` (or `ctx_batch_execute`):
+STRICT RULE: Raw shell/Bash tool execution (`run_command`) is COMPLETELY DISABLED and PROHIBITED for all tasks. Only `ctx_execute` (or `ctx_batch_execute`) with `language: "shell"` is allowed for shell execution.
 
 ```
-ctx_execute(language: "shell", code: "rtk npm test 2>&1 | grep -E 'FAIL|Error:'")
+ctx_execute(language: "shell", code: "npm test 2>&1 | grep -E 'FAIL|Error:'")
 ```
 
-Raw shell/Bash tool is strictly restricted to:
-- State mutations (git push, mkdir, rm, mv, chmod, npm install, docker)
-- Quick status checks with minimal output (git status, pwd, whoami)
+Whenever shell execution is performed via `ctx_execute`, output a notification message: `[Shell executed via context-mode]`.
 
 ### General Routing Rules
 
-- `ctx_execute` / `ctx_batch_execute` over raw shell when processing or viewing data
+- ALL shell commands MUST go through `ctx_execute` or `ctx_batch_execute`
+- Raw shell / `run_command` is strictly PROHIBITED for all operations (including state mutations and status checks)
 - `ctx_execute_file` over Read when analyzing a file
 - `ctx_fetch_and_index` over WebFetch for web content
 - `ctx_search` over re-reading raw sources
-- NEVER use raw shell for `find`, `grep`, `cat`, `head`, `tail`, `sed`, `awk`
+- NEVER use raw shell tool (`run_command`)
 
 ---
 
