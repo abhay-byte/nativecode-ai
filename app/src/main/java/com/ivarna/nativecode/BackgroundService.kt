@@ -38,7 +38,7 @@ class BackgroundService : Service() {
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("FluxLinux is running")
             .setContentText("Host and GUI services are active in the background.")
-            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setSmallIcon(R.drawable.ic_terminal)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
             .build()

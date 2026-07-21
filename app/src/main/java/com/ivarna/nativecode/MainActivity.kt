@@ -58,11 +58,11 @@ class MainActivity : AppCompatActivity() {
     private lateinit var sidebarScrollView: ScrollView
     private lateinit var sidebarListContainer: LinearLayout
 
-    private lateinit var menuBtn: TextView
+    private lateinit var menuBtn: ImageView
     private lateinit var displayBtn: ImageView
     private lateinit var addTerminalBtn: ImageView
-    private lateinit var backBtn: TextView
-    private lateinit var scriptInstallBackBtn: TextView
+    private lateinit var backBtn: ImageView
+    private lateinit var scriptInstallBackBtn: ImageView
 
     private val sessionsList = ArrayList<TerminalSession>()
     private var activeSessionIndex = -1
@@ -206,12 +206,38 @@ class MainActivity : AppCompatActivity() {
     private lateinit var workspaceTerminalContainer: LinearLayout
     private lateinit var workspaceKeyboardToolbar: LinearLayout
 
-    // ── Special Keys Toolbar state ─────────────────────────────────────────────
     private data class ModifierState(
         var ctrlActive: Boolean = false, var ctrlLocked: Boolean = false,
         var altActive: Boolean = false,  var altLocked: Boolean = false,
-        var shiftActive: Boolean = false, var shiftLocked: Boolean = false
-    )
+        var shiftActive: Boolean = false, var shiftLocked: Boolean = false,
+        var onStateChanged: (() -> Unit)? = null
+    ) {
+        fun readCtrl(autoReadSetFalse: Boolean = true): Boolean {
+            if (!ctrlActive) return false
+            if (autoReadSetFalse && !ctrlLocked) {
+                ctrlActive = false
+                onStateChanged?.invoke()
+            }
+            return true
+        }
+        fun readAlt(autoReadSetFalse: Boolean = true): Boolean {
+            if (!altActive) return false
+            if (autoReadSetFalse && !altLocked) {
+                altActive = false
+                onStateChanged?.invoke()
+            }
+            return true
+        }
+        fun readShift(autoReadSetFalse: Boolean = true): Boolean {
+            if (!shiftActive) return false
+            if (autoReadSetFalse && !shiftLocked) {
+                shiftActive = false
+                onStateChanged?.invoke()
+            }
+            return true
+        }
+        fun readFn(autoReadSetFalse: Boolean = true): Boolean = false
+    }
     private val termModState = ModifierState()
     private val wsModState   = ModifierState()
 
@@ -760,20 +786,20 @@ class MainActivity : AppCompatActivity() {
             setImageResource(R.mipmap.logo)
             layoutParams = LinearLayout.LayoutParams(dp(32), dp(32))
         }
-        backBtn = TextView(this).apply {
-            text = " ◀ "
-            textSize = 20f
-            setTextColor(NC.ON_SURFACE)
-            setPadding(dp(8), 0, dp(8), 0)
+        backBtn = ImageView(this).apply {
+            setImageResource(R.drawable.ic_arrow_back)
+            setColorFilter(NC.ON_SURFACE)
+            setPadding(dp(6), dp(6), dp(6), dp(6))
+            layoutParams = LinearLayout.LayoutParams(dp(36), dp(36))
             setOnClickListener {
                 onBackPressed()
             }
         }
-        menuBtn = TextView(this).apply {
-            text = " ☰ "
-            textSize = 20f
-            setTextColor(NC.ON_SURFACE)
-            setPadding(dp(8), 0, dp(8), 0)
+        menuBtn = ImageView(this).apply {
+            setImageResource(R.drawable.ic_menu)
+            setColorFilter(NC.ON_SURFACE)
+            setPadding(dp(6), dp(6), dp(6), dp(6))
+            layoutParams = LinearLayout.LayoutParams(dp(36), dp(36))
             setOnClickListener {
                 if (drawerLayout.isDrawerOpen(sidebarLayout)) {
                     drawerLayout.closeDrawer(sidebarLayout)
@@ -1005,11 +1031,11 @@ class MainActivity : AppCompatActivity() {
                 layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
             }
 
-            val closeBtn = TextView(this@MainActivity).apply {
-                text = "✕"
-                textSize = 14f
-                setTextColor(NC.ERROR)
-                setPadding(dp(8), dp(4), dp(8), dp(4))
+            val closeBtn = ImageView(this@MainActivity).apply {
+                setImageResource(R.drawable.ic_close)
+                setColorFilter(NC.ERROR)
+                setPadding(dp(4), dp(4), dp(4), dp(4))
+                layoutParams = LinearLayout.LayoutParams(dp(24), dp(24))
                 setOnClickListener {
                     closeTerminalSession(i)
                 }
@@ -1049,13 +1075,15 @@ class MainActivity : AppCompatActivity() {
             layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
         }
         val newProjBtn = TextView(this).apply {
-            text = "＋ New Project"
+            text = " New Project"
             textSize = 13f
             setTextColor(Color.WHITE)
             typeface = Typeface.DEFAULT_BOLD
             gravity = Gravity.CENTER
+            setCompoundDrawablesWithIntrinsicBounds(R.drawable.ic_add, 0, 0, 0)
+            compoundDrawableTintList = android.content.res.ColorStateList.valueOf(Color.WHITE)
             background = roundedBg(NC.PRIMARY_CON, NC.PRIMARY_CON, dp(14))
-            setPadding(dp(12), dp(6), dp(12), dp(6))
+            setPadding(dp(10), dp(6), dp(14), dp(6))
             setOnClickListener {
                 if (pageStack.isEmpty() || pageStack.peek() != ID_PROJECT_CREATE) {
                     pageStack.push(ID_PROJECT_CREATE)
@@ -1205,8 +1233,10 @@ class MainActivity : AppCompatActivity() {
             if (ctrl)  meta = meta or KeyEvent.META_CTRL_ON  or KeyEvent.META_CTRL_LEFT_ON
             if (alt)   meta = meta or KeyEvent.META_ALT_ON   or KeyEvent.META_ALT_LEFT_ON
             if (shift) meta = meta or KeyEvent.META_SHIFT_ON or KeyEvent.META_SHIFT_LEFT_ON
-            val ev = KeyEvent(0, 0, KeyEvent.ACTION_UP, keyCode, 0, meta)
-            tv.onKeyDown(keyCode, ev)
+            val evDown = KeyEvent(0, 0, KeyEvent.ACTION_DOWN, keyCode, 0, meta)
+            tv.onKeyDown(keyCode, evDown)
+            val evUp = KeyEvent(0, 0, KeyEvent.ACTION_UP, keyCode, 0, meta)
+            tv.onKeyUp(keyCode, evUp)
         } else {
             key.codePoints().forEach { cp -> tv.inputCodePoint(cp, ctrl, alt) }
         }
@@ -1232,9 +1262,13 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun makeToolbarKeyBtn(label: String, widePad: Boolean = false, cornerRadius: Int = dp(5), marginRight: Int = dp(5), height: Int = WRAP, exactWidth: Int? = null): TextView {
+    private fun makeToolbarKeyBtn(label: String, widePad: Boolean = false, cornerRadius: Int = dp(5), marginRight: Int = dp(5), height: Int = WRAP, exactWidth: Int? = null, iconResId: Int? = null): TextView {
         return TextView(this).apply {
-            text = label
+            text = if (iconResId != null) "" else label
+            if (iconResId != null) {
+                setCompoundDrawablesWithIntrinsicBounds(iconResId, 0, 0, 0)
+                compoundDrawableTintList = android.content.res.ColorStateList.valueOf(NC.ON_SURF_VAR)
+            }
             textSize = 11f
             typeface = Typeface.MONOSPACE
             setTextColor(NC.ON_SURF_VAR)
@@ -1367,6 +1401,7 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
+        modState.onStateChanged = { runOnUiThread { refreshModBtns() } }
 
         // Core key row 1: ESC TAB ENTER BKSP
         data class KeyDef(val label: String, val key: String)
@@ -1414,12 +1449,15 @@ class MainActivity : AppCompatActivity() {
 
         // Arrow cluster
         val arrowKeys = listOf(
-            KeyDef("←", "LEFT"), KeyDef("↑", "UP"), KeyDef("↓", "DOWN"), KeyDef("→", "RIGHT")
+            Triple(R.drawable.ic_arrow_left, "LEFT", "←"),
+            Triple(R.drawable.ic_arrow_up, "UP", "↑"),
+            Triple(R.drawable.ic_arrow_down, "DOWN", "↓"),
+            Triple(R.drawable.ic_arrow_right, "RIGHT", "→")
         )
-        arrowKeys.forEach { kd ->
-            val btn = makeToolbarKeyBtn(kd.label, marginRight = 0, height = dp(44), exactWidth = keyWidth)
+        arrowKeys.forEach { (iconId, key, label) ->
+            val btn = makeToolbarKeyBtn(label, marginRight = 0, height = dp(44), exactWidth = keyWidth, iconResId = iconId)
             btn.setOnClickListener {
-                injectKey(tvRef(), kd.key, modState.ctrlActive, modState.altActive, modState.shiftActive)
+                injectKey(tvRef(), key, modState.ctrlActive, modState.altActive, modState.shiftActive)
                 consumeModifiers(); refreshModBtns()
             }
             row2.addView(btn)
@@ -1433,12 +1471,13 @@ class MainActivity : AppCompatActivity() {
         // row2.addView(div2)
 
         val navKeys = listOf(
-            KeyDef("⌦", "DEL"), KeyDef("Ins", "INS")
+            Triple(R.drawable.ic_backspace, "DEL", "⌦"),
+            Triple(null, "INS", "Ins")
         )
-        navKeys.forEach { kd ->
-            val btn = makeToolbarKeyBtn(kd.label, marginRight = 0, height = dp(44), exactWidth = keyWidth)
+        navKeys.forEach { (iconId, key, label) ->
+            val btn = makeToolbarKeyBtn(label, marginRight = 0, height = dp(44), exactWidth = keyWidth, iconResId = iconId)
             btn.setOnClickListener {
-                injectKey(tvRef(), kd.key, modState.ctrlActive, modState.altActive, modState.shiftActive)
+                injectKey(tvRef(), key, modState.ctrlActive, modState.altActive, modState.shiftActive)
                 consumeModifiers(); refreshModBtns()
             }
             row2.addView(btn)
@@ -1526,11 +1565,11 @@ class MainActivity : AppCompatActivity() {
             setPadding(dp(12), dp(10), dp(12), dp(10))
             layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
         }
-        val menuTerminalBtn = TextView(this).apply {
-            text = " ☰ "
-            textSize = 18f
-            setTextColor(NC.ON_SURFACE)
+        val menuTerminalBtn = ImageView(this).apply {
+            setImageResource(R.drawable.ic_menu)
+            setColorFilter(NC.ON_SURFACE)
             setPadding(dp(6), dp(6), dp(6), dp(6))
+            layoutParams = LinearLayout.LayoutParams(dp(36), dp(36))
             setOnClickListener {
                 if (drawerLayout.isDrawerOpen(sidebarLayout)) {
                     drawerLayout.closeDrawer(sidebarLayout)
@@ -1604,9 +1643,13 @@ class MainActivity : AppCompatActivity() {
             gravity = Gravity.CENTER_VERTICAL
             setPadding(0, 0, 0, dp(16))
         }
-        val cloneBtn = outlineBtn("⬇ Clone Repository")
+        val cloneBtn = outlineBtn(" Clone Repository")
+        cloneBtn.setCompoundDrawablesWithIntrinsicBounds(R.drawable.ic_download, 0, 0, 0)
+        cloneBtn.compoundDrawableTintList = android.content.res.ColorStateList.valueOf(NC.PRIMARY)
         cloneBtn.layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f).apply { rightMargin = dp(8) }
-        val pushBtn = primaryBtn("↑ Push")
+        val pushBtn = primaryBtn(" Push")
+        pushBtn.setCompoundDrawablesWithIntrinsicBounds(R.drawable.ic_upload, 0, 0, 0)
+        pushBtn.compoundDrawableTintList = android.content.res.ColorStateList.valueOf(Color.WHITE)
         pushBtn.layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
         actionRow.addView(cloneBtn); actionRow.addView(pushBtn)
         gitOperationsLayout.addView(actionRow)
@@ -1659,10 +1702,10 @@ class MainActivity : AppCompatActivity() {
                 navigateToPage(ID_SCRIPTS)
             }
             
-            val icon = TextView(this@MainActivity).apply {
-                text = "📜 "
-                textSize = 18f
-                setPadding(0, 0, dp(12), 0)
+            val icon = ImageView(this@MainActivity).apply {
+                setImageResource(R.drawable.ic_history)
+                setColorFilter(NC.PRIMARY)
+                layoutParams = LinearLayout.LayoutParams(dp(24), dp(24)).apply { rightMargin = dp(12) }
             }
             val details = LinearLayout(this@MainActivity).apply {
                 orientation = LinearLayout.VERTICAL; layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
@@ -1680,10 +1723,10 @@ class MainActivity : AppCompatActivity() {
             }
             details.addView(name)
             details.addView(sub)
-            val arrow = TextView(this@MainActivity).apply {
-                text = "❯"
-                textSize = 14f
-                setTextColor(NC.OUTLINE)
+            val arrow = ImageView(this@MainActivity).apply {
+                setImageResource(R.drawable.ic_chevron_right)
+                setColorFilter(NC.OUTLINE)
+                layoutParams = LinearLayout.LayoutParams(dp(20), dp(20))
             }
             addView(icon)
             addView(details)
@@ -1800,11 +1843,11 @@ class MainActivity : AppCompatActivity() {
             setPadding(dp(12), dp(10), dp(12), dp(10))
             layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
         }
-        scriptInstallBackBtn = TextView(this).apply {
-            text = " ◀ "
-            textSize = 18f
-            setTextColor(NC.ON_SURFACE)
+        scriptInstallBackBtn = ImageView(this).apply {
+            setImageResource(R.drawable.ic_arrow_back)
+            setColorFilter(NC.ON_SURFACE)
             setPadding(dp(6), dp(6), dp(6), dp(6))
+            layoutParams = LinearLayout.LayoutParams(dp(36), dp(36))
             setOnClickListener {
                 onBackPressed()
             }
@@ -2682,7 +2725,16 @@ class MainActivity : AppCompatActivity() {
         val headerRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(0, 0, 0, dp(12)) }
         val icon = TextView(this).apply { text = "\uD83C\uDF3F "; textSize = 16f; setTextColor(NC.SECONDARY) }
         val title = TextView(this).apply { text = "Active Branches"; textSize = 16f; setTextColor(NC.ON_SURFACE); typeface = Typeface.DEFAULT_BOLD; layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f) }
-        val fetchBtn = TextView(this).apply { text = "↺ git fetch"; textSize = 11f; setTextColor(NC.ON_SURF_VAR); typeface = Typeface.MONOSPACE; background = roundedBg(NC.SURFACE_HIGH, NC.BORDER, dp(4)); setPadding(dp(8), dp(4), dp(8), dp(4)) }
+        val fetchBtn = TextView(this).apply {
+            text = " git fetch"
+            textSize = 11f
+            setTextColor(NC.ON_SURF_VAR)
+            typeface = Typeface.MONOSPACE
+            setCompoundDrawablesWithIntrinsicBounds(R.drawable.ic_refresh, 0, 0, 0)
+            compoundDrawableTintList = android.content.res.ColorStateList.valueOf(NC.ON_SURF_VAR)
+            background = roundedBg(NC.SURFACE_HIGH, NC.BORDER, dp(4))
+            setPadding(dp(8), dp(4), dp(8), dp(4))
+        }
         headerRow.addView(icon); headerRow.addView(title); headerRow.addView(fetchBtn); card.addView(headerRow)
 
         val treeBlock = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; background = roundedBg(NC.LOGBG, NC.BORDER, dp(8)); setPadding(dp(12)) }
@@ -2922,10 +2974,10 @@ class MainActivity : AppCompatActivity() {
             override fun onKeyDown(keyCode: Int, event: android.view.KeyEvent, session: TerminalSession): Boolean = false
             override fun onKeyUp(keyCode: Int, event: android.view.KeyEvent): Boolean = false
             override fun onLongPress(e: MotionEvent): Boolean = false
-            override fun readControlKey(): Boolean = false
-            override fun readAltKey(): Boolean     = false
-            override fun readShiftKey(): Boolean   = false
-            override fun readFnKey(): Boolean      = false
+            override fun readControlKey(): Boolean = termModState.readCtrl(true)
+            override fun readAltKey(): Boolean     = termModState.readAlt(true)
+            override fun readShiftKey(): Boolean   = termModState.readShift(true)
+            override fun readFnKey(): Boolean      = termModState.readFn(true)
             override fun onCodePoint(codePoint: Int, ctrlDown: Boolean, session: TerminalSession): Boolean = false
             override fun onEmulatorSet() {}
             override fun logError(tag: String, message: String)   {}
@@ -3300,11 +3352,11 @@ class MainActivity : AppCompatActivity() {
             setPadding(dp(12), dp(10), dp(12), dp(10))
             layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
         }
-        val backBtn = TextView(this).apply {
-            text = " ◀ "
-            textSize = 18f
-            setTextColor(NC.ON_SURFACE)
+        val backBtn = ImageView(this).apply {
+            setImageResource(R.drawable.ic_arrow_back)
+            setColorFilter(NC.ON_SURFACE)
             setPadding(dp(6), dp(6), dp(6), dp(6))
+            layoutParams = LinearLayout.LayoutParams(dp(36), dp(36))
             setOnClickListener {
                 onBackPressed()
             }
@@ -3955,11 +4007,11 @@ class MainActivity : AppCompatActivity() {
                 typeface = Typeface.MONOSPACE
             }
             
-            val closeTv = TextView(this).apply {
-                text = " ✕"
-                textSize = 12f
-                setTextColor(NC.ERROR)
-                setPadding(dp(4), dp(2), dp(4), dp(2))
+            val closeTv = ImageView(this).apply {
+                setImageResource(R.drawable.ic_close)
+                setColorFilter(NC.ERROR)
+                setPadding(dp(4), dp(4), dp(4), dp(4))
+                layoutParams = LinearLayout.LayoutParams(dp(20), dp(20))
                 setOnClickListener {
                     closeWorkspaceTab(i)
                 }
@@ -4026,11 +4078,11 @@ class MainActivity : AppCompatActivity() {
             layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
         }
 
-        val backWorkspaceBtn = TextView(this).apply {
-            text = " ◀ "
-            textSize = 18f
-            setTextColor(NC.ON_SURFACE)
+        val backWorkspaceBtn = ImageView(this).apply {
+            setImageResource(R.drawable.ic_arrow_back)
+            setColorFilter(NC.ON_SURFACE)
             setPadding(dp(6), dp(6), dp(6), dp(6))
+            layoutParams = LinearLayout.LayoutParams(dp(36), dp(36))
             setOnClickListener {
                 onBackPressed()
             }
@@ -4122,10 +4174,10 @@ class MainActivity : AppCompatActivity() {
             override fun onKeyDown(keyCode: Int, event: android.view.KeyEvent, session: TerminalSession): Boolean = false
             override fun onKeyUp(keyCode: Int, event: android.view.KeyEvent): Boolean = false
             override fun onLongPress(e: MotionEvent): Boolean = false
-            override fun readControlKey(): Boolean = false
-            override fun readAltKey(): Boolean     = false
-            override fun readShiftKey(): Boolean   = false
-            override fun readFnKey(): Boolean      = false
+            override fun readControlKey(): Boolean = wsModState.readCtrl(true)
+            override fun readAltKey(): Boolean     = wsModState.readAlt(true)
+            override fun readShiftKey(): Boolean   = wsModState.readShift(true)
+            override fun readFnKey(): Boolean      = wsModState.readFn(true)
             override fun onCodePoint(codePoint: Int, ctrlDown: Boolean, session: TerminalSession): Boolean = false
             override fun onEmulatorSet() {}
             override fun logError(tag: String, message: String)   {}
@@ -4206,7 +4258,8 @@ class MainActivity : AppCompatActivity() {
                     if (bmp != null) iconView.setImageBitmap(bmp)
                 }
             } catch (_: Exception) {
-                iconView.setImageResource(android.R.drawable.ic_menu_manage)
+                iconView.setImageResource(R.drawable.ic_extension)
+                iconView.setColorFilter(NC.PRIMARY)
             }
 
             card.addView(iconView)
@@ -4278,11 +4331,11 @@ class MainActivity : AppCompatActivity() {
             setPadding(dp(12), dp(10), dp(12), dp(10))
             layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
         }
-        val backBtn = TextView(this).apply {
-            text = " ◀ "
-            textSize = 18f
-            setTextColor(NC.ON_SURFACE)
+        val backBtn = ImageView(this).apply {
+            setImageResource(R.drawable.ic_arrow_back)
+            setColorFilter(NC.ON_SURFACE)
             setPadding(dp(6), dp(6), dp(6), dp(6))
+            layoutParams = LinearLayout.LayoutParams(dp(36), dp(36))
             setOnClickListener {
                 onBackPressed()
             }
@@ -4363,8 +4416,12 @@ class MainActivity : AppCompatActivity() {
         fun updatePreview(iconStr: String) {
             previewContainer.removeAllViews()
             if (iconStr.isEmpty()) {
-                val tv = TextView(this@MainActivity).apply { text = "📁"; textSize = 48f; gravity = Gravity.CENTER }
-                previewContainer.addView(tv)
+                val iv = ImageView(this@MainActivity).apply {
+                    setImageResource(R.drawable.ic_folder_special)
+                    setColorFilter(NC.PRIMARY)
+                    layoutParams = FrameLayout.LayoutParams(dp(64), dp(64), Gravity.CENTER)
+                }
+                previewContainer.addView(iv)
             } else if (iconStr.length <= 4 && !iconStr.startsWith("/") && !iconStr.startsWith("http")) {
                 val tv = TextView(this@MainActivity).apply { text = iconStr; textSize = 48f; gravity = Gravity.CENTER }
                 previewContainer.addView(tv)
@@ -4394,15 +4451,23 @@ class MainActivity : AppCompatActivity() {
                             if (bitmap != null) iv.setImageBitmap(bitmap)
                             else {
                                 previewContainer.removeAllViews()
-                                val tv = TextView(this@MainActivity).apply { text = "📁"; textSize = 48f; gravity = Gravity.CENTER }
-                                previewContainer.addView(tv)
+                                val defaultIv = ImageView(this@MainActivity).apply {
+                                    setImageResource(R.drawable.ic_folder_special)
+                                    setColorFilter(NC.PRIMARY)
+                                    layoutParams = FrameLayout.LayoutParams(dp(64), dp(64), Gravity.CENTER)
+                                }
+                                previewContainer.addView(defaultIv)
                             }
                         }
                     } catch (e: Exception) {
                         mainHandler.post {
                             previewContainer.removeAllViews()
-                            val tv = TextView(this@MainActivity).apply { text = "📁"; textSize = 48f; gravity = Gravity.CENTER }
-                            previewContainer.addView(tv)
+                            val defaultIv = ImageView(this@MainActivity).apply {
+                                setImageResource(R.drawable.ic_folder_special)
+                                setColorFilter(NC.PRIMARY)
+                                layoutParams = FrameLayout.LayoutParams(dp(64), dp(64), Gravity.CENTER)
+                            }
+                            previewContainer.addView(defaultIv)
                         }
                     }
                 }

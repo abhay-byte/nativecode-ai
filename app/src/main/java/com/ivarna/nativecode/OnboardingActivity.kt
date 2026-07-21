@@ -140,11 +140,12 @@ class OnboardingActivity : AppCompatActivity() {
                 bottomMargin = dp(32)
             }
         }
-        val iconTv = TextView(this).apply {
-            text = "\uD83D\uDCBB" // Monitor / Terminal cursor
-            textSize = 64f
+        val iconIv = ImageView(this).apply {
+            setImageResource(R.drawable.ic_laptop)
+            setColorFilter(NC.PRIMARY)
+            layoutParams = LinearLayout.LayoutParams(dp(64), dp(64))
         }
-        iconCard.addView(iconTv)
+        iconCard.addView(iconIv)
         root.addView(iconCard)
 
         val nameTv = TextView(this).apply {
@@ -192,10 +193,10 @@ class OnboardingActivity : AppCompatActivity() {
 
         // Slides data
         val slides = listOf(
-            SlideData("\uD83D\uDEE1\uFE0F", "Bypass Android W^X", "Packages critical execution binaries ('proot', 'bash', 'loader') as JNI libraries to run guest Linux without Root access on modern SDK 36 devices."),
-            SlideData("\uD83D\uDCC2", "Local Workspaces", "Fully featured local file management system with folder trees, new file triggers, and native Git status diff checks inside the GUI."),
-            SlideData("\uD83C\uDFA8", "XFCE Graphic Server", "Integrated Termux X11 graphic display support. Launch a fully loaded XFCE4 desktop directly on top of PRoot container services."),
-            SlideData("\uD83E\uDD16", "Agentic AI Harness", "Provides direct integration and terminal environments for Claude Code, Aider, Cline, and Codex CLI to automate developer tasks.")
+            SlideData(R.drawable.ic_shield, "Bypass Android W^X", "Packages critical execution binaries ('proot', 'bash', 'loader') as JNI libraries to run guest Linux without Root access on modern SDK 36 devices."),
+            SlideData(R.drawable.ic_folder, "Local Workspaces", "Fully featured local file management system with folder trees, new file triggers, and native Git status diff checks inside the GUI."),
+            SlideData(R.drawable.ic_palette, "XFCE Graphic Server", "Integrated Termux X11 graphic display support. Launch a fully loaded XFCE4 desktop directly on top of PRoot container services."),
+            SlideData(R.drawable.ic_smart_toy, "Agentic AI Harness", "Provides direct integration and terminal environments for Claude Code, Aider, Cline, and Codex CLI to automate developer tasks.")
         )
 
         var activeSlide = 0
@@ -208,10 +209,10 @@ class OnboardingActivity : AppCompatActivity() {
                 gravity = Gravity.CENTER
                 setPadding(dp(16))
             }
-            val slideIcon = TextView(this).apply {
-                text = slide.icon
-                textSize = 72f
-                setPadding(0, 0, 0, dp(24))
+            val slideIcon = ImageView(this).apply {
+                setImageResource(slide.iconResId)
+                setColorFilter(NC.PRIMARY)
+                layoutParams = LinearLayout.LayoutParams(dp(72), dp(72)).apply { bottomMargin = dp(24) }
             }
             val slideTitle = TextView(this).apply {
                 text = slide.title
@@ -291,7 +292,7 @@ class OnboardingActivity : AppCompatActivity() {
         return root
     }
 
-    private data class SlideData(val icon: String, val title: String, val desc: String)
+    private data class SlideData(val iconResId: Int, val title: String, val desc: String)
 
     // ── Page 3: Architecture Isolation ────────────────────────────────────────
     private fun buildIsolationPage(): View {
@@ -316,7 +317,11 @@ class OnboardingActivity : AppCompatActivity() {
         val prootTop = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
         }
-        val prootIcon = TextView(this).apply { text = "\uD83D\uDEE1\uFE0F "; textSize = 18f }
+        val prootIcon = ImageView(this).apply {
+            setImageResource(R.drawable.ic_shield)
+            setColorFilter(NC.PRIMARY)
+            layoutParams = LinearLayout.LayoutParams(dp(20), dp(20)).apply { rightMargin = dp(8) }
+        }
         val prootTitle = TextView(this).apply { text = "PROOT"; textSize = 16f; setTextColor(NC.ON_SURFACE); typeface = Typeface.DEFAULT_BOLD }
         val prootBadge = textBadge("RECOMMENDED", Color.argb(51, 124, 58, 237), NC.PRIMARY)
         prootTop.addView(prootIcon); prootTop.addView(prootTitle)
@@ -342,7 +347,11 @@ class OnboardingActivity : AppCompatActivity() {
         val chrootTop = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
         }
-        val chrootIcon = TextView(this).apply { text = "\uD83D\uDD13 "; textSize = 18f }
+        val chrootIcon = ImageView(this).apply {
+            setImageResource(R.drawable.ic_lock_open)
+            setColorFilter(NC.TERTIARY)
+            layoutParams = LinearLayout.LayoutParams(dp(20), dp(20)).apply { rightMargin = dp(8) }
+        }
         val chrootTitle = TextView(this).apply { text = "CHROOT"; textSize = 16f; setTextColor(NC.ON_SURFACE); typeface = Typeface.DEFAULT_BOLD }
         val chrootBadge = textBadge("COMING SOON", NC.SURFACE_VAR, NC.TERTIARY)
         chrootTop.addView(chrootIcon); chrootTop.addView(chrootTitle)
@@ -678,12 +687,12 @@ class OnboardingActivity : AppCompatActivity() {
                 bottomMargin = dp(32)
             }
         }
-        val iconTv = TextView(this).apply {
-            text = "✓"
-            textSize = 40f
-            setTextColor(NC.SECONDARY)
+        val iconIv = ImageView(this).apply {
+            setImageResource(R.drawable.ic_check_circle)
+            setColorFilter(NC.SECONDARY)
+            layoutParams = LinearLayout.LayoutParams(dp(48), dp(48))
         }
-        iconBox.addView(iconTv)
+        iconBox.addView(iconIv)
         root.addView(iconBox)
         pulseView(iconBox)
 
@@ -804,7 +813,11 @@ class OnboardingActivity : AppCompatActivity() {
             gravity = Gravity.CENTER_VERTICAL
             setPadding(0, 0, 0, dp(16))
         }
-        val icon = TextView(this).apply { text = "\uD83D\uDCBB "; textSize = 20f }
+        val icon = ImageView(this).apply {
+            setImageResource(R.drawable.ic_laptop)
+            setColorFilter(NC.PRIMARY)
+            layoutParams = LinearLayout.LayoutParams(dp(22), dp(22)).apply { rightMargin = dp(8) }
+        }
         val text = TextView(this).apply {
             this.text = title
             textSize = 20f
