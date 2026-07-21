@@ -10,7 +10,6 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import android.util.Base64
 import android.util.Log
 import android.util.TypedValue
 import android.view.Gravity
@@ -36,6 +35,9 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.view.ContextMenu
 import android.view.MenuItem
+import android.net.Uri
+import android.view.KeyEvent
+import androidx.activity.result.contract.ActivityResultContracts
 import java.io.File
 import java.io.FileOutputStream
 import java.util.concurrent.Executors
@@ -203,7 +205,23 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var workspaceTerminalContainer: LinearLayout
     private lateinit var workspaceKeyboardToolbar: LinearLayout
-    private lateinit var workspaceAttachBar: LinearLayout
+
+    // ── Special Keys Toolbar state ─────────────────────────────────────────────
+    private data class ModifierState(
+        var ctrlActive: Boolean = false, var ctrlLocked: Boolean = false,
+        var altActive: Boolean = false,  var altLocked: Boolean = false,
+        var shiftActive: Boolean = false, var shiftLocked: Boolean = false
+    )
+    private val termModState = ModifierState()
+    private val wsModState   = ModifierState()
+
+    private val termImagePickerLauncher = registerForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri -> uri?.let { handleImageAttachment(it, isWorkspace = false) } }
+
+    private val wsImagePickerLauncher = registerForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri -> uri?.let { handleImageAttachment(it, isWorkspace = true) } }
 
     private val projectSessionsMap = HashMap<String, ArrayList<TerminalSession>>()
     private val projectTabNamesMap = HashMap<String, ArrayList<String>>()
@@ -1149,6 +1167,350 @@ class MainActivity : AppCompatActivity() {
         fileExplorerLayout.addView(gitPanel)
     }
 
+    // ── Key injection helper ───────────────────────────────────────────────────
+    private val SPECIAL_KEY_CODES = mapOf(
+        "ESC"   to KeyEvent.KEYCODE_ESCAPE,
+        "TAB"   to KeyEvent.KEYCODE_TAB,
+        "ENTER" to KeyEvent.KEYCODE_ENTER,
+        "BKSP"  to KeyEvent.KEYCODE_DEL,
+        "DEL"   to KeyEvent.KEYCODE_FORWARD_DEL,
+        "UP"    to KeyEvent.KEYCODE_DPAD_UP,
+        "DOWN"  to KeyEvent.KEYCODE_DPAD_DOWN,
+        "LEFT"  to KeyEvent.KEYCODE_DPAD_LEFT,
+        "RIGHT" to KeyEvent.KEYCODE_DPAD_RIGHT,
+        "HOME"  to KeyEvent.KEYCODE_MOVE_HOME,
+        "END"   to KeyEvent.KEYCODE_MOVE_END,
+        "PGUP"  to KeyEvent.KEYCODE_PAGE_UP,
+        "PGDN"  to KeyEvent.KEYCODE_PAGE_DOWN,
+        "INS"   to KeyEvent.KEYCODE_INSERT,
+        "F1"    to KeyEvent.KEYCODE_F1,
+        "F2"    to KeyEvent.KEYCODE_F2,
+        "F3"    to KeyEvent.KEYCODE_F3,
+        "F4"    to KeyEvent.KEYCODE_F4,
+        "F5"    to KeyEvent.KEYCODE_F5,
+        "F6"    to KeyEvent.KEYCODE_F6,
+        "F7"    to KeyEvent.KEYCODE_F7,
+        "F8"    to KeyEvent.KEYCODE_F8,
+        "F9"    to KeyEvent.KEYCODE_F9,
+        "F10"   to KeyEvent.KEYCODE_F10,
+        "F11"   to KeyEvent.KEYCODE_F11,
+        "F12"   to KeyEvent.KEYCODE_F12
+    )
+
+    private fun injectKey(tv: TerminalView?, key: String, ctrl: Boolean, alt: Boolean, shift: Boolean) {
+        tv ?: return
+        val keyCode = SPECIAL_KEY_CODES[key]
+        if (keyCode != null) {
+            var meta = 0
+            if (ctrl)  meta = meta or KeyEvent.META_CTRL_ON  or KeyEvent.META_CTRL_LEFT_ON
+            if (alt)   meta = meta or KeyEvent.META_ALT_ON   or KeyEvent.META_ALT_LEFT_ON
+            if (shift) meta = meta or KeyEvent.META_SHIFT_ON or KeyEvent.META_SHIFT_LEFT_ON
+            val ev = KeyEvent(0, 0, KeyEvent.ACTION_UP, keyCode, 0, meta)
+            tv.onKeyDown(keyCode, ev)
+        } else {
+            key.codePoints().forEach { cp -> tv.inputCodePoint(cp, ctrl, alt) }
+        }
+    }
+
+    private fun handleImageAttachment(uri: Uri, isWorkspace: Boolean) {
+        try {
+            val ext = contentResolver.getType(uri)?.substringAfterLast('/')?.substringBefore(';') ?: "jpg"
+            val fname = "attach_${System.currentTimeMillis()}.$ext"
+            val guestHomeDir = File(filesDir, "usr/var/lib/proot-distro/containers/debian/rootfs/home/flux")
+            val targetDir = if (guestHomeDir.exists() && guestHomeDir.isDirectory) guestHomeDir else File(filesDir, "home").also { it.mkdirs() }
+            val destFile = File(targetDir, fname)
+            contentResolver.openInputStream(uri)?.use { inp ->
+                FileOutputStream(destFile).use { out -> inp.copyTo(out) }
+            }
+            // If saved to host files/home fallback, guest path maps via bound host path
+            val guestPath = if (targetDir == guestHomeDir) "/home/flux/$fname" else "/data/data/com.ivarna.nativecode/files/home/$fname"
+            val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            cm.setPrimaryClip(ClipData.newPlainText("image_path", guestPath))
+            Toast.makeText(this@MainActivity, "Image path copied", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            Log.e("ImageAttach", "Failed to copy image", e)
+        }
+    }
+
+    private fun makeToolbarKeyBtn(label: String, widePad: Boolean = false, cornerRadius: Int = dp(5), marginRight: Int = dp(5), height: Int = WRAP, exactWidth: Int? = null): TextView {
+        return TextView(this).apply {
+            text = label
+            textSize = 11f
+            typeface = Typeface.MONOSPACE
+            setTextColor(NC.ON_SURF_VAR)
+            background = roundedBg(NC.SURFACE, NC.BORDER, cornerRadius)
+            val hp = if (widePad) dp(10) else dp(8)
+            setPadding(hp, dp(6), hp, dp(6))
+            gravity = Gravity.CENTER
+            layoutParams = LinearLayout.LayoutParams(exactWidth ?: WRAP, height).apply { rightMargin = marginRight }
+        }
+    }
+
+    private fun makeModifierBtn(label: String, state: () -> Boolean, cornerRadius: Int = dp(5), marginRight: Int = dp(5), onPress: () -> Unit, onLongPress: () -> Unit): TextView {
+        val btn = TextView(this).apply {
+            text = label
+            textSize = 11f
+            typeface = Typeface.MONOSPACE
+            setTextColor(NC.ON_SURF_VAR)
+            background = roundedBg(NC.SURFACE, NC.BORDER, cornerRadius)
+            setPadding(dp(9), dp(6), dp(9), dp(6))
+            layoutParams = LinearLayout.LayoutParams(WRAP, WRAP).apply { rightMargin = marginRight }
+        }
+        fun updateStyle() {
+            if (state()) {
+                btn.setTextColor(NC.PRIMARY)
+                btn.background = roundedBg(
+                    (NC.PRIMARY and 0x00FFFFFF) or 0x33000000, NC.PRIMARY, cornerRadius
+                )
+            } else {
+                btn.setTextColor(NC.ON_SURF_VAR)
+                btn.background = roundedBg(NC.SURFACE, NC.BORDER, cornerRadius)
+            }
+        }
+        btn.setOnClickListener { onPress(); updateStyle() }
+        btn.setOnLongClickListener { onLongPress(); updateStyle(); true }
+        return btn
+    }
+
+    // ── Shared special-keys toolbar builder ────────────────────────────────────
+    // Returns a LinearLayout (vertical, 2 rows + optional F-keys row)
+    @Suppress("UNUSED_PARAMETER")
+    private fun buildSpecialKeysToolbar(
+        tvRef: () -> TerminalView?,
+        sessionRef: () -> TerminalSession?,
+        modState: ModifierState,
+        onPickImage: () -> Unit
+    ): LinearLayout {
+        val wrapper = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
+            background = roundedBg(NC.SURFACE, NC.BORDER, 0)
+        }
+        
+        val metrics = resources.displayMetrics
+        val keyWidth = metrics.widthPixels / 8
+
+        // ── Row 1: Modifiers + core keys + attach ──────────────────────────
+        val row1 = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, 0, 0, 0)
+        }
+
+        fun consumeModifiers() {
+            if (!modState.ctrlLocked) modState.ctrlActive = false
+            if (!modState.altLocked)  modState.altActive  = false
+            if (!modState.shiftLocked) modState.shiftActive = false
+        }
+
+        // Modifier buttons — we hold refs so we can refresh them
+        val ctrlBtn = makeModifierBtn(
+            "CTRL", { modState.ctrlActive }, cornerRadius = 0, marginRight = 0,
+            onPress = {
+                if (modState.ctrlLocked) {
+                    modState.ctrlActive = false; modState.ctrlLocked = false
+                } else {
+                    modState.ctrlActive = !modState.ctrlActive
+                    if (!modState.ctrlActive) modState.ctrlLocked = false
+                }
+            },
+            onLongPress = { modState.ctrlActive = true; modState.ctrlLocked = true }
+        ).apply {
+            layoutParams = LinearLayout.LayoutParams(0, dp(44), 1f).apply { rightMargin = 0 }
+            gravity = Gravity.CENTER
+            setPadding(0, 0, 0, 0)
+        }
+        val altBtn = makeModifierBtn(
+            "ALT", { modState.altActive }, cornerRadius = 0, marginRight = 0,
+            onPress = {
+                if (modState.altLocked) {
+                    modState.altActive = false; modState.altLocked = false
+                } else {
+                    modState.altActive = !modState.altActive
+                    if (!modState.altActive) modState.altLocked = false
+                }
+            },
+            onLongPress = { modState.altActive = true; modState.altLocked = true }
+        ).apply {
+            layoutParams = LinearLayout.LayoutParams(0, dp(44), 1f).apply { rightMargin = 0 }
+            gravity = Gravity.CENTER
+            setPadding(0, 0, 0, 0)
+        }
+        val shiftBtn = makeModifierBtn(
+            "SHFT", { modState.shiftActive }, cornerRadius = 0, marginRight = 0,
+            onPress = {
+                if (modState.shiftLocked) {
+                    modState.shiftActive = false; modState.shiftLocked = false
+                } else {
+                    modState.shiftActive = !modState.shiftActive
+                    if (!modState.shiftActive) modState.shiftLocked = false
+                }
+            },
+            onLongPress = { modState.shiftActive = true; modState.shiftLocked = true }
+        ).apply {
+            layoutParams = LinearLayout.LayoutParams(0, dp(44), 1f).apply { rightMargin = 0 }
+            gravity = Gravity.CENTER
+            setPadding(0, 0, 0, 0)
+        }
+
+        // Helper: refresh modifier button appearances (called after a key is consumed)
+        fun refreshModBtns() {
+            listOf(ctrlBtn to { modState.ctrlActive },
+                   altBtn  to { modState.altActive },
+                   shiftBtn to { modState.shiftActive }).forEach { (btn, activeGetter) ->
+                if (activeGetter()) {
+                    btn.setTextColor(NC.PRIMARY)
+                    btn.background = roundedBg((NC.PRIMARY and 0x00FFFFFF) or 0x33000000, NC.PRIMARY, 0)
+                } else {
+                    btn.setTextColor(NC.ON_SURF_VAR)
+                    btn.background = roundedBg(NC.SURFACE, NC.BORDER, 0)
+                }
+            }
+        }
+
+        // Core key row 1: ESC TAB ENTER BKSP
+        data class KeyDef(val label: String, val key: String)
+        val coreKeys1 = listOf(
+            KeyDef("ESC", "ESC"), KeyDef("TAB", "TAB"), KeyDef("ENT", "ENTER"), KeyDef("BKSP", "BKSP")
+        )
+        val coreBtn1 = coreKeys1.map { kd ->
+            makeToolbarKeyBtn(kd.label, cornerRadius = 0, marginRight = 0).apply {
+                layoutParams = LinearLayout.LayoutParams(0, dp(44), 1f).apply { rightMargin = 0 }
+                gravity = Gravity.CENTER
+                setPadding(0, 0, 0, 0)
+            }.also { btn ->
+                btn.setOnClickListener {
+                    injectKey(tvRef(), kd.key, modState.ctrlActive, modState.altActive, modState.shiftActive)
+                    consumeModifiers(); refreshModBtns()
+                }
+            }
+        }
+
+        // Image attach button
+        val attachBtn = ImageView(this).apply {
+            setImageResource(R.drawable.ic_attach_image)
+            setColorFilter(NC.ON_SURF_VAR)
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            background = roundedBg(NC.SURFACE, NC.BORDER, 0)
+            setPadding(dp(13), dp(13), dp(13), dp(13))
+            layoutParams = LinearLayout.LayoutParams(0, dp(44), 1f).apply { rightMargin = 0 }
+            setOnClickListener { onPickImage() }
+        }
+
+        row1.addView(ctrlBtn); row1.addView(altBtn); row1.addView(shiftBtn)
+        coreBtn1.forEach { row1.addView(it) }
+        row1.addView(attachBtn)
+
+        // ── Row 2: Scrollable special keys ────────────────────────────────
+        val row2scroll = HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
+        }
+        val row2 = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, 0, 0, 0)
+        }
+
+        // Arrow cluster
+        val arrowKeys = listOf(
+            KeyDef("←", "LEFT"), KeyDef("↑", "UP"), KeyDef("↓", "DOWN"), KeyDef("→", "RIGHT")
+        )
+        arrowKeys.forEach { kd ->
+            val btn = makeToolbarKeyBtn(kd.label, marginRight = 0, height = dp(44), exactWidth = keyWidth)
+            btn.setOnClickListener {
+                injectKey(tvRef(), kd.key, modState.ctrlActive, modState.altActive, modState.shiftActive)
+                consumeModifiers(); refreshModBtns()
+            }
+            row2.addView(btn)
+        }
+
+        // Nav cluster divider
+        val div2 = View(this).apply {
+            setBackgroundColor(NC.BORDER)
+            layoutParams = LinearLayout.LayoutParams(dp(1), dp(44))
+        }
+        // row2.addView(div2)
+
+        val navKeys = listOf(
+            KeyDef("⌦", "DEL"), KeyDef("Ins", "INS")
+        )
+        navKeys.forEach { kd ->
+            val btn = makeToolbarKeyBtn(kd.label, marginRight = 0, height = dp(44), exactWidth = keyWidth)
+            btn.setOnClickListener {
+                injectKey(tvRef(), kd.key, modState.ctrlActive, modState.altActive, modState.shiftActive)
+                consumeModifiers(); refreshModBtns()
+            }
+            row2.addView(btn)
+        }
+
+        // Symbol cluster divider
+        val div3 = View(this).apply {
+            setBackgroundColor(NC.BORDER)
+            layoutParams = LinearLayout.LayoutParams(dp(1), dp(44))
+        }
+        // row2.addView(div3)
+
+        val symKeys = listOf("/", "|", "~", "-", "_", "\\")
+        symKeys.forEach { sym ->
+            val btn = makeToolbarKeyBtn(sym, marginRight = 0, height = dp(44), exactWidth = keyWidth)
+            btn.setOnClickListener {
+                injectKey(tvRef(), sym, modState.ctrlActive, modState.altActive, modState.shiftActive)
+                consumeModifiers(); refreshModBtns()
+            }
+            row2.addView(btn)
+        }
+
+        // F-key toggle
+        val div4 = View(this).apply {
+            setBackgroundColor(NC.BORDER)
+            layoutParams = LinearLayout.LayoutParams(dp(1), dp(44))
+        }
+        // row2.addView(div4)
+
+        var fRowVisible = false
+        val fnBtn = makeToolbarKeyBtn("Fn", marginRight = 0, height = dp(44), exactWidth = keyWidth)
+        row2.addView(fnBtn)
+
+        // F-keys row (hidden by default)
+        val fRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            visibility = View.GONE
+        }
+        val fScroll = HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
+            setPadding(0, 0, 0, 0)
+        }
+        (1..12).forEach { n ->
+            val btn = makeToolbarKeyBtn("F$n", marginRight = 0, height = dp(44), exactWidth = keyWidth)
+            btn.setOnClickListener {
+                injectKey(tvRef(), "F$n", modState.ctrlActive, modState.altActive, modState.shiftActive)
+                consumeModifiers(); refreshModBtns()
+            }
+            fRow.addView(btn)
+        }
+        fScroll.addView(fRow)
+
+        fnBtn.setOnClickListener {
+            fRowVisible = !fRowVisible
+            fScroll.visibility = if (fRowVisible) View.VISIBLE else View.GONE
+            fnBtn.setTextColor(if (fRowVisible) NC.PRIMARY else NC.ON_SURF_VAR)
+            fnBtn.background = if (fRowVisible)
+                roundedBg((NC.PRIMARY and 0x00FFFFFF) or 0x33000000, NC.PRIMARY, dp(5))
+            else roundedBg(NC.SURFACE, NC.BORDER, dp(5))
+        }
+
+        row2scroll.addView(row2)
+
+        wrapper.addView(row1)
+        wrapper.addView(row2scroll)
+        wrapper.addView(fScroll)
+
+        return wrapper
+    }
+
     private fun buildTerminalLayout() {
         terminalWorkspaceLayout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -1209,57 +1571,20 @@ class MainActivity : AppCompatActivity() {
         terminalViewContainer.addView(terminalView)
         terminalWorkspaceLayout.addView(terminalViewContainer)
 
-        // Shortcut keyboard bar
-        terminalWorkspaceLayout.addView(buildKeyboardToolbar())
-
-        // Bottom floating attachments action
-        val attachBar = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            setBackgroundColor(NC.BG)
-            setPadding(dp(12), dp(10), dp(12), dp(12))
-        }
-        val attachBtn = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER
-            background = roundedBg(NC.SURFACE, NC.BORDER_VAR, dp(8))
-            setPadding(dp(12), dp(10), dp(12), dp(10))
-            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
-        }
-        val attachTv = TextView(this).apply {
-            text = "\uD83D\uDCCE  Add Context (Ingest Image/File)"
-            textSize = 12f; setTextColor(NC.ON_SURF_VAR); typeface = Typeface.MONOSPACE
-        }
-        attachBtn.addView(attachTv)
-        attachBar.addView(attachBtn)
-        terminalWorkspaceLayout.addView(attachBar)
-    }
-
-    private fun buildKeyboardToolbar(): LinearLayout {
-        val bar = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            setBackgroundColor(NC.SURFACE_HIGH)
-            setPadding(dp(8), dp(6), dp(8), dp(6))
-        }
-        val scroll = HorizontalScrollView(this).apply { layoutParams = LinearLayout.LayoutParams(MATCH, WRAP) }
-        val inner = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        for (key in listOf("Tab", "Ctrl", "Alt", "Esc", "/", "|", "~", "-")) {
-            val btn = TextView(this).apply {
-                text = key; textSize = 11f; typeface = Typeface.MONOSPACE
-                setTextColor(NC.ON_SURF_VAR)
-                background = roundedBg(NC.SURFACE, NC.BORDER, dp(4))
-                setPadding(dp(10), dp(6), dp(10), dp(6))
-                layoutParams = LinearLayout.LayoutParams(WRAP, WRAP).apply { rightMargin = dp(6) }
-                setOnClickListener {
-                    val text = when (key) {
-                        "Tab" -> "\t"; "Esc" -> "\u001b"
-                        else -> key
-                    }
-                    terminalSession?.write(text)
+        // Full special-keys toolbar (replaces old dummy bar + attach bar)
+        val toolbar = buildSpecialKeysToolbar(
+            tvRef = { if (::terminalView.isInitialized) terminalView else null },
+            sessionRef = { terminalSession },
+            modState = termModState,
+            onPickImage = {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    termImagePickerLauncher.launch("image/*")
+                } else {
+                    termImagePickerLauncher.launch("image/*")
                 }
             }
-            inner.addView(btn)
-        }
-        scroll.addView(inner); bar.addView(scroll)
-        return bar
+        )
+        terminalWorkspaceLayout.addView(toolbar)
     }
 
     private fun buildGitOperationsLayout() {
@@ -1608,7 +1933,9 @@ class MainActivity : AppCompatActivity() {
             override fun onPasteTextFromClipboard(session: TerminalSession) {
                 val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                 val text = clipboard.primaryClip?.getItemAt(0)?.coerceToText(this@MainActivity)?.toString() ?: return
-                session.write(text)
+                executor.execute {
+                    session.emulator?.paste(text) ?: session.write(text)
+                }
             }
             override fun onBell(session: TerminalSession) {}
             override fun onColorsChanged(session: TerminalSession) {}
@@ -2633,7 +2960,9 @@ class MainActivity : AppCompatActivity() {
             override fun onPasteTextFromClipboard(session: TerminalSession) {
                 val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                 val text = clipboard.primaryClip?.getItemAt(0)?.coerceToText(this@MainActivity)?.toString() ?: return
-                session.write(text)
+                executor.execute {
+                    session.emulator?.paste(text) ?: session.write(text)
+                }
             }
             override fun onBell(session: TerminalSession)           {}
             override fun onColorsChanged(session: TerminalSession)  {}
@@ -3515,7 +3844,9 @@ class MainActivity : AppCompatActivity() {
             override fun onPasteTextFromClipboard(session: TerminalSession) {
                 val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                 val text = clipboard.primaryClip?.getItemAt(0)?.coerceToText(this@MainActivity)?.toString() ?: return
-                session.write(text)
+                executor.execute {
+                    session.emulator?.paste(text) ?: session.write(text)
+                }
             }
             override fun onBell(session: TerminalSession) {}
             override fun onColorsChanged(session: TerminalSession) {}
@@ -3809,11 +4140,13 @@ class MainActivity : AppCompatActivity() {
         termViewContainer.addView(workspaceTerminalView)
         workspaceTerminalContainer.addView(termViewContainer)
 
-        workspaceKeyboardToolbar = buildWorkspaceKeyboardToolbar()
+        workspaceKeyboardToolbar = buildSpecialKeysToolbar(
+            tvRef = { if (::workspaceTerminalView.isInitialized) workspaceTerminalView else null },
+            sessionRef = { if (activeWorkspaceTabIndex >= 0 && activeWorkspaceTabIndex < workspaceSessions.size) workspaceSessions[activeWorkspaceTabIndex] else null },
+            modState = wsModState,
+            onPickImage = { wsImagePickerLauncher.launch("image/*") }
+        )
         workspaceTerminalContainer.addView(workspaceKeyboardToolbar)
-
-        workspaceAttachBar = buildWorkspaceAttachBar()
-        workspaceTerminalContainer.addView(workspaceAttachBar)
 
         centerFrame.addView(workspaceTerminalContainer)
 
@@ -4156,53 +4489,6 @@ class MainActivity : AppCompatActivity() {
             }
         }
         projectSettingsLayout.addView(removeBtn)
-    }
-
-    private fun buildWorkspaceKeyboardToolbar(): LinearLayout {
-        val bar = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            setBackgroundColor(NC.SURFACE_HIGH)
-            setPadding(dp(8), dp(6), dp(8), dp(6))
-        }
-        val scroll = HorizontalScrollView(this).apply { layoutParams = LinearLayout.LayoutParams(MATCH, WRAP) }
-        val inner = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        for (key in listOf("Tab", "Ctrl", "Alt", "Esc", "/", "|", "~", "-")) {
-            val btn = TextView(this).apply {
-                text = key; textSize = 11f; typeface = Typeface.MONOSPACE
-                setTextColor(NC.ON_SURF_VAR)
-                background = roundedBg(NC.SURFACE, NC.BORDER, dp(4))
-                setPadding(dp(10), dp(6), dp(10), dp(6))
-                layoutParams = LinearLayout.LayoutParams(WRAP, WRAP).apply { rightMargin = dp(6) }
-                setOnClickListener {
-                    val text = when (key) {
-                        "Tab" -> "\t"; "Esc" -> "\u001b"
-                        else -> key
-                    }
-                    if (activeWorkspaceTabIndex >= 0 && activeWorkspaceTabIndex < workspaceSessions.size) {
-                        workspaceSessions[activeWorkspaceTabIndex].write(text)
-                    }
-                }
-            }
-            inner.addView(btn)
-        }
-        scroll.addView(inner)
-        bar.addView(scroll)
-        return bar
-    }
-
-    private fun buildWorkspaceAttachBar(): LinearLayout {
-        val attachBar = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL; setBackgroundColor(NC.BG); setPadding(dp(12), dp(10), dp(12), dp(12))
-        }
-        val attachBtn = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER
-            background = roundedBg(NC.SURFACE, NC.BORDER_VAR, dp(8)); setPadding(dp(12), dp(10), dp(12), dp(10))
-            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
-        }
-        val attachTv = TextView(this).apply {
-            text = "\uD83D\uDCCE  Add Context (Ingest Image/File)"; textSize = 12f; setTextColor(NC.ON_SURF_VAR); typeface = Typeface.MONOSPACE
-        }
-        attachBtn.addView(attachTv); attachBar.addView(attachBtn); return attachBar
     }
 
     private fun buildProjectDirTreeLayout() {
