@@ -400,40 +400,23 @@ class MainActivity : AppCompatActivity() {
                 gitDiffTopBar?.setPadding(dp(12), dp(10), dp(12), dp(10))
             }
             
-            val isTerminalPage = pageStack.isNotEmpty() && pageStack.peek() == ID_TERMINAL
-            val isProjectTerminalPage = pageStack.isNotEmpty() && pageStack.peek() == ID_PROJECT_WORKSPACE
-            if (isTerminalPage) {
-                if (ime.bottom > 0) {
-                    bottomNavigation.visibility = View.GONE
-                } else {
-                    bottomNavigation.visibility = View.VISIBLE
-                }
-            } else if (isProjectTerminalPage) {
-                if (ime.bottom > 0) {
-                    projectBottomNavigation.visibility = View.GONE
-                } else {
-                    projectBottomNavigation.visibility = View.VISIBLE
-                }
-            }
-            
-            val isProjectTab = pageStack.isNotEmpty() && (
-                pageStack.peek() == ID_PROJECT_WORKSPACE ||
-                pageStack.peek() == ID_PROJECT_SETTINGS ||
-                pageStack.peek() == ID_PROJECT_DIR_TREE ||
-                pageStack.peek() == ID_PROJECT_GIT_DIFF
-            )
-            val currentBottomNav = if (isProjectTab) projectBottomNavigation else bottomNavigation
-            val otherBottomNav = if (isProjectTab) bottomNavigation else projectBottomNavigation
+            val currentPage = if (pageStack.isNotEmpty()) pageStack.peek() else ID_HOME
+            val showGlobalNav = (currentPage == ID_HOME || currentPage == ID_PROJECTS_LIST || currentPage == ID_TERMINAL || currentPage == ID_SETTINGS)
+            val showProjectNav = (currentPage == ID_PROJECT_WORKSPACE || currentPage == ID_PROJECT_SETTINGS || currentPage == ID_PROJECT_DIR_TREE || currentPage == ID_PROJECT_GIT_DIFF)
+            val isLandscape = resources.displayMetrics.widthPixels > resources.displayMetrics.heightPixels
+            val isKeyboardOpen = ime.bottom > 0
 
-            if (currentBottomNav.visibility == View.VISIBLE) {
-                currentBottomNav.setPadding(0, 0, 0, bars.bottom)
-                contentFrame.setPadding(0, 0, 0, 0)
-            } else {
-                currentBottomNav.setPadding(0, 0, 0, 0)
-                val bottomPadding = if (ime.bottom > 0) ime.bottom else bars.bottom
-                contentFrame.setPadding(0, 0, 0, bottomPadding)
+            if (::bottomNavContainer.isInitialized) {
+                if (!isLandscape && (showGlobalNav || showProjectNav) && !isKeyboardOpen) {
+                    bottomNavContainer.visibility = View.VISIBLE
+                    bottomNavContainer.setPadding(bars.left, 0, bars.right, bars.bottom)
+                    contentFrame.setPadding(0, 0, 0, 0)
+                } else {
+                    bottomNavContainer.visibility = View.GONE
+                    bottomNavContainer.setPadding(0, 0, 0, 0)
+                    contentFrame.setPadding(0, 0, 0, if (isKeyboardOpen) ime.bottom else bars.bottom)
+                }
             }
-            otherBottomNav.setPadding(0, 0, 0, 0)
             insets
         }
         ViewCompat.requestApplyInsets(drawerLayout)
@@ -887,7 +870,10 @@ class MainActivity : AppCompatActivity() {
             sideNavContainer.visibility = if (isLandscape && (showGlobalNav || showProjectNav)) android.view.View.VISIBLE else android.view.View.GONE
         }
         if (::bottomNavContainer.isInitialized) {
-            bottomNavContainer.visibility = if (!isLandscape && (showGlobalNav || showProjectNav)) android.view.View.VISIBLE else android.view.View.GONE
+            val isKeyboardOpen = drawerLayout.rootWindowInsets?.let {
+                androidx.core.view.WindowInsetsCompat.toWindowInsetsCompat(it).getInsets(androidx.core.view.WindowInsetsCompat.Type.ime()).bottom > 0
+            } ?: false
+            bottomNavContainer.visibility = if (!isLandscape && !isKeyboardOpen && (showGlobalNav || showProjectNav)) android.view.View.VISIBLE else android.view.View.GONE
         }
         
         if (::globalNavRail.isInitialized) {
@@ -4100,8 +4086,7 @@ class MainActivity : AppCompatActivity() {
         val dateFormat = java.text.SimpleDateFormat("MM.dd.yy", java.util.Locale.US)
         for (p in projects.take(5)) {
             val dateStr = if (p.lastOpened > 0) dateFormat.format(java.util.Date(p.lastOpened)) else "recent"
-            val badgeStr = if (p.path.endsWith(".git") || File(p.path, ".git").exists()) "git" else "local"
-            val card = projectCard(p.name, p.path, dateStr, badgeStr)
+            val card = projectCard(p.name, p.path, dateStr, p.icon)
             card.setOnClickListener {
                 markProjectOpened(p.path)
                 activeProjectName = p.name
@@ -4733,7 +4718,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun projectCard(name: String, path: String, time: String, iconStr: String = ""): View {
-        val isGit = iconStr.contains("git", ignoreCase = true) || path.contains("git", ignoreCase = true) || !name.contains("ui_shell", ignoreCase = true)
+        val isGit = path.endsWith(".git") || File(path, ".git").exists() || path.contains("git", ignoreCase = true) || !name.contains("ui_shell", ignoreCase = true)
         return LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -4746,6 +4731,83 @@ class MainActivity : AppCompatActivity() {
                 rightFaceColor = Color.parseColor("#3c4a3f")
             )
             setPadding(dp(16), dp(14), dp(16), dp(14))
+
+            val iconContainer = FrameLayout(this@MainActivity).apply {
+                layoutParams = LinearLayout.LayoutParams(dp(40), dp(40)).apply {
+                    rightMargin = dp(14)
+                }
+                background = GradientDrawable().apply {
+                    shape = GradientDrawable.RECTANGLE
+                    setColor(NC.SURFACE_LOWEST)
+                    setStroke(dp(1), Color.parseColor("#3360F99E"))
+                    cornerRadius = dp(4).toFloat()
+                }
+            }
+
+            if (iconStr.isEmpty()) {
+                val iv = ImageView(this@MainActivity).apply {
+                    setImageResource(R.drawable.ic_folder_special)
+                    setColorFilter(NC.PRIMARY)
+                    layoutParams = FrameLayout.LayoutParams(dp(22), dp(22), Gravity.CENTER)
+                }
+                iconContainer.addView(iv)
+            } else if (iconStr.length <= 4 && !iconStr.startsWith("/") && !iconStr.startsWith("http") && !iconStr.startsWith("content")) {
+                val tv = TextView(this@MainActivity).apply {
+                    text = iconStr
+                    textSize = 20f
+                    gravity = Gravity.CENTER
+                    layoutParams = FrameLayout.LayoutParams(MATCH, MATCH)
+                }
+                iconContainer.addView(tv)
+            } else {
+                val iv = ImageView(this@MainActivity).apply {
+                    scaleType = ImageView.ScaleType.CENTER_CROP
+                    layoutParams = FrameLayout.LayoutParams(MATCH, MATCH)
+                }
+                iconContainer.addView(iv)
+                executor.execute {
+                    try {
+                        val bitmap = when {
+                            iconStr.startsWith("content://") -> {
+                                contentResolver.openInputStream(android.net.Uri.parse(iconStr))?.use {
+                                    android.graphics.BitmapFactory.decodeStream(it)
+                                }
+                            }
+                            iconStr.startsWith("http://") || iconStr.startsWith("https://") -> {
+                                java.net.URL(iconStr).openStream().use {
+                                    android.graphics.BitmapFactory.decodeStream(it)
+                                }
+                            }
+                            else -> {
+                                android.graphics.BitmapFactory.decodeFile(iconStr)
+                            }
+                        }
+                        mainHandler.post {
+                            if (bitmap != null) {
+                                iv.setImageBitmap(bitmap)
+                            } else {
+                                iconContainer.removeAllViews()
+                                val defaultIv = ImageView(this@MainActivity).apply {
+                                    setImageResource(R.drawable.ic_folder_special)
+                                    setColorFilter(NC.PRIMARY)
+                                    layoutParams = FrameLayout.LayoutParams(dp(22), dp(22), Gravity.CENTER)
+                                }
+                                iconContainer.addView(defaultIv)
+                            }
+                        }
+                    } catch (e: Exception) {
+                        mainHandler.post {
+                            iconContainer.removeAllViews()
+                            val defaultIv = ImageView(this@MainActivity).apply {
+                                setImageResource(R.drawable.ic_folder_special)
+                                setColorFilter(NC.PRIMARY)
+                                layoutParams = FrameLayout.LayoutParams(dp(22), dp(22), Gravity.CENTER)
+                            }
+                            iconContainer.addView(defaultIv)
+                        }
+                    }
+                }
+            }
 
             val infoCol = LinearLayout(this@MainActivity).apply {
                 orientation = LinearLayout.VERTICAL
@@ -4786,6 +4848,7 @@ class MainActivity : AppCompatActivity() {
                 layoutParams = LinearLayout.LayoutParams(dp(20), dp(20)).apply { leftMargin = dp(10) }
             }
 
+            addView(iconContainer)
             addView(infoCol)
             addView(badgeBox)
             addView(actionIcon)
