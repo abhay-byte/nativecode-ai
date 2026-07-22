@@ -169,7 +169,7 @@ class MainActivity : AppCompatActivity() {
     private var lastCpuIdle = 0L
 
     private var activeProjectName = "MyAndroidApp"
-    private var activeProjectPath = "/home/flux/projects/MyAndroidApp"
+    private var activeProjectPath = "/home/flux/repos/my-android-app"
     private lateinit var fileExplorerTitleTv: TextView
     private lateinit var projectIconInput: EditText
     private lateinit var projectNameInput: EditText
@@ -5440,7 +5440,7 @@ class MainActivity : AppCompatActivity() {
 
         // Dummy/hidden projectPathInput initialized for backward compatibility
         projectPathInput = EditText(this).apply {
-            setText("/home/flux/projects/")
+            setText("/home/flux/repos/")
         }
 
         // --- Card 3: GitHub Repository URL ---
@@ -5496,9 +5496,10 @@ class MainActivity : AppCompatActivity() {
 
             val path = if (gitUrl.isNotEmpty()) {
                 val repoName = gitUrl.substringAfterLast("/").substringBeforeLast(".git")
-                "/home/flux/projects/$repoName"
+                "/home/flux/repos/$repoName"
             } else {
-                "/home/flux/projects/" + name.replace(" ", "_")
+                val slug = name.trim().lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-')
+                "/home/flux/repos/$slug"
             }
 
             if (gitUrl.isNotEmpty()) {
@@ -5678,7 +5679,7 @@ class MainActivity : AppCompatActivity() {
                 executor.execute {
                     val nld = applicationInfo.nativeLibraryDir
                     val bash = File(nld, "libbash.so").absolutePath
-                    val gitCmd = "mkdir -p ~/projects && cd ~/projects && git clone --progress " + gitUrl + " 2>&1"
+                    val gitCmd = "mkdir -p ~/repos && cd ~/repos && git clone --progress " + gitUrl + " 2>&1"
                     val args = arrayOf(
                         bash,
                         "-c",
@@ -5722,6 +5723,29 @@ class MainActivity : AppCompatActivity() {
 
         activeProjectName = name
         activeProjectPath = path
+
+        // Ensure the project directory exists in Debian
+        val nld = applicationInfo.nativeLibraryDir
+        val shell = File(nld, "libbash.so").absolutePath
+        val mkdirArgs = arrayOf(shell, "-c",
+            "exec python /data/data/com.ivarna.nativecode/files/usr/bin/proot-distro login debian --shared-tmp --user flux -- zsh -c \"mkdir -p $path\""
+        )
+        val envMap = HashMap(System.getenv())
+        envMap["PATH"] = "$nld:/data/data/com.ivarna.nativecode/files/usr/bin:/system/bin"
+        envMap["PD_PROOT_BIN"] = File(nld, "libproot.so").absolutePath
+        envMap["PROOT_LOADER"] = File(nld, "libloader.so").absolutePath
+        envMap["HOME"] = "/data/data/com.ivarna.nativecode/files/home"
+        envMap["PREFIX"] = "/data/data/com.ivarna.nativecode/files/usr"
+        envMap["LD_LIBRARY_PATH"] = "/data/data/com.ivarna.nativecode/files/usr/lib"
+        setLdPreloadEnv(envMap)
+        val env = envMap.map { "${it.key}=${it.value}" }.toTypedArray()
+        try {
+            val pb = ProcessBuilder(*mkdirArgs)
+            pb.environment().putAll(envMap.map { it.key to it.value }.toMap())
+            pb.start() // fire-and-forget; directory will be ready before user launches a tool
+        } catch (e: Exception) {
+            // non-fatal: directory may already exist or will be created on first tool launch
+        }
 
         Toast.makeText(this, "Project opened: $name", Toast.LENGTH_SHORT).show()
 
@@ -6172,14 +6196,14 @@ class MainActivity : AppCompatActivity() {
         
         val envInit = "export PATH=/home/flux/.local/bin:/home/flux/bin:/home/flux/.cargo/bin:\\\$PATH && export NVM_DIR=/home/flux/.nvm && [ -s /home/flux/.nvm/nvm.sh ] && . /home/flux/.nvm/nvm.sh"
         val toolCmd = when (type) {
-            "opencode"    -> "$envInit && cd $activeProjectPath && exec opencode"
-            "codex"       -> "$envInit && cd $activeProjectPath && exec codex"
-            "agy"         -> "$envInit && cd $activeProjectPath && exec agy"
-            "claude-code" -> "$envInit && cd $activeProjectPath && exec claude"
-            "qwen-code"   -> "$envInit && cd $activeProjectPath && exec qwen"
-            "grok"        -> "$envInit && cd $activeProjectPath && exec grok"
-            "kiro"        -> "$envInit && cd $activeProjectPath && exec kiro-cli"
-            else          -> "cd $activeProjectPath && exec zsh"
+            "opencode"    -> "$envInit && mkdir -p $activeProjectPath && cd $activeProjectPath && exec opencode"
+            "codex"       -> "$envInit && mkdir -p $activeProjectPath && cd $activeProjectPath && exec codex"
+            "agy"         -> "$envInit && mkdir -p $activeProjectPath && cd $activeProjectPath && exec agy"
+            "claude-code" -> "$envInit && mkdir -p $activeProjectPath && cd $activeProjectPath && exec claude"
+            "qwen-code"   -> "$envInit && mkdir -p $activeProjectPath && cd $activeProjectPath && exec qwen"
+            "grok"        -> "$envInit && mkdir -p $activeProjectPath && cd $activeProjectPath && exec grok"
+            "kiro"        -> "$envInit && mkdir -p $activeProjectPath && cd $activeProjectPath && exec kiro-cli"
+            else          -> "mkdir -p $activeProjectPath && cd $activeProjectPath && exec zsh"
         }
 
         val args = arrayOf(shell, "-c", "exec python /data/data/com.ivarna.nativecode/files/usr/bin/proot-distro login debian --shared-tmp --user flux -- zsh -c \"$toolCmd\"")
@@ -6656,14 +6680,6 @@ class MainActivity : AppCompatActivity() {
 
         projectWorkspaceLayout.addView(mainArea)
         projectWorkspaceContainer.addView(projectWorkspaceLayout)
-
-        val fab = createHoveringNewProjectFab()
-        val fabParams = FrameLayout.LayoutParams(WRAP, WRAP).apply {
-            gravity = Gravity.BOTTOM or Gravity.END
-            rightMargin = dp(20)
-            bottomMargin = dp(24)
-        }
-        projectWorkspaceContainer.addView(fab, fabParams)
     }
 
      private data class StatusCardData(val title: String, val type: String, val desc: String, val color: Int)
@@ -6682,18 +6698,9 @@ class MainActivity : AppCompatActivity() {
         }
         projectSettingsLayout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(16))
         }
         projectSettingsScrollView.addView(projectSettingsLayout)
         projectSettingsContainer.addView(projectSettingsScrollView)
-
-        val fab = createHoveringNewProjectFab()
-        val fabParams = FrameLayout.LayoutParams(WRAP, WRAP).apply {
-            gravity = Gravity.BOTTOM or Gravity.END
-            rightMargin = dp(20)
-            bottomMargin = dp(24)
-        }
-        projectSettingsContainer.addView(fab, fabParams)
     }
 
     private fun createProjectSubpageTopBar(): LinearLayout {
@@ -6764,7 +6771,13 @@ class MainActivity : AppCompatActivity() {
     private fun openProjectSettings() {
         projectSettingsLayout.removeAllViews()
         projectSettingsLayout.addView(createProjectSubpageTopBar())
-        projectSettingsLayout.addView(spacer(16))
+
+        val settingsContentLayout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(16), dp(16), dp(16))
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
+        }
+        projectSettingsLayout.addView(settingsContentLayout)
 
         val header = TextView(this).apply {
             text = "Configure $activeProjectName"
@@ -6773,9 +6786,9 @@ class MainActivity : AppCompatActivity() {
             typeface = Typeface.DEFAULT_BOLD
             setPadding(0, 0, 0, dp(16))
         }
-        projectSettingsLayout.addView(header)
-        projectSettingsLayout.addView(buildTerminalSettingsCard())
-        projectSettingsLayout.addView(spacer(16))
+        settingsContentLayout.addView(header)
+        settingsContentLayout.addView(buildTerminalSettingsCard())
+        settingsContentLayout.addView(spacer(16))
 
         val previewContainer = FrameLayout(this).apply {
             layoutParams = LinearLayout.LayoutParams(dp(120), dp(120)).apply {
@@ -6786,7 +6799,7 @@ class MainActivity : AppCompatActivity() {
             clipToOutline = true
             outlineProvider = android.view.ViewOutlineProvider.BACKGROUND
         }
-        projectSettingsLayout.addView(previewContainer)
+        settingsContentLayout.addView(previewContainer)
 
 
         fun updatePreview(iconStr: String) {
@@ -6850,11 +6863,11 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        val proj = getProjects().find { it.path == activeProjectPath }
-        val currentIcon = proj?.icon ?: ""
+        val currentProj = getProjects().find { it.path == activeProjectPath }
+        val currentIcon = currentProj?.icon ?: ""
         updatePreview(currentIcon)
 
-        configIconInput = EditText(this).apply {
+        val configIconInput = EditText(this).apply {
             setText(currentIcon)
             addTextChangedListener(object : android.text.TextWatcher {
                 override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
@@ -6875,7 +6888,7 @@ class MainActivity : AppCompatActivity() {
                 bottomMargin = dp(32)
             }
         }
-        projectSettingsLayout.addView(chooseIconBtn)
+        settingsContentLayout.addView(chooseIconBtn)
 
         val saveBtn = primaryButton("Save Configuration") {
             val newIcon = configIconInput.text.toString().trim()
@@ -6893,9 +6906,9 @@ class MainActivity : AppCompatActivity() {
                 bottomMargin = dp(16)
             }
         }
-        projectSettingsLayout.addView(saveBtn)
+        settingsContentLayout.addView(saveBtn)
 
-        projectSettingsLayout.addView(spacer(16))
+        settingsContentLayout.addView(spacer(16))
         val removeBtn = TextView(this).apply {
             text = "Remove Project"
             textSize = 15f
@@ -6929,7 +6942,7 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
-        projectSettingsLayout.addView(removeBtn)
+        settingsContentLayout.addView(removeBtn)
     }
 
     private fun buildProjectDirTreeLayout() {
@@ -6949,14 +6962,6 @@ class MainActivity : AppCompatActivity() {
         }
         projectDirTreeScrollView.addView(projectDirTreeLayout)
         projectDirTreeContainer.addView(projectDirTreeScrollView)
-
-        val fab = createHoveringNewProjectFab()
-        val fabParams = FrameLayout.LayoutParams(WRAP, WRAP).apply {
-            gravity = Gravity.BOTTOM or Gravity.END
-            rightMargin = dp(20)
-            bottomMargin = dp(24)
-        }
-        projectDirTreeContainer.addView(fab, fabParams)
     }
 
     private fun openProjectDirTree() {
@@ -6988,14 +6993,6 @@ class MainActivity : AppCompatActivity() {
         }
         projectGitDiffScrollView.addView(projectGitDiffLayout)
         projectGitDiffContainer.addView(projectGitDiffScrollView)
-
-        val fab = createHoveringNewProjectFab()
-        val fabParams = FrameLayout.LayoutParams(WRAP, WRAP).apply {
-            gravity = Gravity.BOTTOM or Gravity.END
-            rightMargin = dp(20)
-            bottomMargin = dp(24)
-        }
-        projectGitDiffContainer.addView(fab, fabParams)
     }
 
     private fun openProjectGitDiff() {
