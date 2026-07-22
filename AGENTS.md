@@ -70,10 +70,10 @@ All communication ultra-compressed:
 
 ### Shell via ctx_execute ONLY — Raw Shell Completely Disabled
 
-STRICT RULE: Raw shell/Bash tool execution (`run_command`) is COMPLETELY DISABLED and PROHIBITED for all tasks. Only `ctx_execute` (or `ctx_batch_execute`) with `language: "shell"` is allowed for shell execution.
+STRICT RULE: Raw shell/Bash tool execution (`run_command`) is COMPLETELY DISABLED and PROHIBITED for all tasks. Only `ctx_execute` (or `ctx_batch_execute`) with `language: "shell"` is allowed for shell execution. ALWAYS prefix commands supported by `rtk` (e.g. `rtk git status`, `rtk ls`, `rtk test`, `rtk err`, `rtk find`) with `rtk` to filter output before returning.
 
 ```
-ctx_execute(language: "shell", code: "npm test 2>&1 | grep -E 'FAIL|Error:'")
+ctx_execute(language: "shell", code: "rtk git status")
 ```
 
 Whenever shell execution is performed via `ctx_execute`, output a notification message: `[Shell executed via context-mode]`.
@@ -81,6 +81,7 @@ Whenever shell execution is performed via `ctx_execute`, output a notification m
 ### General Routing Rules
 
 - ALL shell commands MUST go through `ctx_execute` or `ctx_batch_execute`
+- Prefix CLI commands in `ctx_execute` with `rtk` (e.g., `rtk git`, `rtk ls`, `rtk test`, `rtk err`) for automatic token filtering
 - Raw shell / `run_command` is strictly PROHIBITED for all operations (including state mutations and status checks)
 - `ctx_execute_file` over Read when analyzing a file
 - `ctx_fetch_and_index` over WebFetch for web content
@@ -124,3 +125,50 @@ All skills use `question(...)` as pseudocode for the host's native prompt:
 
 If no native prompt tool exists, ask a concise plain-text question and wait. Never simulate approval, infer approval from silence, or continue past an approval gate.
 
+
+
+# context-mode — MANDATORY ROUTING RULES
+
+context-mode MCP tools are available. These rules protect the context window from flooding. One unrouted file read or bash command dumps massive amounts of tokens into context; routing it through context-mode reduces it to < 5 KB. You MUST follow these routing rules strictly.
+
+## 1. The "No Raw Reads" Rule (Reading Files)
+**NEVER** use standard `read_file`, `read_many_files`, or standard bash `cat` for large files or directories. 
+* Standard `read_file` / `view_file` tools are strictly DISABLED.
+* If you need to understand a large file, you must use `ctx_execute` (Node.js/Bash) or `ctx_execute_file` to extract ONLY what you need. 
+* **Example:** Instead of reading a 2000-line `server.ts` file, write a `ctx_execute` script using `fs.readFileSync` and a regex/AST parser to `console.log()` just the function signatures or imports.
+
+## 2. Think in Code — MANDATORY
+To analyze, count, filter, compare, search, or parse data: write code via `ctx_execute(language, code)` and `console.log()` ONLY the answer. 
+* PROGRAM the analysis, do not COMPUTE it yourself in the context window.
+* Use pure JavaScript/Node.js built-ins (`fs`, `path`, `child_process`) or Bash. One script replaces ten tool calls.
+
+## 3. Tool Selection & Enforcement
+Whenever raw tool output would flood the context (logs, test outputs, deep file searches, web fetches), you MUST use the following tools instead of standard tools:
+
+* **PROCESSING:** `ctx_execute(language, code)` | `ctx_execute_file(path, language, code)` — Runs a sandbox script. Only stdout enters context.
+* **MEMORY & RESUME:** `ctx_search(sort: "timeline")` — On session resume, check prior context using this tool BEFORE asking the user what we were doing. 
+* **GATHER:** `ctx_batch_execute(commands, queries)` — Runs multiple terminal commands at once, auto-indexes the massive outputs in the background, and returns clean search results.
+* **WEB / API:** `ctx_fetch_and_index(url, source)` followed by `ctx_search(queries)` — Raw HTML/JSON must never enter context.
+* **INDEXING:** `ctx_index(content, source)` — Store long constraints or documentation directly into the local FTS5 database for later search.
+
+Session history is persistent. If you need to know a past decision, use `ctx_search(queries: ["decision"], source: "decision", sort: "timeline")`. Do not repeat work.
+
+
+# CONTEXT MANAGEMENT RULES — MANDATORY
+
+You are equipped with two context-saving systems: **RTK** (Rust Token Killer) and **context-mode** (MCP). You MUST use them to prevent flooding your context window.
+
+## 1. Shell Commands (Auto-Filtered by RTK)
+Standard shell commands you run via your `bash` tool are automatically filtered by RTK. 
+* ALWAYS prefer standard terminal commands for exploring projects (e.g., `ls`, `git diff`, `pytest`, `cargo test`, `grep`).
+* RTK will automatically strip the noise (progress bars, passing tests) and give you clean output. You do not need to call `rtk` manually.
+
+## 2. The "No Raw Reads" Rule (Reading Files)
+**NEVER** use standard file reading tools (`read_file`, `cat`) for large files (>500 lines).
+* If you need to analyze a large file, you MUST use the `context-mode` MCP tool: `ctx_execute(language, code)` to extract only what you need.
+* **Example:** Instead of reading a 2000-line file, write a Node/Bash script in `ctx_execute` to parse the AST or regex search it, and `console.log()` only the relevant signatures.
+
+## 3. Persistent Memory (Context-Mode)
+When resuming a session or looking for past decisions, DO NOT ask the user what we were doing. 
+* Use the `ctx_search(sort: "timeline")` tool to query the persistent session database.
+* Use `ctx_batch_execute(commands)` if you need to run massive logs or background tasks that shouldn't pollute the chat history.

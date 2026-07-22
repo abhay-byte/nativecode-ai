@@ -556,6 +556,13 @@ class MainActivity : AppCompatActivity() {
                 homeScrollView.visibility = View.VISIBLE
                 homeScrollView.descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
                 populateRecentProjects()
+                val valTv = homeLayout.findViewWithTag<TextView>("APP_STORAGE_VAL")
+                val subTv = homeLayout.findViewWithTag<TextView>("APP_STORAGE_SUB")
+                val barFill = homeLayout.findViewWithTag<View>("APP_STORAGE_BAR")
+                if (valTv != null && subTv != null && barFill != null) {
+                    updateAppStorageUsage(valTv, subTv, barFill, null)
+                }
+                animateHomeLayoutEntrance()
             }
             ID_FILES -> {
                 fileExplorerScrollView.visibility = View.VISIBLE
@@ -1062,36 +1069,107 @@ class MainActivity : AppCompatActivity() {
         homeScrollView = ScrollView(this).apply {
             layoutParams = FrameLayout.LayoutParams(MATCH, MATCH)
             visibility = View.GONE
+            isVerticalScrollBarEnabled = false
         }
         homeLayout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(16))
+            setPadding(dp(16), dp(16), dp(16), dp(32))
             layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
         }
         homeScrollView.addView(homeLayout)
 
-        val homeHeader = LinearLayout(this).apply {
+        // 1. Dashboard Banner & Quick Actions
+        homeLayout.addView(buildHomeHeaderBanner())
+        homeLayout.addView(spacer(14))
+
+        // 2. App Storage & System Resources Card
+        homeLayout.addView(buildResourcesCard())
+        homeLayout.addView(spacer(14))
+
+        // 3. Top 3 Recent Workspaces Section with Project Icon
+        homeLayout.addView(buildRecentProjectsSection())
+    }
+
+    private fun buildHomeHeaderBanner(): View {
+        val banner = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = roundedBg(Color.parseColor("#1a1726"), NC.PRIMARY_CON, dp(16))
+            setPadding(dp(18), dp(18), dp(18), dp(18))
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
+        }
+
+        val topRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(16) }
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
         }
-        val homeTitle = TextView(this).apply {
-            text = "Dashboard"
-            textSize = 20f
-            setTextColor(NC.ON_SURFACE)
-            typeface = Typeface.DEFAULT_BOLD
+
+        val titleCol = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
             layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
         }
+
+        val greeting = TextView(this).apply {
+            text = "Welcome to NativeCode"
+            textSize = 20f
+            setTextColor(Color.WHITE)
+            typeface = Typeface.DEFAULT_BOLD
+        }
+        val subtitle = TextView(this).apply {
+            text = "Next-Gen Antigravity IDE & Terminal"
+            textSize = 12f
+            setTextColor(NC.ON_SURF_VAR)
+        }
+        titleCol.addView(greeting)
+        titleCol.addView(subtitle)
+
+        val statusDot = View(this).apply {
+            background = roundedBg(Color.parseColor("#10b981"), Color.parseColor("#10b981"), dp(6))
+            layoutParams = LinearLayout.LayoutParams(dp(10), dp(10)).apply { rightMargin = dp(6) }
+        }
+        pulseView(statusDot)
+
+        val statusText = TextView(this).apply {
+            text = "Ready"
+            textSize = 12f
+            setTextColor(Color.parseColor("#10b981"))
+            typeface = Typeface.DEFAULT_BOLD
+        }
+
+        val statusBadge = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            background = roundedBg(Color.parseColor("#064e3b"), Color.parseColor("#047857"), dp(12))
+            setPadding(dp(10), dp(4), dp(10), dp(4))
+            addView(statusDot)
+            addView(statusText)
+        }
+
+        topRow.addView(titleCol)
+        topRow.addView(statusBadge)
+        banner.addView(topRow)
+
+        banner.addView(spacer(14))
+
+        // Quick Actions Row
+        val actionsRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
+        }
+
         val newProjBtn = TextView(this).apply {
-            text = " New Project"
-            textSize = 13f
+            text = "New Project"
+            textSize = 14f
             setTextColor(Color.WHITE)
             typeface = Typeface.DEFAULT_BOLD
             gravity = Gravity.CENTER
             setCompoundDrawablesWithIntrinsicBounds(R.drawable.ic_add, 0, 0, 0)
             compoundDrawableTintList = android.content.res.ColorStateList.valueOf(Color.WHITE)
+            compoundDrawablePadding = dp(6)
             background = roundedBg(NC.PRIMARY_CON, NC.PRIMARY_CON, dp(14))
-            setPadding(dp(10), dp(6), dp(14), dp(6))
+            setPadding(dp(16), dp(12), dp(16), dp(12))
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
             setOnClickListener {
                 if (pageStack.isEmpty() || pageStack.peek() != ID_PROJECT_CREATE) {
                     pageStack.push(ID_PROJECT_CREATE)
@@ -1099,12 +1177,27 @@ class MainActivity : AppCompatActivity() {
                 navigateToPage(ID_PROJECT_CREATE)
             }
         }
-        homeHeader.addView(homeTitle)
-        homeHeader.addView(newProjBtn)
-        homeLayout.addView(homeHeader)
 
-        // Resources
-        homeLayout.addView(buildResourcesCard())
+        actionsRow.addView(newProjBtn)
+        banner.addView(actionsRow)
+
+        return banner
+    }
+
+    private fun animateHomeLayoutEntrance() {
+        if (!::homeLayout.isInitialized) return
+        for (i in 0 until homeLayout.childCount) {
+            val child = homeLayout.getChildAt(i)
+            child.alpha = 0f
+            child.translationY = dp(24).toFloat()
+            child.animate()
+                .alpha(1f)
+                .translationY(0f)
+                .setDuration(350)
+                .setStartDelay((i * 50).toLong())
+                .setInterpolator(android.view.animation.DecelerateInterpolator())
+                .start()
+        }
     }
 
     private fun buildFileExplorerLayout() {
@@ -2611,43 +2704,143 @@ class MainActivity : AppCompatActivity() {
     private fun buildResourcesCard(): View {
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            background = roundedBg(Color.parseColor("#1a1822"), Color.parseColor("#ffffff1a"), dp(12))
-            setPadding(dp(16))
-            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(12) }
+            background = roundedBg(Color.parseColor("#151823"), Color.parseColor("#2D3344"), dp(16))
+            setPadding(dp(16), dp(16), dp(16), dp(16))
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
         }
-        val titleRow = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL; setPadding(0, 0, 0, dp(12))
-        }
-        val resTitle = TextView(this).apply { text = "System Resources"; textSize = 16f; setTextColor(NC.ON_SURFACE); typeface = Typeface.DEFAULT_BOLD }
-        val resSub = TextView(this).apply { text = "Monitoring container usage"; textSize = 12f; setTextColor(NC.ON_SURF_VAR) }
-        titleRow.addView(resTitle); titleRow.addView(resSub); card.addView(titleRow)
 
-        val statsRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER }
+        // Title row
+        val titleRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, 0, 0, dp(12))
+        }
+        val resTitle = TextView(this).apply {
+            text = "App Storage & Health"
+            textSize = 16f
+            setTextColor(NC.ON_SURFACE)
+            typeface = Typeface.DEFAULT_BOLD
+            layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
+        }
+        val refreshStorageBtn = TextView(this).apply {
+            text = "Recalculate"
+            textSize = 11f
+            setTextColor(NC.SECONDARY)
+            setCompoundDrawablesWithIntrinsicBounds(R.drawable.ic_refresh, 0, 0, 0)
+            compoundDrawableTintList = android.content.res.ColorStateList.valueOf(NC.SECONDARY)
+            compoundDrawablePadding = dp(4)
+            setPadding(dp(8), dp(4), dp(8), dp(4))
+            background = roundedBg(NC.SURFACE_HIGH, NC.BORDER, dp(8))
+        }
+        titleRow.addView(resTitle)
+        titleRow.addView(refreshStorageBtn)
+        card.addView(titleRow)
+
+        // ── APP STORAGE SECTION ("how much MB the app uses as whole") ──
+        val storageCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = roundedBg(Color.parseColor("#1d2232"), NC.PRIMARY_CON, dp(12))
+            setPadding(dp(14), dp(12), dp(14), dp(12))
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(14) }
+        }
+
+        val storageHeaderRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val storageIcon = ImageView(this).apply {
+            setImageResource(R.drawable.ic_storage)
+            imageTintList = android.content.res.ColorStateList.valueOf(NC.PRIMARY)
+            layoutParams = LinearLayout.LayoutParams(dp(22), dp(22)).apply { rightMargin = dp(8) }
+        }
+        val storageLabel = TextView(this).apply {
+            text = "Total App Storage"
+            textSize = 13f
+            setTextColor(NC.ON_SURFACE)
+            typeface = Typeface.DEFAULT_BOLD
+            layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
+        }
+        val storageValTv = TextView(this).apply {
+            tag = "APP_STORAGE_VAL"
+            text = "Calculating..."
+            textSize = 16f
+            setTextColor(NC.PRIMARY)
+            typeface = Typeface.DEFAULT_BOLD
+        }
+        storageHeaderRow.addView(storageIcon)
+        storageHeaderRow.addView(storageLabel)
+        storageHeaderRow.addView(storageValTv)
+        storageCard.addView(storageHeaderRow)
+
+        val storageSubTv = TextView(this).apply {
+            tag = "APP_STORAGE_SUB"
+            text = "Calculating device disk usage..."
+            textSize = 11f
+            setTextColor(NC.ON_SURF_VAR)
+            setPadding(0, dp(4), 0, dp(8))
+        }
+        storageCard.addView(storageSubTv)
+
+        // Animated Storage Usage Bar Track (App Storage vs Total Device Disk Capacity)
+        val barTrack = FrameLayout(this).apply {
+            background = roundedBg(Color.parseColor("#11131c"), Color.TRANSPARENT, dp(4))
+            layoutParams = LinearLayout.LayoutParams(MATCH, dp(8))
+        }
+        val barFill = View(this).apply {
+            tag = "APP_STORAGE_BAR"
+            background = roundedBg(NC.PRIMARY_CON, NC.PRIMARY, dp(4))
+            layoutParams = FrameLayout.LayoutParams(dp(10), MATCH)
+        }
+        barTrack.addView(barFill)
+        storageCard.addView(barTrack)
+
+        card.addView(storageCard)
+
+        // ── SYSTEM MONITORS ROW (CPU, RAM, DISK) ──
+        val statsRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            setPadding(0, dp(4), 0, 0)
+        }
         statsRow.addView(statWidget("CPU", "0%", NC.SECONDARY))
         statsRow.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(0, 1, 1f) })
-        statsRow.addView(statWidget("MEM", "0.0 GB", NC.PRIMARY))
+        statsRow.addView(statWidget("RAM", "0.0 GB", NC.PRIMARY))
         statsRow.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(0, 1, 1f) })
-        statsRow.addView(statWidget("DISK", "0%", NC.TERTIARY))
+        statsRow.addView(statWidget("SYS DISK", "0%", NC.TERTIARY))
         card.addView(statsRow)
 
         val cpuTv = card.findViewWithTag<TextView>("CPU")
-        val memTv = card.findViewWithTag<TextView>("MEM")
-        val diskTv = card.findViewWithTag<TextView>("DISK")
+        val memTv = card.findViewWithTag<TextView>("RAM")
+        val diskTv = card.findViewWithTag<TextView>("SYS DISK")
         if (cpuTv != null && memTv != null && diskTv != null) {
             startResourceMonitoring(cpuTv, memTv, diskTv)
         }
+
+        refreshStorageBtn.setOnClickListener {
+            updateAppStorageUsage(storageValTv, storageSubTv, barFill, refreshStorageBtn)
+        }
+        updateAppStorageUsage(storageValTv, storageSubTv, barFill, refreshStorageBtn)
 
         return card
     }
 
     private fun buildRecentProjectsSection(): View {
         val section = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL; layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
         }
         val headerRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(0, 0, 0, dp(12))
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, 0, 0, dp(12))
         }
-        val sectionTitle = TextView(this).apply { text = "Recent Workspaces"; textSize = 16f; setTextColor(NC.ON_SURFACE); typeface = Typeface.DEFAULT_BOLD; layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f) }
+        val sectionTitle = TextView(this).apply {
+            text = "Recent Workspaces"
+            textSize = 16f
+            setTextColor(NC.ON_SURFACE)
+            typeface = Typeface.DEFAULT_BOLD
+            layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
+        }
         val viewAll = TextView(this).apply { 
             text = "View All"
             textSize = 13f
@@ -2659,7 +2852,9 @@ class MainActivity : AppCompatActivity() {
                 navigateToPage(ID_PROJECTS_LIST)
             }
         }
-        headerRow.addView(sectionTitle); headerRow.addView(viewAll); section.addView(headerRow)
+        headerRow.addView(sectionTitle)
+        headerRow.addView(viewAll)
+        section.addView(headerRow)
 
         recentProjectsContainer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -2675,28 +2870,79 @@ class MainActivity : AppCompatActivity() {
         recentProjectsContainer.removeAllViews()
         val list = getProjects()
         if (list.isEmpty()) {
-            val emptyTv = TextView(this).apply {
-                text = "No workspaces found."
-                textSize = 13f
-                setTextColor(NC.ON_SURF_VAR)
-                setPadding(0, dp(8), 0, dp(8))
+            val emptyCard = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER
+                background = roundedBg(NC.SURFACE, NC.BORDER, dp(14))
+                setPadding(dp(20), dp(24), dp(20), dp(24))
+
+                val iconIv = ImageView(this@MainActivity).apply {
+                    setImageResource(R.drawable.ic_folder)
+                    imageTintList = android.content.res.ColorStateList.valueOf(NC.ON_SURF_VAR)
+                    layoutParams = LinearLayout.LayoutParams(dp(36), dp(36))
+                }
+                val emptyTv = TextView(this@MainActivity).apply {
+                    text = "No recent workspaces found"
+                    textSize = 14f
+                    setTextColor(NC.ON_SURF_VAR)
+                    typeface = Typeface.DEFAULT_BOLD
+                    setPadding(0, dp(8), 0, dp(4))
+                }
+                val subTv = TextView(this@MainActivity).apply {
+                    text = "Create or open a workspace to get started."
+                    textSize = 12f
+                    setTextColor(NC.OUTLINE)
+                }
+                val createBtn = primaryButton("Create First Workspace") {
+                    if (pageStack.isEmpty() || pageStack.peek() != ID_PROJECT_CREATE) {
+                        pageStack.push(ID_PROJECT_CREATE)
+                    }
+                    navigateToPage(ID_PROJECT_CREATE)
+                }.apply {
+                    layoutParams = LinearLayout.LayoutParams(WRAP, WRAP).apply { topMargin = dp(12) }
+                }
+
+                addView(iconIv)
+                addView(emptyTv)
+                addView(subTv)
+                addView(createBtn)
             }
-            recentProjectsContainer.addView(emptyTv)
+            recentProjectsContainer.addView(emptyCard)
         } else {
-            val recent = list.take(3)
+            // Sort by lastOpened descending (if lastOpened is 0 fallback to original index order)
+            val sortedList = list.mapIndexed { idx, proj -> Pair(idx, proj) }
+                .sortedWith(Comparator { a, b ->
+                    val timeA = a.second.lastOpened
+                    val timeB = b.second.lastOpened
+                    if (timeA != timeB) timeB.compareTo(timeA) else a.first.compareTo(b.first)
+                })
+                .map { it.second }
+
+            val recent = sortedList.take(3)
             for (p in recent) {
-                val card = projectCard(p.name, p.path, "Open Workspace", p.icon)
+                val timeStr = formatRelativeTime(p.lastOpened)
+                val card = projectCard(p.name, p.path, timeStr, p.icon)
+
+                card.setOnTouchListener { v, event ->
+                    when (event.action) {
+                        MotionEvent.ACTION_DOWN -> v.animate().scaleX(0.97f).scaleY(0.97f).setDuration(80).start()
+                        MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> v.animate().scaleX(1f).scaleY(1f).setDuration(80).start()
+                    }
+                    false
+                }
+
                 card.setOnClickListener {
+                    markProjectOpened(p.path)
                     activeProjectName = p.name
                     activeProjectPath = p.path
-                    Toast.makeText(this, "Project opened: ${p.name}", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, "Workspace opened: ${p.name}", Toast.LENGTH_SHORT).show()
                     if (pageStack.isEmpty() || pageStack.peek() != ID_PROJECT_WORKSPACE) {
                         pageStack.push(ID_PROJECT_WORKSPACE)
                     }
                     navigateToPage(ID_PROJECT_WORKSPACE)
                 }
                 recentProjectsContainer.addView(card)
-                recentProjectsContainer.addView(spacer(8))
+                recentProjectsContainer.addView(spacer(10))
             }
         }
     }
@@ -3144,18 +3390,27 @@ class MainActivity : AppCompatActivity() {
 
     private fun projectCard(name: String, path: String, time: String, iconStr: String = ""): View {
         return LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
-            background = roundedBg(NC.SURFACE, NC.BORDER, dp(12)); setPadding(dp(14))
-            
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            background = roundedBg(NC.SURFACE, NC.BORDER, dp(14))
+            setPadding(dp(14), dp(12), dp(14), dp(12))
+
             val iconContainer = FrameLayout(this@MainActivity).apply {
-                layoutParams = LinearLayout.LayoutParams(dp(36), dp(36)).apply { rightMargin = dp(12) }
+                background = roundedBg(NC.SURFACE_HIGH, NC.BORDER_VAR, dp(12))
+                layoutParams = LinearLayout.LayoutParams(dp(44), dp(44)).apply { rightMargin = dp(12) }
             }
-            
+
             if (iconStr.isEmpty()) {
-                val tv = TextView(this@MainActivity).apply { text = "\uD83D\uDCC1"; textSize = 24f; gravity = Gravity.CENTER }
+                val tv = TextView(this@MainActivity).apply {
+                    text = if (name.isNotEmpty()) name.take(1).uppercase() else "📁"
+                    textSize = 18f
+                    setTextColor(NC.PRIMARY)
+                    typeface = Typeface.DEFAULT_BOLD
+                    gravity = Gravity.CENTER
+                }
                 iconContainer.addView(tv)
             } else if (iconStr.length <= 4 && !iconStr.startsWith("/") && !iconStr.startsWith("http")) {
-                val tv = TextView(this@MainActivity).apply { text = iconStr; textSize = 24f; gravity = Gravity.CENTER }
+                val tv = TextView(this@MainActivity).apply { text = iconStr; textSize = 22f; gravity = Gravity.CENTER }
                 iconContainer.addView(tv)
             } else {
                 val iv = ImageView(this@MainActivity).apply {
@@ -3186,33 +3441,85 @@ class MainActivity : AppCompatActivity() {
                         } else {
                             mainHandler.post {
                                 iconContainer.removeAllViews()
-                                val tv = TextView(this@MainActivity).apply { text = "\uD83D\uDCC1"; textSize = 24f; gravity = Gravity.CENTER }
+                                val tv = TextView(this@MainActivity).apply {
+                                    text = if (name.isNotEmpty()) name.take(1).uppercase() else "📁"
+                                    textSize = 18f
+                                    setTextColor(NC.PRIMARY)
+                                    typeface = Typeface.DEFAULT_BOLD
+                                    gravity = Gravity.CENTER
+                                }
                                 iconContainer.addView(tv)
                             }
                         }
                     } catch (e: Exception) {
                         mainHandler.post {
                             iconContainer.removeAllViews()
-                            val tv = TextView(this@MainActivity).apply { text = "\uD83D\uDCC1"; textSize = 24f; gravity = Gravity.CENTER }
+                            val tv = TextView(this@MainActivity).apply {
+                                text = if (name.isNotEmpty()) name.take(1).uppercase() else "📁"
+                                textSize = 18f
+                                setTextColor(NC.PRIMARY)
+                                typeface = Typeface.DEFAULT_BOLD
+                                gravity = Gravity.CENTER
+                            }
                             iconContainer.addView(tv)
                         }
                     }
                 }
             }
 
-            val details = LinearLayout(this@MainActivity).apply { orientation = LinearLayout.VERTICAL; layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f) }
-            val nameRow = LinearLayout(this@MainActivity).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-            val nameTv = TextView(this@MainActivity).apply { text = name; textSize = 16f; setTextColor(NC.PRIMARY); typeface = Typeface.DEFAULT_BOLD; layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f) }
-            val timeTv = TextView(this@MainActivity).apply { text = time; textSize = 11f; setTextColor(NC.ON_SURF_VAR); typeface = Typeface.MONOSPACE }
-            nameRow.addView(nameTv); nameRow.addView(timeTv)
-            val pathRow = LinearLayout(this@MainActivity).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(0, dp(4), 0, 0) }
+            val details = LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
+            }
+            val nameRow = LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+            }
+            val nameTv = TextView(this@MainActivity).apply {
+                text = name
+                textSize = 15f
+                setTextColor(NC.PRIMARY)
+                typeface = Typeface.DEFAULT_BOLD
+                layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
+            }
+            val timeTv = TextView(this@MainActivity).apply {
+                text = time
+                textSize = 11f
+                setTextColor(NC.ON_SURF_VAR)
+                typeface = Typeface.MONOSPACE
+            }
+            nameRow.addView(nameTv)
+            nameRow.addView(timeTv)
+
+            val pathRow = LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(0, dp(4), 0, 0)
+            }
             val gitBadge = textBadge("Git", NC.LOGBG, NC.SECONDARY)
-            val pathTv = TextView(this@MainActivity).apply { text = "  $path"; textSize = 11f; setTextColor(NC.OUTLINE); typeface = Typeface.MONOSPACE; maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END }
-            pathRow.addView(gitBadge); pathRow.addView(pathTv)
-            details.addView(nameRow); details.addView(pathRow)
-            
+            val pathTv = TextView(this@MainActivity).apply {
+                text = "  $path"
+                textSize = 11f
+                setTextColor(NC.OUTLINE)
+                typeface = Typeface.MONOSPACE
+                maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.END
+            }
+            pathRow.addView(gitBadge)
+            pathRow.addView(pathTv)
+
+            details.addView(nameRow)
+            details.addView(pathRow)
+
+            val actionIcon = ImageView(this@MainActivity).apply {
+                setImageResource(R.drawable.ic_chevron_right)
+                imageTintList = android.content.res.ColorStateList.valueOf(NC.ON_SURF_VAR)
+                layoutParams = LinearLayout.LayoutParams(dp(20), dp(20)).apply { leftMargin = dp(8) }
+            }
+
             addView(iconContainer)
             addView(details)
+            addView(actionIcon)
         }
     }
 
@@ -3320,7 +3627,7 @@ class MainActivity : AppCompatActivity() {
 
     // ── Project Management & Storage ──────────────────────────────────────────
 
-    data class Project(val name: String, val icon: String, val path: String)
+    data class Project(val name: String, val icon: String, val path: String, val lastOpened: Long = 0L)
 
     private fun getProjects(): List<Project> {
         val prefs = getSharedPreferences("nativecode_prefs", MODE_PRIVATE)
@@ -3333,7 +3640,8 @@ class MainActivity : AppCompatActivity() {
                 list.add(Project(
                     obj.getString("name"),
                     obj.getString("icon"),
-                    obj.getString("path")
+                    obj.getString("path"),
+                    obj.optLong("lastOpened", 0L)
                 ))
             }
         } catch (e: Exception) {
@@ -3354,9 +3662,138 @@ class MainActivity : AppCompatActivity() {
             obj.put("name", p.name)
             obj.put("icon", p.icon)
             obj.put("path", p.path)
+            obj.put("lastOpened", p.lastOpened)
             arr.put(obj)
         }
         prefs.edit().putString("projects_json", arr.toString()).apply()
+    }
+
+    private fun markProjectOpened(path: String) {
+        val list = getProjects().toMutableList()
+        val idx = list.indexOfFirst { it.path == path }
+        if (idx >= 0) {
+            val p = list[idx]
+            list[idx] = p.copy(lastOpened = System.currentTimeMillis())
+            saveProjects(list)
+        }
+    }
+
+    private fun formatRelativeTime(timestamp: Long): String {
+        if (timestamp <= 0L) return "Recent"
+        val diff = System.currentTimeMillis() - timestamp
+        val seconds = diff / 1000
+        val minutes = seconds / 60
+        val hours = minutes / 60
+        val days = hours / 24
+        return when {
+            seconds < 60 -> "Just now"
+            minutes < 60 -> "${minutes}m ago"
+            hours < 24 -> "${hours}h ago"
+            days < 7 -> "${days}d ago"
+            else -> "Recently"
+        }
+    }
+
+    private fun isSymlink(file: File): Boolean {
+        return try {
+            val stat = android.system.Os.lstat(file.absolutePath)
+            android.system.OsConstants.S_ISLNK(stat.st_mode)
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    private fun getFolderSize(file: File): Long {
+        if (!file.exists() || isSymlink(file)) return 0L
+        if (file.isFile) return file.length()
+        var size = 0L
+        val files = file.listFiles() ?: return 0L
+        for (f in files) {
+            if (isSymlink(f)) continue
+            size += if (f.isDirectory) getFolderSize(f) else f.length()
+        }
+        return size
+    }
+
+    private fun getTotalDeviceStorageBytes(): Long {
+        return try {
+            val stat = android.os.StatFs(android.os.Environment.getDataDirectory().path)
+            stat.totalBytes
+        } catch (e: Exception) {
+            0L
+        }
+    }
+
+    private fun getAvailableDeviceStorageBytes(): Long {
+        return try {
+            val stat = android.os.StatFs(android.os.Environment.getDataDirectory().path)
+            stat.availableBytes
+        } catch (e: Exception) {
+            0L
+        }
+    }
+
+    private fun updateAppStorageUsage(valTv: TextView, subTv: TextView, fillView: View, refreshBtn: View?) {
+        valTv.text = "Calculating..."
+        executor.execute {
+            try {
+                val apkSize = File(applicationInfo.sourceDir).length()
+                val dataDir = File(applicationInfo.dataDir)
+                val dataSize = getFolderSize(dataDir)
+                val extCacheSize = externalCacheDir?.let { getFolderSize(it) } ?: 0L
+
+                val totalAppBytes = apkSize + dataSize + extCacheSize
+                val appMB = apkSize / (1024.0 * 1024.0)
+                val dataMB = (dataSize + extCacheSize) / (1024.0 * 1024.0)
+                val totalAppMB = totalAppBytes / (1024.0 * 1024.0)
+
+                val deviceTotalBytes = getTotalDeviceStorageBytes()
+                val deviceFreeBytes = getAvailableDeviceStorageBytes()
+                val deviceTotalGB = deviceTotalBytes / (1024.0 * 1024.0 * 1024.0)
+                val deviceFreeGB = deviceFreeBytes / (1024.0 * 1024.0 * 1024.0)
+                val percentageOfDevice = if (deviceTotalBytes > 0) {
+                    (totalAppBytes.toDouble() / deviceTotalBytes.toDouble()) * 100.0
+                } else 0.0
+
+                mainHandler.post {
+                    val formattedVal = if (totalAppMB >= 1024.0) {
+                        String.format("%.2f GB", totalAppMB / 1024.0)
+                    } else {
+                        String.format("%.1f MB", totalAppMB)
+                    }
+                    valTv.text = formattedVal
+
+                    if (deviceTotalGB > 0 && deviceFreeGB > 0) {
+                        subTv.text = String.format("App: %.1f MB • Data: %.2f GB (Free: %.1f GB / Total: %.1f GB Disk)", appMB, totalAppMB / 1024.0, deviceFreeGB, deviceTotalGB)
+                    } else {
+                        subTv.text = String.format("App Package: %.1f MB • Data & Environment: %.1f MB", appMB, dataMB)
+                    }
+
+                    fillView.post {
+                        val parentView = fillView.parent as? View
+                        if (parentView != null && parentView.width > 0) {
+                            val parentWidth = parentView.width
+                            val fraction = (totalAppMB / (totalAppMB + 2048.0)).coerceIn(0.25, 0.95)
+                            val targetWidth = (parentWidth * fraction).toInt()
+
+                            val anim = ValueAnimator.ofInt(fillView.layoutParams.width, targetWidth)
+                            anim.duration = 600
+                            anim.addUpdateListener { va ->
+                                fillView.layoutParams.width = va.animatedValue as Int
+                                fillView.requestLayout()
+                            }
+                            anim.start()
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                mainHandler.post {
+                    valTv.text = "N/A"
+                    subTv.text = "Could not calculate storage size"
+                }
+            }
+        }
     }
 
     private fun buildProjectCreateLayout() {
@@ -3572,6 +4009,7 @@ class MainActivity : AppCompatActivity() {
             for (p in list) {
                 val card = projectCard(p.name, p.path, "Tap to open", p.icon)
                 card.setOnClickListener {
+                    markProjectOpened(p.path)
                     activeProjectName = p.name
                     activeProjectPath = p.path
                     Toast.makeText(this, "Project opened: ${p.name}", Toast.LENGTH_SHORT).show()

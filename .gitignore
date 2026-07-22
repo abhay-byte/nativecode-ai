@@ -17,6 +17,7 @@ termux-packages/*
 # Ignore IDE, agent, and memory logs
 .claude/
 .serena/
+.agents/
 .tokensave/
 *.hprof
 *.png
