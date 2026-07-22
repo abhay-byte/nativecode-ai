@@ -1,11 +1,20 @@
 package com.ivarna.nativecode
 
 import android.animation.ObjectAnimator
+import android.system.Os
+import java.io.InputStream
 import android.animation.ValueAnimator
 import android.content.Intent
 import android.graphics.Color
+import android.graphics.Canvas
+import android.graphics.Paint
+import android.graphics.RectF
+import android.graphics.PixelFormat
+import android.graphics.ColorFilter
 import android.graphics.Typeface
+import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.LayerDrawable
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -529,6 +538,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         updateNavigationVisibility(id)
+        updateCustomBottomNavSelection(id)
 
         // Hide keyboard when switching pages
         val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
@@ -830,10 +840,10 @@ class MainActivity : AppCompatActivity() {
             projectNavRail.visibility = if (showProjectNav) android.view.View.VISIBLE else android.view.View.GONE
         }
         if (::bottomNavigation.isInitialized) {
-            bottomNavigation.visibility = if (showGlobalNav) android.view.View.VISIBLE else android.view.View.GONE
+            bottomNavigation.visibility = android.view.View.GONE
         }
         if (::projectBottomNavigation.isInitialized) {
-            projectBottomNavigation.visibility = if (showProjectNav) android.view.View.VISIBLE else android.view.View.GONE
+            projectBottomNavigation.visibility = android.view.View.GONE
         }
         
         // Handle window insets based on orientation
@@ -972,14 +982,30 @@ class MainActivity : AppCompatActivity() {
         unifiedHeader = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setBackgroundColor(Color.parseColor("#15121b"))
-            setPadding(dp(16), dp(12), dp(16), dp(12))
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                setColor(NC.SURFACE_LOWEST)
+                setStroke(dp(1), Color.parseColor("#3360F99E"))
+            }
+            setPadding(dp(16), dp(10), dp(16), dp(10))
             layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
+        }
+        val logoContainer = FrameLayout(this).apply {
+            background = cyberBrutalistBg(
+                fillColor = NC.SURFACE_HIGH,
+                strokeColor = Color.parseColor("#8060F99E"),
+                shadowColor = NC.SHADOW_DARK,
+                offsetDp = 2
+            )
+            setPadding(dp(4), dp(4), dp(4), dp(4))
+            layoutParams = LinearLayout.LayoutParams(dp(40), dp(40))
         }
         val logoView = ImageView(this).apply {
             setImageResource(R.mipmap.logo)
-            layoutParams = LinearLayout.LayoutParams(dp(32), dp(32))
+            layoutParams = FrameLayout.LayoutParams(MATCH, MATCH)
         }
+        logoContainer.addView(logoView)
+
         backBtn = ImageView(this).apply {
             setImageResource(R.drawable.ic_arrow_back)
             setColorFilter(NC.ON_SURFACE)
@@ -1018,92 +1044,151 @@ class MainActivity : AppCompatActivity() {
                 startActivity(intent)
             }
         }
-        val terminalBtn = ImageView(this).apply {
-            setImageResource(R.drawable.ic_terminal)
-            setColorFilter(NC.PRIMARY)
-            setPadding(dp(6), dp(6), dp(6), dp(6))
-            layoutParams = LinearLayout.LayoutParams(dp(36), dp(36)).apply {
-                rightMargin = dp(8)
-            }
-            setOnClickListener {
-                if (pageStack.isEmpty() || pageStack.peek() != ID_TERMINAL) {
-                    pageStack.push(ID_TERMINAL)
-                }
-                navigateToPage(ID_TERMINAL)
+
+        // System Telemetry Badge (Top Right)
+        val fontNarrow = Typeface.createFromAsset(assets, "fonts/font.ttf")
+
+        val statusPlate = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            background = cyberBrutalistBg(
+                fillColor = NC.SURFACE_LOW,
+                strokeColor = Color.parseColor("#3c4a3f"),
+                shadowColor = NC.SHADOW_GREEN,
+                offsetDp = 6
+            )
+            setPadding(dp(10), dp(2), dp(10), dp(2))
+            layoutParams = LinearLayout.LayoutParams(WRAP, dp(37))
+        }
+
+        val batIcon = ImageView(this).apply {
+            setImageResource(R.drawable.ic_battery)
+            setColorFilter(Color.WHITE)
+            layoutParams = LinearLayout.LayoutParams(dp(18), dp(18)).apply {
+                rightMargin = dp(4)
+                gravity = Gravity.CENTER_VERTICAL
             }
         }
-        addTerminalBtn = ImageView(this).apply {
-            setImageResource(R.drawable.ic_add)
-            setColorFilter(NC.SECONDARY)
-            setPadding(dp(6), dp(6), dp(6), dp(6))
-            layoutParams = LinearLayout.LayoutParams(dp(36), dp(36))
-            setOnClickListener {
-                createNewTerminalSession()
-                if (pageStack.isEmpty() || pageStack.peek() != ID_TERMINAL) {
-                    pageStack.push(ID_TERMINAL)
-                }
-                navigateToPage(ID_TERMINAL)
+        val batTv = TextView(this).apply {
+            tag = "HEADER_BAT"
+            text = "${readBatteryUsage()}%"
+            textSize = 12f
+            setTextColor(Color.WHITE)
+            typeface = fontNarrow
+        }
+        val batContainer = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            addView(batIcon)
+            addView(batTv)
+        }
+
+        val divider1 = View(this).apply {
+            setBackgroundColor(Color.parseColor("#26FFFFFF"))
+            layoutParams = LinearLayout.LayoutParams(dp(1), dp(12)).apply {
+                leftMargin = dp(6)
+                rightMargin = dp(6)
             }
         }
 
-        unifiedHeader.addView(logoView)
+        val terminalGreen = Color.parseColor("#3DDC84")
+
+        val cpuTvHeader = TextView(this).apply {
+            tag = "HEADER_CPU"
+            text = "C: ${readCpuUsage()}%"
+            textSize = 12f
+            setTextColor(terminalGreen)
+            typeface = fontNarrow
+        }
+
+        val divider2 = View(this).apply {
+            setBackgroundColor(Color.parseColor("#26FFFFFF"))
+            layoutParams = LinearLayout.LayoutParams(dp(1), dp(12)).apply {
+                leftMargin = dp(6)
+                rightMargin = dp(6)
+            }
+        }
+
+        val ramTvHeader = TextView(this).apply {
+            tag = "HEADER_RAM"
+            text = "R: ${readMemUsage()}"
+            textSize = 12f
+            setTextColor(terminalGreen)
+            typeface = fontNarrow
+        }
+
+        statusPlate.addView(batContainer)
+        statusPlate.addView(divider1)
+        statusPlate.addView(cpuTvHeader)
+        statusPlate.addView(divider2)
+        statusPlate.addView(ramTvHeader)
+
+        unifiedHeader.addView(logoContainer)
         unifiedHeader.addView(spacer)
         unifiedHeader.addView(displayBtn)
+        unifiedHeader.addView(statusPlate)
         mainContentLayout.addView(unifiedHeader)
+
+        startResourceMonitoring()
 
         contentFrame = FrameLayout(this).apply {
             layoutParams = LinearLayout.LayoutParams(MATCH, 0, 1f)
-            setBackgroundColor(NC.BG)
+            background = TerminalScanlineDrawable()
         }
 
-        val states = arrayOf(
+        val navStates = arrayOf(
             intArrayOf(android.R.attr.state_checked),
             intArrayOf(-android.R.attr.state_checked)
         )
-        val colors = intArrayOf(
-            NC.PRIMARY,
-            NC.OUTLINE
+        val navColors = intArrayOf(
+            NC.SURFACE_LOWEST,
+            Color.parseColor("#99FFFFFF")
         )
-        val tintList = android.content.res.ColorStateList(states, colors)
+        val navTintList = android.content.res.ColorStateList(navStates, navColors)
 
         bottomNavigation = BottomNavigationView(this).apply {
             layoutParams = FrameLayout.LayoutParams(MATCH, WRAP)
-            setBackgroundColor(Color.parseColor("#120F16"))
-            itemIconTintList = tintList
-            itemTextColor = tintList
-            menu.add(Menu.NONE, ID_HOME,          Menu.NONE, "Home").setIcon(R.drawable.ic_home)
-            menu.add(Menu.NONE, ID_PROJECTS_LIST, Menu.NONE, "Projects").setIcon(R.drawable.ic_folder)
-            menu.add(Menu.NONE, ID_TERMINAL,      Menu.NONE, "Terminal").setIcon(R.drawable.ic_terminal)
-            menu.add(Menu.NONE, ID_SETTINGS,      Menu.NONE, "Settings").setIcon(R.drawable.ic_settings)
+            setBackgroundColor(NC.SURFACE_LOWEST)
+            itemIconTintList = navTintList
+            itemTextColor = navTintList
+            itemActiveIndicatorColor = android.content.res.ColorStateList.valueOf(NC.PRIMARY)
+            menu.add(Menu.NONE, ID_HOME,          Menu.NONE, "HOME").setIcon(R.drawable.ic_home)
+            menu.add(Menu.NONE, ID_PROJECTS_LIST, Menu.NONE, "PROJECT").setIcon(R.drawable.ic_folder)
+            menu.add(Menu.NONE, ID_TERMINAL,      Menu.NONE, "TERMINAL").setIcon(R.drawable.ic_terminal)
+            menu.add(Menu.NONE, ID_SETTINGS,      Menu.NONE, "SETTINGS").setIcon(R.drawable.ic_settings)
         }
 
         projectBottomNavigation = BottomNavigationView(this).apply {
             layoutParams = FrameLayout.LayoutParams(MATCH, WRAP)
-            setBackgroundColor(Color.parseColor("#120F16"))
-            itemIconTintList = tintList
-            itemTextColor = tintList
-            menu.add(Menu.NONE, ID_PROJECT_WORKSPACE, Menu.NONE, "Workspace").setIcon(R.drawable.ic_home)
-            menu.add(Menu.NONE, ID_PROJECT_DIR_TREE, Menu.NONE, "Directory").setIcon(R.drawable.ic_folder)
-            menu.add(Menu.NONE, ID_PROJECT_GIT_DIFF, Menu.NONE, "Diff").setIcon(R.drawable.ic_git)
-            menu.add(Menu.NONE, ID_PROJECT_SETTINGS, Menu.NONE, "Settings").setIcon(R.drawable.ic_settings)
+            setBackgroundColor(NC.SURFACE_LOWEST)
+            itemIconTintList = navTintList
+            itemTextColor = navTintList
+            itemActiveIndicatorColor = android.content.res.ColorStateList.valueOf(NC.PRIMARY)
+            menu.add(Menu.NONE, ID_PROJECT_WORKSPACE, Menu.NONE, "WORKSPACE").setIcon(R.drawable.ic_home)
+            menu.add(Menu.NONE, ID_PROJECT_DIR_TREE, Menu.NONE, "DIRECTORY").setIcon(R.drawable.ic_folder)
+            menu.add(Menu.NONE, ID_PROJECT_GIT_DIFF, Menu.NONE, "DIFF").setIcon(R.drawable.ic_git)
+            menu.add(Menu.NONE, ID_PROJECT_SETTINGS, Menu.NONE, "SETTINGS").setIcon(R.drawable.ic_settings)
         }
 
         mainContentLayout.addView(contentFrame)
         
         bottomNavContainer = FrameLayout(this).apply {
             layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
-            setBackgroundColor(android.graphics.Color.parseColor("#120F16"))
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                setColor(NC.SURFACE_LOWEST)
+                setStroke(dp(1), Color.parseColor("#1AFFFFFF"))
+            }
         }
         mainContentLayout.addView(bottomNavContainer)
 
-        bottomNavContainer.addView(bottomNavigation)
-        bottomNavContainer.addView(projectBottomNavigation)
+        bottomNavContainer.addView(buildCustomBottomNav())
 
         globalNavRail = com.google.android.material.navigationrail.NavigationRailView(this).apply {
             layoutParams = FrameLayout.LayoutParams(WRAP, MATCH)
             setBackgroundColor(android.graphics.Color.parseColor("#120F16"))
-            itemIconTintList = tintList
-            itemTextColor = tintList
+            itemIconTintList = navTintList
+            itemTextColor = navTintList
             labelVisibilityMode = com.google.android.material.navigationrail.NavigationRailView.LABEL_VISIBILITY_LABELED
             menu.add(android.view.Menu.NONE, ID_HOME,          android.view.Menu.NONE, "Home").setIcon(R.drawable.ic_home)
             menu.add(android.view.Menu.NONE, ID_PROJECTS_LIST, android.view.Menu.NONE, "Projects").setIcon(R.drawable.ic_folder)
@@ -1128,8 +1213,8 @@ class MainActivity : AppCompatActivity() {
         projectNavRail = com.google.android.material.navigationrail.NavigationRailView(this).apply {
             layoutParams = FrameLayout.LayoutParams(WRAP, MATCH)
             setBackgroundColor(android.graphics.Color.parseColor("#120F16"))
-            itemIconTintList = tintList
-            itemTextColor = tintList
+            itemIconTintList = navTintList
+            itemTextColor = navTintList
             labelVisibilityMode = com.google.android.material.navigationrail.NavigationRailView.LABEL_VISIBILITY_LABELED
             menu.add(android.view.Menu.NONE, ID_PROJECT_WORKSPACE, android.view.Menu.NONE, "Workspace").setIcon(R.drawable.ic_home)
             menu.add(android.view.Menu.NONE, ID_PROJECT_DIR_TREE, android.view.Menu.NONE, "Directory").setIcon(R.drawable.ic_folder)
@@ -1192,7 +1277,134 @@ class MainActivity : AppCompatActivity() {
         pageStack.push(ID_HOME)
     }
 
+    private fun extractTarStream(inputStream: InputStream, targetDir: File) {
+        val buffer = ByteArray(512)
+        while (true) {
+            var bytesRead = 0
+            while (bytesRead < 512) {
+                val r = inputStream.read(buffer, bytesRead, 512 - bytesRead)
+                if (r == -1) break
+                bytesRead += r
+            }
+            if (bytesRead < 512) break
+
+            var allZero = true
+            for (b in buffer) {
+                if (b != 0.toByte()) { allZero = false; break }
+            }
+            if (allZero) break
+
+            fun parseString(offset: Int, length: Int): String {
+                var len = 0
+                while (len < length && buffer[offset + len] != 0.toByte()) { len++ }
+                return String(buffer, offset, len, Charsets.UTF_8)
+            }
+
+            var name = parseString(0, 100)
+            val prefix = parseString(345, 155)
+            if (prefix.isNotEmpty()) name = "$prefix/$name"
+
+            val sizeStr = parseString(124, 12).trim()
+            val size = try { sizeStr.toLong(8) } catch (e: Exception) { 0L }
+            val type = buffer[156].toInt().toChar()
+            val linkName = parseString(157, 100)
+
+            val relPath = name.replace("^data/data/com.ivarna.nativecode/files/".toRegex(), "").trimStart('/')
+            if (relPath.isEmpty()) {
+                val dataBlocks = Math.ceil(size.toDouble() / 512.0).toLong()
+                skipBytes(inputStream, dataBlocks * 512L)
+                continue
+            }
+
+            val outFile = File(targetDir, relPath)
+
+            if (type == '5') {
+                outFile.mkdirs()
+            } else if (type == '2') {
+                outFile.parentFile?.mkdirs()
+                try {
+                    Os.symlink(linkName, outFile.absolutePath)
+                } catch (e: Exception) {
+                    try {
+                        val linkTarget = File(outFile.parentFile, linkName)
+                        if (linkTarget.exists() && linkTarget.isFile) {
+                            linkTarget.copyTo(outFile, overwrite = true)
+                        }
+                    } catch (_: Exception) {}
+                }
+            } else if (type == '0' || type == '\u0000') {
+                outFile.parentFile?.mkdirs()
+                java.io.FileOutputStream(outFile).use { fos ->
+                    var remaining = size
+                    val copyBuf = ByteArray(8192)
+                    while (remaining > 0) {
+                        val toRead = Math.min(copyBuf.size.toLong(), remaining).toInt()
+                        val r = inputStream.read(copyBuf, 0, toRead)
+                        if (r == -1) break
+                        fos.write(copyBuf, 0, r)
+                        remaining -= r
+                    }
+                }
+                val padding = ((512 - (size % 512)) % 512).toInt()
+                if (padding > 0) {
+                    skipBytes(inputStream, padding.toLong())
+                }
+                val modeStr = parseString(100, 8).trim()
+                try {
+                    val mode = modeStr.toInt(8)
+                    if ((mode and 73) != 0) {
+                        outFile.setExecutable(true, false)
+                    }
+                } catch (_: Exception) {}
+            } else {
+                val dataBlocks = Math.ceil(size.toDouble() / 512.0).toLong()
+                skipBytes(inputStream, dataBlocks * 512L)
+            }
+        }
+    }
+
+    private fun skipBytes(inputStream: InputStream, count: Long) {
+        var remaining = count
+        val buf = ByteArray(8192)
+        while (remaining > 0) {
+            val toRead = Math.min(buf.size.toLong(), remaining).toInt()
+            val r = inputStream.read(buf, 0, toRead)
+            if (r == -1) break
+            remaining -= r
+        }
+    }
+
+    private fun ensureBootstrapExtracted() {
+        val termuxExecFile = File(filesDir, "usr/lib/libtermux-exec.so")
+        if (termuxExecFile.exists()) return
+
+        try {
+            val usrDir = File(filesDir, "usr")
+            val tmpDir = File(usrDir, "tmp")
+            val etcDir = File(usrDir, "etc")
+            val homeDir = File(filesDir, "home")
+            tmpDir.mkdirs(); etcDir.mkdirs(); homeDir.mkdirs()
+
+            assets.open("bootstrap.tar").use { input ->
+                extractTarStream(input, filesDir)
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    private fun setLdPreloadEnv(envMap: MutableMap<String, String>) {
+        ensureBootstrapExtracted()
+        val termuxExec = File(filesDir, "usr/lib/libtermux-exec.so")
+        if (termuxExec.exists()) {
+            envMap["LD_PRELOAD"] = termuxExec.absolutePath
+        } else {
+            envMap.remove("LD_PRELOAD")
+        }
+    }
+
     private fun createNewTerminalSession() {
+        ensureBootstrapExtracted()
         val nld     = applicationInfo.nativeLibraryDir
         val shell   = File(nld, "libbash.so").absolutePath
         val cwd     = File(filesDir, "home").absolutePath
@@ -1205,7 +1417,7 @@ class MainActivity : AppCompatActivity() {
         envMap["TERM"]                       = "xterm-256color"
         envMap["PREFIX"]                     = "/data/data/com.ivarna.nativecode/files/usr"
         envMap["LD_LIBRARY_PATH"]            = "/data/data/com.ivarna.nativecode/files/usr/lib"
-        envMap["LD_PRELOAD"]                 = "/data/data/com.ivarna.nativecode/files/usr/lib/libtermux-exec.so"
+        setLdPreloadEnv(envMap)
         envMap["TERMUX_APP__PACKAGE_NAME"]   = "com.ivarna.nativecode"
         envMap["TERMUX__PREFIX"]             = "/data/data/com.ivarna.nativecode/files/usr"
         envMap["TERMUX__HOME"]               = "/data/data/com.ivarna.nativecode/files/home"
@@ -1306,6 +1518,97 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    // ── Custom Cyber-Brutalist Bottom Navigation ────────────────────────────
+
+    private lateinit var customBottomNav: LinearLayout
+    private val navTabViews = ArrayList<LinearLayout>()
+
+    private fun buildCustomBottomNav(): LinearLayout {
+        customBottomNav = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutParams = FrameLayout.LayoutParams(MATCH, dp(64))
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                setColor(NC.SURFACE_LOWEST)
+            }
+        }
+
+        val tabsData = listOf(
+            Triple(ID_HOME, R.drawable.ic_home, "HOME"),
+            Triple(ID_PROJECTS_LIST, R.drawable.ic_folder, "PROJECT"),
+            Triple(ID_TERMINAL, R.drawable.ic_terminal, "TERMINAL"),
+            Triple(ID_SETTINGS, R.drawable.ic_settings, "SETTINGS")
+        )
+
+        navTabViews.clear()
+        for ((pageId, iconRes, label) in tabsData) {
+            val tabLayout = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER
+                setPadding(0, dp(6), 0, dp(6))
+                layoutParams = LinearLayout.LayoutParams(0, MATCH, 1f)
+                setOnClickListener {
+                    if (pageStack.isEmpty() || pageStack.peek() != pageId) {
+                        pageStack.push(pageId)
+                    }
+                    navigateToPage(pageId)
+                }
+            }
+
+            val iconIv = ImageView(this).apply {
+                tag = "TAB_ICON"
+                setImageResource(iconRes)
+                layoutParams = LinearLayout.LayoutParams(dp(26), dp(26))
+            }
+            val labelTv = TextView(this).apply {
+                tag = "TAB_LABEL"
+                text = label
+                textSize = 11f
+                typeface = Typeface.MONOSPACE
+                gravity = Gravity.CENTER
+                layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply {
+                    topMargin = dp(3)
+                }
+            }
+            tabLayout.addView(iconIv)
+            tabLayout.addView(labelTv)
+            tabLayout.tag = pageId
+            navTabViews.add(tabLayout)
+            customBottomNav.addView(tabLayout)
+        }
+
+        updateCustomBottomNavSelection(ID_HOME)
+        return customBottomNav
+    }
+
+    private fun updateCustomBottomNavSelection(activeId: Int) {
+        if (!::customBottomNav.isInitialized) return
+        for (tab in navTabViews) {
+            val pageId = tab.tag as? Int ?: continue
+            val isSelected = when (pageId) {
+                ID_HOME -> activeId == ID_HOME
+                ID_PROJECTS_LIST -> activeId == ID_PROJECTS_LIST || activeId == ID_PROJECT_WORKSPACE || activeId == ID_PROJECT_DIR_TREE || activeId == ID_PROJECT_GIT_DIFF
+                ID_TERMINAL -> activeId == ID_TERMINAL
+                ID_SETTINGS -> activeId == ID_SETTINGS || activeId == ID_PROJECT_SETTINGS
+                else -> pageId == activeId
+            }
+            val iconIv = tab.findViewWithTag<ImageView>("TAB_ICON")
+            val labelTv = tab.findViewWithTag<TextView>("TAB_LABEL")
+
+            if (isSelected) {
+                tab.setBackgroundColor(NC.PRIMARY)
+                iconIv?.imageTintList = android.content.res.ColorStateList.valueOf(NC.SURFACE_LOWEST)
+                labelTv?.setTextColor(NC.SURFACE_LOWEST)
+                labelTv?.typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
+            } else {
+                tab.setBackgroundColor(NC.SURFACE_LOWEST)
+                iconIv?.imageTintList = android.content.res.ColorStateList.valueOf(Color.parseColor("#99FFFFFF"))
+                labelTv?.setTextColor(Color.parseColor("#99FFFFFF"))
+                labelTv?.typeface = Typeface.create(Typeface.MONOSPACE, Typeface.NORMAL)
+            }
+        }
+    }
+
     // ── Screen Builders ──────────────────────────────────────────────────────
 
     private fun buildHomeLayout() {
@@ -1313,13 +1616,13 @@ class MainActivity : AppCompatActivity() {
             layoutParams = FrameLayout.LayoutParams(MATCH, MATCH)
             visibility = View.GONE
             isVerticalScrollBarEnabled = false
-            setBackgroundColor(NC.BG)
+            background = TerminalScanlineDrawable()
         }
         homeLayout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(16), dp(16), dp(16), dp(32))
             layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
-            setBackgroundColor(NC.BG)
+            background = TerminalScanlineDrawable()
         }
         homeScrollView.addView(homeLayout)
 
@@ -1327,92 +1630,253 @@ class MainActivity : AppCompatActivity() {
         homeLayout.addView(buildHomeHeaderBanner())
         homeLayout.addView(spacer(14))
 
-        // 2. App Storage & System Resources Card
-        homeLayout.addView(buildResourcesCard())
-        homeLayout.addView(spacer(14))
+        // 2. System Telemetry Cards (SYS_CPU & SYS_MEM)
+        homeLayout.addView(buildSystemTelemetryCards())
 
         // 3. Top 3 Recent Workspaces Section with Project Icon
         homeLayout.addView(buildRecentProjectsSection())
     }
 
+    private fun cyberBrutalistBg(
+        fillColor: Int,
+        strokeColor: Int = Color.parseColor("#3c4a3f"),
+        shadowColor: Int = Color.parseColor("#2d5942"),
+        offsetDp: Int = 6,
+        cornerRadiusDp: Int = 0
+    ): LayerDrawable {
+        val shadowDrawable = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            setColor(shadowColor)
+            if (cornerRadiusDp > 0) cornerRadius = dp(cornerRadiusDp).toFloat()
+        }
+        val frontDrawable = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            setColor(fillColor)
+            setStroke(dp(1), strokeColor)
+            if (cornerRadiusDp > 0) cornerRadius = dp(cornerRadiusDp).toFloat()
+        }
+        val layers = arrayOf<Drawable>(shadowDrawable, frontDrawable)
+        return LayerDrawable(layers).apply {
+            val off = dp(offsetDp)
+            setLayerInset(0, off, off, 0, 0)
+            setLayerInset(1, 0, 0, off, off)
+        }
+    }
+
+    private fun buildSystemTelemetryCards(): View {
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
+        }
+
+        fun createTelemetryCard(
+            sysLabel: String,
+            defaultTag: String,
+            defaultTagColor: Int,
+            defaultVal: String,
+            subLabel: String,
+            arcColor: Int,
+            valTagStr: String,
+            tagTagStr: String,
+            ringTagStr: String
+        ): LinearLayout {
+            val card = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                background = cyberBrutalistBg(
+                    fillColor = NC.SURFACE_LOW,
+                    strokeColor = Color.parseColor("#3c4a3f"),
+                    shadowColor = NC.SHADOW_GREEN,
+                    offsetDp = 6
+                )
+                setPadding(dp(16), dp(14), dp(16), dp(16))
+                layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply {
+                    bottomMargin = dp(16)
+                }
+            }
+
+            // Top Header Row
+            val headerRow = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
+            }
+
+            val labelTv = TextView(this).apply {
+                text = sysLabel
+                textSize = 12f
+                setTextColor(Color.parseColor("#80FFFFFF"))
+                typeface = Typeface.MONOSPACE
+                layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
+            }
+
+            val statusTv = TextView(this).apply {
+                tag = tagTagStr
+                text = defaultTag
+                textSize = 12f
+                setTextColor(defaultTagColor)
+                typeface = Typeface.MONOSPACE
+            }
+
+            headerRow.addView(labelTv)
+            headerRow.addView(statusTv)
+            card.addView(headerRow)
+
+            // Divider Line
+            val divider = View(this).apply {
+                setBackgroundColor(Color.parseColor("#26FFFFFF"))
+                layoutParams = LinearLayout.LayoutParams(MATCH, dp(1)).apply {
+                    topMargin = dp(8)
+                    bottomMargin = dp(14)
+                }
+            }
+            card.addView(divider)
+
+            // Body Row
+            val bodyRow = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
+            }
+
+            val leftCol = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
+            }
+
+            val valueTv = TextView(this).apply {
+                tag = valTagStr
+                text = defaultVal
+                textSize = 34f
+                setTextColor(Color.WHITE)
+                typeface = Typeface.DEFAULT_BOLD
+            }
+
+            val subTv = TextView(this).apply {
+                text = subLabel
+                textSize = 13f
+                setTextColor(Color.parseColor("#80FFFFFF"))
+                typeface = Typeface.MONOSPACE
+                setPadding(0, dp(4), 0, 0)
+            }
+
+            leftCol.addView(valueTv)
+            leftCol.addView(subTv)
+
+            val ringView = CircularProgressView(this).apply {
+                tag = ringTagStr
+                this.arcColor = arcColor
+                this.trackColor = Color.parseColor("#222222")
+                this.progress = if (sysLabel == "SYS_CPU") 34f else 82f
+                layoutParams = LinearLayout.LayoutParams(dp(64), dp(64))
+            }
+
+            bodyRow.addView(leftCol)
+            bodyRow.addView(ringView)
+            card.addView(bodyRow)
+
+            return card
+        }
+
+        val cpuCard = createTelemetryCard(
+            sysLabel = "SYS_CPU",
+            defaultTag = "[OK]",
+            defaultTagColor = Color.parseColor("#3DDC84"),
+            defaultVal = "34%",
+            subLabel = "Load Avg",
+            arcColor = Color.parseColor("#C8B6FF"),
+            valTagStr = "HOME_CPU_VAL",
+            tagTagStr = "HOME_CPU_TAG",
+            ringTagStr = "HOME_CPU_RING"
+        )
+
+        val memCard = createTelemetryCard(
+            sysLabel = "SYS_MEM",
+            defaultTag = "[WARN]",
+            defaultTagColor = Color.parseColor("#FF8A8A"),
+            defaultVal = "82%",
+            subLabel = "Allocated",
+            arcColor = Color.parseColor("#FF8A8A"),
+            valTagStr = "HOME_MEM_VAL",
+            tagTagStr = "HOME_MEM_TAG",
+            ringTagStr = "HOME_MEM_RING"
+        )
+
+        container.addView(cpuCard)
+        container.addView(memCard)
+
+        return container
+    }
+
     private fun buildHomeHeaderBanner(): View {
-        val banner = LinearLayout(this).apply {
+        val heroCard = FrameLayout(this).apply {
+            background = cyberBrutalistBg(
+                fillColor = NC.SURFACE_LOW,
+                strokeColor = Color.parseColor("#3c4a3f"),
+                shadowColor = NC.SHADOW_GREEN,
+                offsetDp = 6
+            )
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
+        }
+
+        val bgIv = object : ImageView(this) {
+            override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+                setMeasuredDimension(MeasureSpec.getSize(widthMeasureSpec), 0)
+            }
+        }.apply {
+            setImageResource(R.drawable.hero_bg)
+            scaleType = ImageView.ScaleType.CENTER_CROP
+            alpha = 0.5f
+            layoutParams = FrameLayout.LayoutParams(MATCH, MATCH)
+        }
+        heroCard.addView(bgIv)
+
+        val overlay = object : View(this) {
+            override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+                setMeasuredDimension(MeasureSpec.getSize(widthMeasureSpec), 0)
+            }
+        }.apply {
+            setBackgroundColor(Color.parseColor("#B00E0E0E"))
+            layoutParams = FrameLayout.LayoutParams(MATCH, MATCH)
+        }
+        heroCard.addView(overlay)
+
+        val contentCol = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            background = roundedBg(Color.parseColor("#1a1726"), NC.PRIMARY_CON, dp(16))
             setPadding(dp(18), dp(18), dp(18), dp(18))
-            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
+            layoutParams = FrameLayout.LayoutParams(MATCH, WRAP)
         }
 
-        val topRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
-        }
-
-        val titleCol = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
-        }
-
-        val greeting = TextView(this).apply {
-            text = "Welcome to NativeCode"
-            textSize = 20f
+        val titleTv = TextView(this).apply {
+            text = "Welcome to\nNativeCode"
+            textSize = 24f
             setTextColor(Color.WHITE)
             typeface = Typeface.DEFAULT_BOLD
-        }
-        val subtitle = TextView(this).apply {
-            text = "Next-Gen Antigravity IDE & Terminal"
-            textSize = 12f
-            setTextColor(NC.ON_SURF_VAR)
-        }
-        titleCol.addView(greeting)
-        titleCol.addView(subtitle)
-
-        val statusDot = View(this).apply {
-            background = roundedBg(Color.parseColor("#10b981"), Color.parseColor("#10b981"), dp(6))
-            layoutParams = LinearLayout.LayoutParams(dp(10), dp(10)).apply { rightMargin = dp(6) }
-        }
-        pulseView(statusDot)
-
-        val statusText = TextView(this).apply {
-            text = "Ready"
-            textSize = 12f
-            setTextColor(Color.parseColor("#10b981"))
-            typeface = Typeface.DEFAULT_BOLD
+            setLineSpacing(0f, 1.15f)
         }
 
-        val statusBadge = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            background = roundedBg(Color.parseColor("#064e3b"), Color.parseColor("#047857"), dp(12))
-            setPadding(dp(10), dp(4), dp(10), dp(4))
-            addView(statusDot)
-            addView(statusText)
+        val subtextTv = TextView(this).apply {
+            text = "Initializing high-performance workspace.\nSecure connection established. All systems operational and ready for command execution."
+            textSize = 11f
+            setTextColor(Color.parseColor("#D0D0D0"))
+            typeface = Typeface.MONOSPACE
+            setPadding(0, dp(10), 0, dp(16))
+            setLineSpacing(0f, 1.2f)
         }
 
-        topRow.addView(titleCol)
-        topRow.addView(statusBadge)
-        banner.addView(topRow)
-
-        banner.addView(spacer(14))
-
-        // Quick Actions Row
-        val actionsRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
-        }
-
-        val newProjBtn = TextView(this).apply {
-            text = "New Project"
-            textSize = 14f
+        val createBtn = TextView(this).apply {
+            text = "  CREATE NEW PROJECT"
+            textSize = 13f
             setTextColor(Color.WHITE)
-            typeface = Typeface.DEFAULT_BOLD
+            typeface = Typeface.MONOSPACE
             gravity = Gravity.CENTER
             setCompoundDrawablesWithIntrinsicBounds(R.drawable.ic_add, 0, 0, 0)
-            compoundDrawableTintList = android.content.res.ColorStateList.valueOf(Color.WHITE)
-            compoundDrawablePadding = dp(6)
-            background = roundedBg(NC.PRIMARY_CON, NC.PRIMARY_CON, dp(14))
+            compoundDrawableTintList = android.content.res.ColorStateList.valueOf(NC.PRIMARY)
+            background = cyberBrutalistBg(
+                fillColor = Color.parseColor("#CC121212"),
+                strokeColor = Color.parseColor("#3DDC84"),
+                shadowColor = NC.SHADOW_GREEN,
+                offsetDp = 4
+            )
             setPadding(dp(16), dp(12), dp(16), dp(12))
             layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
             setOnClickListener {
@@ -1421,12 +1885,21 @@ class MainActivity : AppCompatActivity() {
                 }
                 navigateToPage(ID_PROJECT_CREATE)
             }
+            setOnTouchListener { v, event ->
+                when (event.action) {
+                    MotionEvent.ACTION_DOWN -> v.animate().translationX(dp(2).toFloat()).translationY(dp(2).toFloat()).setDuration(60).start()
+                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> v.animate().translationX(0f).translationY(0f).setDuration(60).start()
+                }
+                false
+            }
         }
 
-        actionsRow.addView(newProjBtn)
-        banner.addView(actionsRow)
+        contentCol.addView(titleTv)
+        contentCol.addView(subtextTv)
+        contentCol.addView(createBtn)
+        heroCard.addView(contentCol)
 
-        return banner
+        return heroCard
     }
 
     private fun animateHomeLayoutEntrance() {
@@ -2276,7 +2749,7 @@ class MainActivity : AppCompatActivity() {
         envMap["TERM"]                       = "xterm-256color"
         envMap["PREFIX"]                     = "/data/data/com.ivarna.nativecode/files/usr"
         envMap["LD_LIBRARY_PATH"]            = "/data/data/com.ivarna.nativecode/files/usr/lib"
-        envMap["LD_PRELOAD"]                 = "/data/data/com.ivarna.nativecode/files/usr/lib/libtermux-exec.so"
+        setLdPreloadEnv(envMap)
         envMap["TERMUX_APP__PACKAGE_NAME"]   = "com.ivarna.nativecode"
         envMap["TERMUX__PREFIX"]             = "/data/data/com.ivarna.nativecode/files/usr"
         envMap["TERMUX__HOME"]               = "/data/data/com.ivarna.nativecode/files/home"
@@ -2488,7 +2961,8 @@ class MainActivity : AppCompatActivity() {
             env["PD_PROOT_BIN"] = File(nld, "libproot.so").absolutePath
             env["PROOT_LOADER"] = File(nld, "libloader.so").absolutePath
             env["LD_LIBRARY_PATH"] = "/data/data/com.ivarna.nativecode/files/usr/lib"
-            env["LD_PRELOAD"] = "/data/data/com.ivarna.nativecode/files/usr/lib/libtermux-exec.so"
+            val termuxExec = File(filesDir, "usr/lib/libtermux-exec.so")
+            if (termuxExec.exists()) env["LD_PRELOAD"] = termuxExec.absolutePath
             env["HOME"] = "/data/data/com.ivarna.nativecode/files/home"
             env["PREFIX"] = "/data/data/com.ivarna.nativecode/files/usr"
             env["TERMUX__PREFIX"] = "/data/data/com.ivarna.nativecode/files/usr"
@@ -2771,7 +3245,8 @@ class MainActivity : AppCompatActivity() {
                     env["PD_PROOT_BIN"] = File(nld, "libproot.so").absolutePath
                     env["PROOT_LOADER"] = File(nld, "libloader.so").absolutePath
                     env["LD_LIBRARY_PATH"] = "/data/data/com.ivarna.nativecode/files/usr/lib"
-                    env["LD_PRELOAD"] = "/data/data/com.ivarna.nativecode/files/usr/lib/libtermux-exec.so"
+                    val termuxExec = File(filesDir, "usr/lib/libtermux-exec.so")
+                    if (termuxExec.exists()) env["LD_PRELOAD"] = termuxExec.absolutePath
                     env["HOME"] = "/data/data/com.ivarna.nativecode/files/home"
                     env["PREFIX"] = "/data/data/com.ivarna.nativecode/files/usr"
                     env["TERMUX__PREFIX"] = "/data/data/com.ivarna.nativecode/files/usr"
@@ -2831,7 +3306,8 @@ class MainActivity : AppCompatActivity() {
                     env["PD_PROOT_BIN"] = File(nld, "libproot.so").absolutePath
                     env["PROOT_LOADER"] = File(nld, "libloader.so").absolutePath
                     env["LD_LIBRARY_PATH"] = "/data/data/com.ivarna.nativecode/files/usr/lib"
-                    env["LD_PRELOAD"] = "/data/data/com.ivarna.nativecode/files/usr/lib/libtermux-exec.so"
+                    val termuxExec = File(filesDir, "usr/lib/libtermux-exec.so")
+                    if (termuxExec.exists()) env["LD_PRELOAD"] = termuxExec.absolutePath
                     env["HOME"] = "/data/data/com.ivarna.nativecode/files/home"
                     env["PREFIX"] = "/data/data/com.ivarna.nativecode/files/usr"
                     env["TERMUX__PREFIX"] = "/data/data/com.ivarna.nativecode/files/usr"
@@ -2949,149 +3425,278 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun buildResourcesCard(): View {
-        val card = LinearLayout(this).apply {
+        val container = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            background = roundedBg(Color.parseColor("#151823"), Color.parseColor("#2D3344"), dp(16))
-            setPadding(dp(16), dp(16), dp(16), dp(16))
             layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
         }
 
-        // Title row
-        val titleRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, 0, 0, dp(12))
-        }
-        val resTitle = TextView(this).apply {
-            text = "App Storage & Health"
-            textSize = 16f
-            setTextColor(NC.ON_SURFACE)
-            typeface = Typeface.DEFAULT_BOLD
-            layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
-        }
-        val refreshStorageBtn = TextView(this).apply {
-            text = "Recalculate"
-            textSize = 11f
-            setTextColor(NC.SECONDARY)
-            setCompoundDrawablesWithIntrinsicBounds(R.drawable.ic_refresh, 0, 0, 0)
-            compoundDrawableTintList = android.content.res.ColorStateList.valueOf(NC.SECONDARY)
-            compoundDrawablePadding = dp(4)
-            setPadding(dp(8), dp(4), dp(8), dp(4))
-            background = roundedBg(NC.SURFACE_HIGH, NC.BORDER, dp(8))
-        }
-        titleRow.addView(resTitle)
-        titleRow.addView(refreshStorageBtn)
-        card.addView(titleRow)
-
-        // ── APP STORAGE SECTION ("how much MB the app uses as whole") ──
+        // 1. APP STORAGE Used Card
         val storageCard = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            background = roundedBg(Color.parseColor("#1d2232"), NC.PRIMARY_CON, dp(12))
-            setPadding(dp(14), dp(12), dp(14), dp(12))
-            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(14) }
+            background = cyberBrutalistBg(
+                fillColor = NC.SURFACE_LOW,
+                strokeColor = Color.parseColor("#3c4a3f"),
+                shadowColor = NC.SHADOW_GREEN,
+                offsetDp = 6
+            )
+            setPadding(dp(16), dp(16), dp(16), dp(16))
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(16) }
         }
 
+        // Header Row: APP STORAGE Used & analytics icon
         val storageHeaderRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(10) }
         }
+        val titleCol = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
+        }
+        val storageTitle = TextView(this).apply {
+            text = "APP STORAGE USED"
+            textSize = 12f
+            setTextColor(Color.parseColor("#99E5E2E1"))
+            typeface = Typeface.MONOSPACE
+        }
+        val titleUnderline = View(this).apply {
+            setBackgroundColor(Color.parseColor("#4D60F99E"))
+            layoutParams = LinearLayout.LayoutParams(dp(130), dp(1)).apply { topMargin = dp(2) }
+        }
+        titleCol.addView(storageTitle)
+        titleCol.addView(titleUnderline)
+
         val storageIcon = ImageView(this).apply {
             setImageResource(R.drawable.ic_storage)
             imageTintList = android.content.res.ColorStateList.valueOf(NC.PRIMARY)
-            layoutParams = LinearLayout.LayoutParams(dp(22), dp(22)).apply { rightMargin = dp(8) }
+            layoutParams = LinearLayout.LayoutParams(dp(20), dp(20))
         }
-        val storageLabel = TextView(this).apply {
-            text = "Total App Storage"
-            textSize = 13f
-            setTextColor(NC.ON_SURFACE)
-            typeface = Typeface.DEFAULT_BOLD
-            layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
+        storageHeaderRow.addView(titleCol)
+        storageHeaderRow.addView(storageIcon)
+        storageCard.addView(storageHeaderRow)
+
+        // Storage Value & Badge Row
+        val valRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.BOTTOM
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(16) }
         }
         val storageValTv = TextView(this).apply {
             tag = "APP_STORAGE_VAL"
-            text = "Calculating..."
-            textSize = 16f
-            setTextColor(NC.PRIMARY)
+            text = "84.2"
+            textSize = 36f
+            setTextColor(Color.WHITE)
             typeface = Typeface.DEFAULT_BOLD
+            setPadding(0, 0, dp(6), 0)
         }
-        storageHeaderRow.addView(storageIcon)
-        storageHeaderRow.addView(storageLabel)
-        storageHeaderRow.addView(storageValTv)
-        storageCard.addView(storageHeaderRow)
-
-        val storageSubTv = TextView(this).apply {
+        val storageUnitTv = TextView(this).apply {
             tag = "APP_STORAGE_SUB"
-            text = "Calculating device disk usage..."
-            textSize = 11f
-            setTextColor(NC.ON_SURF_VAR)
-            setPadding(0, dp(4), 0, dp(8))
+            text = "GB"
+            textSize = 18f
+            setTextColor(Color.parseColor("#B3FFFFFF"))
+            typeface = Typeface.DEFAULT_BOLD
+            setPadding(0, 0, 0, dp(4))
         }
-        storageCard.addView(storageSubTv)
+        val versionBadge = TextView(this).apply {
+            text = "STABLE_V1"
+            textSize = 10f
+            setTextColor(NC.SURFACE_LOWEST)
+            typeface = Typeface.MONOSPACE
+            background = cyberBrutalistBg(NC.PRIMARY, Color.parseColor("#3c4a3f"), NC.SHADOW_GREEN, 6, 0)
+            setPadding(dp(8), dp(4), dp(8), dp(4))
+        }
+        val valRowLeft = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.BOTTOM
+            layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
+            addView(storageValTv)
+            addView(storageUnitTv)
+        }
+        valRow.addView(valRowLeft)
+        valRow.addView(versionBadge)
+        storageCard.addView(valRow)
 
-        // Animated Storage Usage Bar Track (App Storage vs Total Device Disk Capacity)
-        val barTrack = FrameLayout(this).apply {
-            background = roundedBg(Color.parseColor("#11131c"), Color.TRANSPARENT, dp(4))
-            layoutParams = LinearLayout.LayoutParams(MATCH, dp(8))
+        // Gauge Progress Bar (Height 32dp)
+        val gaugeFrame = FrameLayout(this).apply {
+            background = cyberBrutalistBg(NC.SURFACE_LOWEST, Color.parseColor("#1AFFFFFF"), NC.SHADOW_DARK, 6, 0)
+            layoutParams = LinearLayout.LayoutParams(MATCH, dp(32))
         }
         val barFill = View(this).apply {
             tag = "APP_STORAGE_BAR"
-            background = roundedBg(NC.PRIMARY_CON, NC.PRIMARY, dp(4))
-            layoutParams = FrameLayout.LayoutParams(dp(10), MATCH)
+            background = roundedBg(NC.PRIMARY, NC.PRIMARY, 0)
+            layoutParams = FrameLayout.LayoutParams(dp(200), MATCH)
         }
-        barTrack.addView(barFill)
-        storageCard.addView(barTrack)
+        gaugeFrame.addView(barFill)
 
-        card.addView(storageCard)
-
-        // ── SYSTEM MONITORS ROW (CPU, RAM, DISK) ──
-        val statsRow = LinearLayout(this).apply {
+        // Overlay gauge ticks (vertical tick lines)
+        val ticksLayout = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            weightSum = 10f
+            layoutParams = FrameLayout.LayoutParams(MATCH, MATCH)
+            setPadding(dp(8), 0, dp(8), 0)
+        }
+        for (i in 0..9) {
+            val tick = View(this).apply {
+                setBackgroundColor(Color.parseColor("#26FFFFFF"))
+                layoutParams = LinearLayout.LayoutParams(dp(1), MATCH)
+            }
+            val spacerView = View(this).apply {
+                layoutParams = LinearLayout.LayoutParams(0, MATCH, 1f)
+            }
+            ticksLayout.addView(tick)
+            if (i < 9) ticksLayout.addView(spacerView)
+        }
+        gaugeFrame.addView(ticksLayout)
+        storageCard.addView(gaugeFrame)
+
+        // Ticks footer labels row
+        val footerRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(6) }
+        }
+        val label0 = TextView(this).apply {
+            text = "0% LOAD"
+            textSize = 10f
+            setTextColor(Color.parseColor("#66FFFFFF"))
+            typeface = Typeface.MONOSPACE
+            layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
+        }
+        val label80 = TextView(this).apply {
+            text = "CRITICAL_80%"
+            textSize = 10f
+            setTextColor(Color.parseColor("#66FFFFFF"))
+            typeface = Typeface.MONOSPACE
             gravity = Gravity.CENTER
-            setPadding(0, dp(4), 0, 0)
+            layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
         }
-        statsRow.addView(statWidget("CPU", "0%", NC.SECONDARY))
-        statsRow.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(0, 1, 1f) })
-        statsRow.addView(statWidget("RAM", "0.0 GB", NC.PRIMARY))
-        statsRow.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(0, 1, 1f) })
-        statsRow.addView(statWidget("SYS DISK", "0%", NC.TERTIARY))
-        card.addView(statsRow)
+        val label100 = TextView(this).apply {
+            text = "100% MAX"
+            textSize = 10f
+            setTextColor(Color.parseColor("#66FFFFFF"))
+            typeface = Typeface.MONOSPACE
+            gravity = Gravity.END
+            layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
+        }
+        footerRow.addView(label0)
+        footerRow.addView(label80)
+        footerRow.addView(label100)
+        storageCard.addView(footerRow)
 
-        val cpuTv = card.findViewWithTag<TextView>("CPU")
-        val memTv = card.findViewWithTag<TextView>("RAM")
-        val diskTv = card.findViewWithTag<TextView>("SYS DISK")
-        if (cpuTv != null && memTv != null && diskTv != null) {
-            startResourceMonitoring(cpuTv, memTv, diskTv)
+        container.addView(storageCard)
+
+        // 2. STAT ROW (CPU, RAM, DISK - 3 columns grid)
+        val statRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            weightSum = 3f
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
         }
 
-        refreshStorageBtn.setOnClickListener {
-            updateAppStorageUsage(storageValTv, storageSubTv, barFill, refreshStorageBtn)
-        }
-        updateAppStorageUsage(storageValTv, storageSubTv, barFill, refreshStorageBtn)
+        fun buildStatCard(labelStr: String, defaultVal: String, fillPercent: Int, accentColor: Int, isLast: Boolean): Pair<View, TextView> {
+            val card = RelativeLayout(this).apply {
+                background = cyberBrutalistBg(NC.SURFACE_LOW, Color.parseColor("#3c4a3f"), NC.SHADOW_GREEN, 6, 0)
+                setPadding(dp(12), dp(12), dp(12), dp(12))
+                val lp = LinearLayout.LayoutParams(0, dp(112), 1f)
+                if (!isLast) lp.rightMargin = dp(8)
+                layoutParams = lp
+            }
 
-        return card
+            // Top-right corner indicator block
+            val cornerBlock = View(this).apply {
+                setBackgroundColor(accentColor)
+                val rlp = RelativeLayout.LayoutParams(dp(10), dp(10)).apply {
+                    addRule(RelativeLayout.ALIGN_PARENT_TOP)
+                    addRule(RelativeLayout.ALIGN_PARENT_END)
+                }
+                layoutParams = rlp
+            }
+            card.addView(cornerBlock)
+
+            // Content container
+            val contentCol = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                val rlp = RelativeLayout.LayoutParams(MATCH, WRAP).apply {
+                    addRule(RelativeLayout.ALIGN_PARENT_TOP)
+                    addRule(RelativeLayout.ALIGN_PARENT_START)
+                }
+                layoutParams = rlp
+            }
+
+            val labelTv = TextView(this).apply {
+                text = labelStr
+                textSize = 11f
+                setTextColor(Color.parseColor("#80FFFFFF"))
+                typeface = Typeface.MONOSPACE
+            }
+            val valueTv = TextView(this).apply {
+                text = defaultVal
+                textSize = 18f
+                setTextColor(Color.WHITE)
+                typeface = Typeface.DEFAULT_BOLD
+                setPadding(0, dp(4), 0, 0)
+            }
+            contentCol.addView(labelTv)
+            contentCol.addView(valueTv)
+            card.addView(contentCol)
+
+            // Bottom progress bar
+            val barTrack = FrameLayout(this).apply {
+                setBackgroundColor(NC.SURFACE_LOWEST)
+                val rlp = RelativeLayout.LayoutParams(MATCH, dp(4)).apply {
+                    addRule(RelativeLayout.ALIGN_PARENT_BOTTOM)
+                }
+                layoutParams = rlp
+            }
+            val fillBar = View(this).apply {
+                setBackgroundColor(accentColor)
+                layoutParams = FrameLayout.LayoutParams((fillPercent * dp(80) / 100).coerceAtLeast(dp(6)), MATCH)
+            }
+            barTrack.addView(fillBar)
+            card.addView(barTrack)
+
+            return Pair(card, valueTv)
+        }
+
+        val (cpuCard, cpuTv) = buildStatCard("CPU", "12%", 12, NC.PRIMARY, false)
+        val (ramCard, ramTv) = buildStatCard("RAM", "4.1G", 45, Color.parseColor("#80FFFFFF"), false)
+        val (diskCard, diskTv) = buildStatCard("DISK", "94%", 94, NC.ERROR, true)
+
+        statRow.addView(cpuCard)
+        statRow.addView(ramCard)
+        statRow.addView(diskCard)
+
+        container.addView(statRow)
+
+        startResourceMonitoring(cpuTv, ramTv, diskTv)
+        updateAppStorageUsage(storageValTv, storageUnitTv, barFill, null)
+
+        return container
     }
 
     private fun buildRecentProjectsSection(): View {
         val section = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(16) }
         }
+
         val headerRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(0, 0, 0, dp(12))
         }
         val sectionTitle = TextView(this).apply {
-            text = "Recent Workspaces"
-            textSize = 16f
-            setTextColor(NC.ON_SURFACE)
-            typeface = Typeface.DEFAULT_BOLD
+            text = ">> RECENT WORKSPACES"
+            textSize = 13f
+            setTextColor(NC.PRIMARY)
+            typeface = Typeface.MONOSPACE
             layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
         }
-        val viewAll = TextView(this).apply { 
+        val viewAll = TextView(this).apply {
             text = "View All"
-            textSize = 13f
-            setTextColor(NC.SECONDARY)
+            textSize = 12f
+            setTextColor(Color.parseColor("#80FFFFFF"))
+            typeface = Typeface.MONOSPACE
+            visibility = View.GONE
             setOnClickListener {
                 if (pageStack.isEmpty() || pageStack.peek() != ID_PROJECTS_LIST) {
                     pageStack.push(ID_PROJECTS_LIST)
@@ -3115,82 +3720,34 @@ class MainActivity : AppCompatActivity() {
     private fun populateRecentProjects() {
         if (!::recentProjectsContainer.isInitialized) return
         recentProjectsContainer.removeAllViews()
-        val list = getProjects()
-        if (list.isEmpty()) {
-            val emptyCard = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                gravity = Gravity.CENTER
-                background = roundedBg(NC.SURFACE, NC.BORDER, dp(14))
-                setPadding(dp(20), dp(24), dp(20), dp(24))
-
-                val iconIv = ImageView(this@MainActivity).apply {
-                    setImageResource(R.drawable.ic_folder)
-                    imageTintList = android.content.res.ColorStateList.valueOf(NC.ON_SURF_VAR)
-                    layoutParams = LinearLayout.LayoutParams(dp(36), dp(36))
-                }
-                val emptyTv = TextView(this@MainActivity).apply {
-                    text = "No recent workspaces found"
-                    textSize = 14f
-                    setTextColor(NC.ON_SURF_VAR)
-                    typeface = Typeface.DEFAULT_BOLD
-                    setPadding(0, dp(8), 0, dp(4))
-                }
-                val subTv = TextView(this@MainActivity).apply {
-                    text = "Create or open a workspace to get started."
-                    textSize = 12f
-                    setTextColor(NC.OUTLINE)
-                }
-                val createBtn = primaryButton("Create First Workspace") {
-                    if (pageStack.isEmpty() || pageStack.peek() != ID_PROJECT_CREATE) {
-                        pageStack.push(ID_PROJECT_CREATE)
-                    }
-                    navigateToPage(ID_PROJECT_CREATE)
-                }.apply {
-                    layoutParams = LinearLayout.LayoutParams(WRAP, WRAP).apply { topMargin = dp(12) }
-                }
-
-                addView(iconIv)
-                addView(emptyTv)
-                addView(subTv)
-                addView(createBtn)
+        val projects = getProjects().sortedByDescending { it.lastOpened }
+        if (projects.isEmpty()) {
+            val emptyTv = TextView(this).apply {
+                text = "No recent projects found"
+                textSize = 13f
+                setTextColor(NC.ON_SURF_VAR)
+                setPadding(dp(4), dp(8), dp(4), dp(8))
+                typeface = Typeface.MONOSPACE
             }
-            recentProjectsContainer.addView(emptyCard)
-        } else {
-            // Sort by lastOpened descending (if lastOpened is 0 fallback to original index order)
-            val sortedList = list.mapIndexed { idx, proj -> Pair(idx, proj) }
-                .sortedWith(Comparator { a, b ->
-                    val timeA = a.second.lastOpened
-                    val timeB = b.second.lastOpened
-                    if (timeA != timeB) timeB.compareTo(timeA) else a.first.compareTo(b.first)
-                })
-                .map { it.second }
-
-            val recent = sortedList.take(3)
-            for (p in recent) {
-                val timeStr = formatRelativeTime(p.lastOpened)
-                val card = projectCard(p.name, p.path, timeStr, p.icon)
-
-                card.setOnTouchListener { v, event ->
-                    when (event.action) {
-                        MotionEvent.ACTION_DOWN -> v.animate().scaleX(0.97f).scaleY(0.97f).setDuration(80).start()
-                        MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> v.animate().scaleX(1f).scaleY(1f).setDuration(80).start()
-                    }
-                    false
+            recentProjectsContainer.addView(emptyTv)
+            return
+        }
+        val dateFormat = java.text.SimpleDateFormat("MM.dd.yy", java.util.Locale.US)
+        for (p in projects.take(5)) {
+            val dateStr = if (p.lastOpened > 0) dateFormat.format(java.util.Date(p.lastOpened)) else "recent"
+            val badgeStr = if (p.path.endsWith(".git") || File(p.path, ".git").exists()) "git" else "local"
+            val card = projectCard(p.name, p.path, dateStr, badgeStr)
+            card.setOnClickListener {
+                markProjectOpened(p.path)
+                activeProjectName = p.name
+                activeProjectPath = p.path
+                if (pageStack.isEmpty() || pageStack.peek() != ID_PROJECT_WORKSPACE) {
+                    pageStack.push(ID_PROJECT_WORKSPACE)
                 }
-
-                card.setOnClickListener {
-                    markProjectOpened(p.path)
-                    activeProjectName = p.name
-                    activeProjectPath = p.path
-                    Toast.makeText(this, "Workspace opened: ${p.name}", Toast.LENGTH_SHORT).show()
-                    if (pageStack.isEmpty() || pageStack.peek() != ID_PROJECT_WORKSPACE) {
-                        pageStack.push(ID_PROJECT_WORKSPACE)
-                    }
-                    navigateToPage(ID_PROJECT_WORKSPACE)
-                }
-                recentProjectsContainer.addView(card)
-                recentProjectsContainer.addView(spacer(10))
+                navigateToPage(ID_PROJECT_WORKSPACE)
             }
+            recentProjectsContainer.addView(card)
+            recentProjectsContainer.addView(spacer(10))
         }
     }
 
@@ -3410,7 +3967,8 @@ class MainActivity : AppCompatActivity() {
         env["PD_PROOT_BIN"]               = File(nld, "libproot.so").absolutePath
         env["PROOT_LOADER"]               = File(nld, "libloader.so").absolutePath
         env["LD_LIBRARY_PATH"]            = "/data/data/com.ivarna.nativecode/files/usr/lib:/data/data/com.ivarna.nativecode/files/usr/opt/virglrenderer-android/lib"
-        env["LD_PRELOAD"]                 = "/data/data/com.ivarna.nativecode/files/usr/lib/libtermux-exec.so"
+        val termuxExec = File(filesDir, "usr/lib/libtermux-exec.so")
+        if (termuxExec.exists()) env["LD_PRELOAD"] = termuxExec.absolutePath
         env["PREFIX"]                     = "/data/data/com.ivarna.nativecode/files/usr"
         env["HOME"]                       = "/data/data/com.ivarna.nativecode/files/home"
         env["TMPDIR"]                     = "/data/data/com.ivarna.nativecode/files/usr/tmp"
@@ -3637,136 +4195,59 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun projectCard(name: String, path: String, time: String, iconStr: String = ""): View {
+        val isGit = iconStr.contains("git", ignoreCase = true) || path.contains("git", ignoreCase = true) || !name.contains("ui_shell", ignoreCase = true)
         return LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            background = roundedBg(NC.SURFACE, NC.BORDER, dp(14))
-            setPadding(dp(14), dp(12), dp(14), dp(12))
+            background = cyberBrutalistBg(
+                fillColor = NC.SURFACE_LOW,
+                strokeColor = Color.parseColor("#3c4a3f"),
+                shadowColor = NC.SHADOW_GREEN,
+                offsetDp = 6
+            )
+            setPadding(dp(16), dp(14), dp(16), dp(14))
 
-            val iconContainer = FrameLayout(this@MainActivity).apply {
-                background = roundedBg(NC.SURFACE_HIGH, NC.BORDER_VAR, dp(12))
-                layoutParams = LinearLayout.LayoutParams(dp(44), dp(44)).apply { rightMargin = dp(12) }
-            }
-
-            if (iconStr.isEmpty()) {
-                val tv = TextView(this@MainActivity).apply {
-                    text = if (name.isNotEmpty()) name.take(1).uppercase() else "📁"
-                    textSize = 18f
-                    setTextColor(NC.PRIMARY)
-                    typeface = Typeface.DEFAULT_BOLD
-                    gravity = Gravity.CENTER
-                }
-                iconContainer.addView(tv)
-            } else if (iconStr.length <= 4 && !iconStr.startsWith("/") && !iconStr.startsWith("http")) {
-                val tv = TextView(this@MainActivity).apply { text = iconStr; textSize = 22f; gravity = Gravity.CENTER }
-                iconContainer.addView(tv)
-            } else {
-                val iv = ImageView(this@MainActivity).apply {
-                    scaleType = ImageView.ScaleType.CENTER_CROP
-                }
-                iconContainer.addView(iv)
-                executor.execute {
-                    try {
-                        val bitmap = when {
-                            iconStr.startsWith("content://") -> {
-                                contentResolver.openInputStream(android.net.Uri.parse(iconStr)).use {
-                                    android.graphics.BitmapFactory.decodeStream(it)
-                                }
-                            }
-                            iconStr.startsWith("http://") || iconStr.startsWith("https://") -> {
-                                java.net.URL(iconStr).openStream().use {
-                                    android.graphics.BitmapFactory.decodeStream(it)
-                                }
-                            }
-                            else -> {
-                                android.graphics.BitmapFactory.decodeFile(iconStr)
-                            }
-                        }
-                        if (bitmap != null) {
-                            mainHandler.post {
-                                iv.setImageBitmap(bitmap)
-                            }
-                        } else {
-                            mainHandler.post {
-                                iconContainer.removeAllViews()
-                                val tv = TextView(this@MainActivity).apply {
-                                    text = if (name.isNotEmpty()) name.take(1).uppercase() else "📁"
-                                    textSize = 18f
-                                    setTextColor(NC.PRIMARY)
-                                    typeface = Typeface.DEFAULT_BOLD
-                                    gravity = Gravity.CENTER
-                                }
-                                iconContainer.addView(tv)
-                            }
-                        }
-                    } catch (e: Exception) {
-                        mainHandler.post {
-                            iconContainer.removeAllViews()
-                            val tv = TextView(this@MainActivity).apply {
-                                text = if (name.isNotEmpty()) name.take(1).uppercase() else "📁"
-                                textSize = 18f
-                                setTextColor(NC.PRIMARY)
-                                typeface = Typeface.DEFAULT_BOLD
-                                gravity = Gravity.CENTER
-                            }
-                            iconContainer.addView(tv)
-                        }
-                    }
-                }
-            }
-
-            val details = LinearLayout(this@MainActivity).apply {
+            val infoCol = LinearLayout(this@MainActivity).apply {
                 orientation = LinearLayout.VERTICAL
                 layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
             }
-            val nameRow = LinearLayout(this@MainActivity).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-            }
-            val nameTv = TextView(this@MainActivity).apply {
-                text = name
+
+            val titleTv = TextView(this@MainActivity).apply {
+                text = name.uppercase()
                 textSize = 15f
-                setTextColor(NC.PRIMARY)
+                setTextColor(Color.WHITE)
                 typeface = Typeface.DEFAULT_BOLD
-                layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
             }
             val timeTv = TextView(this@MainActivity).apply {
-                text = time
+                text = if (time.startsWith("UPDATED:", ignoreCase = true)) time.uppercase() else "UPDATED: ${time.uppercase()}"
                 textSize = 11f
-                setTextColor(NC.ON_SURF_VAR)
+                setTextColor(Color.parseColor("#66FFFFFF"))
                 typeface = Typeface.MONOSPACE
             }
-            nameRow.addView(nameTv)
-            nameRow.addView(timeTv)
+            infoCol.addView(titleTv)
+            infoCol.addView(timeTv)
 
-            val pathRow = LinearLayout(this@MainActivity).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-                setPadding(0, dp(4), 0, 0)
-            }
-            val gitBadge = textBadge("Git", NC.LOGBG, NC.SECONDARY)
-            val pathTv = TextView(this@MainActivity).apply {
-                text = "  $path"
+            val badgeBox = TextView(this@MainActivity).apply {
+                text = if (isGit) "GIT" else "LOCAL"
                 textSize = 11f
-                setTextColor(NC.OUTLINE)
+                setTextColor(if (isGit) NC.PRIMARY else Color.WHITE)
                 typeface = Typeface.MONOSPACE
-                maxLines = 1
-                ellipsize = android.text.TextUtils.TruncateAt.END
+                background = GradientDrawable().apply {
+                    shape = GradientDrawable.RECTANGLE
+                    setColor(NC.SURFACE_LOWEST)
+                    setStroke(dp(1), if (isGit) Color.parseColor("#3360F99E") else Color.parseColor("#33FFFFFF"))
+                }
+                setPadding(dp(8), dp(3), dp(8), dp(3))
             }
-            pathRow.addView(gitBadge)
-            pathRow.addView(pathTv)
-
-            details.addView(nameRow)
-            details.addView(pathRow)
 
             val actionIcon = ImageView(this@MainActivity).apply {
                 setImageResource(R.drawable.ic_chevron_right)
-                imageTintList = android.content.res.ColorStateList.valueOf(NC.ON_SURF_VAR)
-                layoutParams = LinearLayout.LayoutParams(dp(20), dp(20)).apply { leftMargin = dp(8) }
+                imageTintList = android.content.res.ColorStateList.valueOf(NC.PRIMARY)
+                layoutParams = LinearLayout.LayoutParams(dp(20), dp(20)).apply { leftMargin = dp(10) }
             }
 
-            addView(iconContainer)
-            addView(details)
+            addView(infoCol)
+            addView(badgeBox)
             addView(actionIcon)
         }
     }
@@ -3784,17 +4265,105 @@ class MainActivity : AppCompatActivity() {
         setOnClickListener { onClick() }
     }
 
-    private fun startResourceMonitoring(cpuTv: TextView, memTv: TextView, diskTv: TextView) {
+    private fun readBatteryUsage(): Int {
+        return try {
+            val bm = getSystemService(Context.BATTERY_SERVICE) as? android.os.BatteryManager
+            val level = bm?.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY) ?: -1
+            if (level in 0..100) {
+                level
+            } else {
+                val intent = registerReceiver(null, android.content.IntentFilter(android.content.Intent.ACTION_BATTERY_CHANGED))
+                val rawLevel = intent?.getIntExtra(android.os.BatteryManager.EXTRA_LEVEL, -1) ?: -1
+                val scale = intent?.getIntExtra(android.os.BatteryManager.EXTRA_SCALE, -1) ?: -1
+                if (rawLevel >= 0 && scale > 0) (rawLevel * 100) / scale else 0
+            }
+        } catch (e: Exception) {
+            0
+        }
+    }
+
+    private fun startResourceMonitoring(cpuTv: TextView? = null, memTv: TextView? = null, diskTv: TextView? = null) {
+        if (resourceMonitorRunnable != null) {
+            executor.execute {
+                val cpuUsage = readCpuUsage()
+                val memUsage = readMemUsage()
+                val memPercent = readMemPercent()
+                val diskUsage = readDiskUsage()
+                val batUsage = readBatteryUsage()
+                mainHandler.post {
+                    cpuTv?.text = "$cpuUsage%"
+                    memTv?.text = memUsage
+                    diskTv?.text = "$diskUsage%"
+                    if (::unifiedHeader.isInitialized) {
+                        val headerCpu = unifiedHeader.findViewWithTag<TextView>("HEADER_CPU")
+                        val headerRam = unifiedHeader.findViewWithTag<TextView>("HEADER_RAM")
+                        val headerBat = unifiedHeader.findViewWithTag<TextView>("HEADER_BAT")
+                        headerCpu?.text = "C: $cpuUsage%"
+                        headerRam?.text = "R: $memUsage"
+                        headerBat?.text = "$batUsage%"
+                    }
+                    if (::homeLayout.isInitialized) {
+                        val cpuValTv = homeLayout.findViewWithTag<TextView>("HOME_CPU_VAL")
+                        val cpuRing = homeLayout.findViewWithTag<CircularProgressView>("HOME_CPU_RING")
+                        val cpuTag = homeLayout.findViewWithTag<TextView>("HOME_CPU_TAG")
+
+                        cpuValTv?.text = "$cpuUsage%"
+                        cpuRing?.progress = cpuUsage.toFloat()
+                        cpuTag?.text = if (cpuUsage > 80) "[WARN]" else "[OK]"
+                        cpuTag?.setTextColor(if (cpuUsage > 80) Color.parseColor("#FF8A8A") else Color.parseColor("#3DDC84"))
+
+                        val memValTv = homeLayout.findViewWithTag<TextView>("HOME_MEM_VAL")
+                        val memRing = homeLayout.findViewWithTag<CircularProgressView>("HOME_MEM_RING")
+                        val memTag = homeLayout.findViewWithTag<TextView>("HOME_MEM_TAG")
+
+                        memValTv?.text = "$memPercent%"
+                        memRing?.progress = memPercent.toFloat()
+                        memTag?.text = if (memPercent > 80) "[WARN]" else "[OK]"
+                        memTag?.setTextColor(if (memPercent > 80) Color.parseColor("#FF8A8A") else Color.parseColor("#3DDC84"))
+                    }
+                }
+            }
+            return
+        }
         val monitorRunnable = object : Runnable {
             override fun run() {
                 executor.execute {
                     val cpuUsage = readCpuUsage()
                     val memUsage = readMemUsage()
+                    val memPercent = readMemPercent()
                     val diskUsage = readDiskUsage()
+                    val batUsage = readBatteryUsage()
                     mainHandler.post {
-                        cpuTv.text = "$cpuUsage%"
-                        memTv.text = memUsage
-                        diskTv.text = "$diskUsage%"
+                        cpuTv?.text = "$cpuUsage%"
+                        memTv?.text = memUsage
+                        diskTv?.text = "$diskUsage%"
+                        if (::unifiedHeader.isInitialized) {
+                            val headerCpu = unifiedHeader.findViewWithTag<TextView>("HEADER_CPU")
+                            val headerRam = unifiedHeader.findViewWithTag<TextView>("HEADER_RAM")
+                            val headerBat = unifiedHeader.findViewWithTag<TextView>("HEADER_BAT")
+                            headerCpu?.text = "C: $cpuUsage%"
+                            headerRam?.text = "R: $memUsage"
+                            headerBat?.text = "$batUsage%"
+                        }
+                        if (::homeLayout.isInitialized) {
+                            val cpuValTv = homeLayout.findViewWithTag<TextView>("HOME_CPU_VAL")
+                            val cpuRing = homeLayout.findViewWithTag<CircularProgressView>("HOME_CPU_RING")
+                            val cpuTag = homeLayout.findViewWithTag<TextView>("HOME_CPU_TAG")
+
+                            cpuValTv?.text = "$cpuUsage%"
+                            cpuRing?.progress = cpuUsage.toFloat()
+                            cpuTag?.text = if (cpuUsage > 80) "[WARN]" else "[OK]"
+                            cpuTag?.setTextColor(if (cpuUsage > 80) Color.parseColor("#FF8A8A") else Color.parseColor("#3DDC84"))
+
+                            val memValTv = homeLayout.findViewWithTag<TextView>("HOME_MEM_VAL")
+                            val memRing = homeLayout.findViewWithTag<CircularProgressView>("HOME_MEM_RING")
+                            val memTag = homeLayout.findViewWithTag<TextView>("HOME_MEM_TAG")
+
+                            memValTv?.text = "$memPercent%"
+                            memRing?.progress = memPercent.toFloat()
+                            memTag?.text = if (memPercent > 80) "[WARN]" else "[OK]"
+                            memTag?.setTextColor(if (memPercent > 80) Color.parseColor("#FF8A8A") else Color.parseColor("#3DDC84"))
+                        }
                     }
                 }
                 mainHandler.postDelayed(this, 2000)
@@ -3804,42 +4373,20 @@ class MainActivity : AppCompatActivity() {
         mainHandler.post(monitorRunnable)
     }
 
-    private fun readCpuUsage(): Int {
+    private fun readMemPercent(): Int {
         try {
-            val file = File("/proc/stat")
-            if (!file.exists()) return 0
-            val line = file.bufferedReader().use { it.readLine() } ?: return 0
-            val parts = line.trim().split(Regex("\\s+"))
-            if (parts.size < 8 || parts[0] != "cpu") return 0
-            val user = parts[1].toLong()
-            val nice = parts[2].toLong()
-            val system = parts[3].toLong()
-            val idle = parts[4].toLong()
-            val iowait = parts[5].toLong()
-            val irq = parts[6].toLong()
-            val softirq = parts[7].toLong()
-
-            val currentIdle = idle + iowait
-            val currentActive = user + nice + system + irq + softirq
-            val currentTotal = currentIdle + currentActive
-
-            val totalDiff = currentTotal - lastCpuTotal
-            val idleDiff = currentIdle - lastCpuIdle
-
-            lastCpuTotal = currentTotal
-            lastCpuIdle = currentIdle
-
-            if (totalDiff <= 0) return 0
-            return ((totalDiff - idleDiff) * 100 / totalDiff).toInt().coerceIn(0, 100)
-        } catch (e: Exception) {
-            return 0
-        }
-    }
-
-    private fun readMemUsage(): String {
+            val am = getSystemService(Context.ACTIVITY_SERVICE) as? android.app.ActivityManager
+            if (am != null) {
+                val mi = android.app.ActivityManager.MemoryInfo()
+                am.getMemoryInfo(mi)
+                if (mi.totalMem > 0) {
+                    return (((mi.totalMem - mi.availMem) * 100) / mi.totalMem).toInt().coerceIn(0, 100)
+                }
+            }
+        } catch (e: Exception) {}
         try {
             val file = File("/proc/meminfo")
-            if (!file.exists()) return "0.0 GB"
+            if (!file.exists()) return 0
             var totalKb = 0L
             var availKb = 0L
             file.forEachLine { line ->
@@ -3851,12 +4398,51 @@ class MainActivity : AppCompatActivity() {
                     if (parts.size >= 2) availKb = parts[1].toLong()
                 }
             }
-            if (totalKb <= 0L) return "0.0 GB"
+            if (totalKb > 0L) {
+                return (((totalKb - availKb) * 100) / totalKb).toInt().coerceIn(0, 100)
+            }
+        } catch (e: Exception) {}
+        return 0
+    }
+
+    private fun readCpuUsage(): Int {
+        val snapshot = CpuUtilizationProvider.getCpuSnapshot()
+        return snapshot.overallPercent.toInt()
+    }
+
+    private fun readMemUsage(): String {
+        try {
+            val am = getSystemService(Context.ACTIVITY_SERVICE) as? android.app.ActivityManager
+            if (am != null) {
+                val mi = android.app.ActivityManager.MemoryInfo()
+                am.getMemoryInfo(mi)
+                val usedBytes = mi.totalMem - mi.availMem
+                val usedGb = usedBytes.toDouble() / (1024.0 * 1024.0 * 1024.0)
+                return String.format(java.util.Locale.US, "%.1fG", usedGb)
+            }
+        } catch (e: Exception) {
+            // fallback to /proc/meminfo
+        }
+        try {
+            val file = File("/proc/meminfo")
+            if (!file.exists()) return "0.0G"
+            var totalKb = 0L
+            var availKb = 0L
+            file.forEachLine { line ->
+                if (line.startsWith("MemTotal:")) {
+                    val parts = line.split(Regex("\\s+"))
+                    if (parts.size >= 2) totalKb = parts[1].toLong()
+                } else if (line.startsWith("MemAvailable:")) {
+                    val parts = line.split(Regex("\\s+"))
+                    if (parts.size >= 2) availKb = parts[1].toLong()
+                }
+            }
+            if (totalKb <= 0L) return "0.0G"
             val usedKb = totalKb - availKb
             val usedGb = usedKb.toDouble() / (1024 * 1024)
-            return String.format(java.util.Locale.US, "%.1f GB", usedGb)
+            return String.format(java.util.Locale.US, "%.1fG", usedGb)
         } catch (e: Exception) {
-            return "0.0 GB"
+            return "0.0G"
         }
     }
 
@@ -4005,17 +4591,12 @@ class MainActivity : AppCompatActivity() {
 
                 mainHandler.post {
                     val formattedVal = if (totalAppMB >= 1024.0) {
-                        String.format("%.2f GB", totalAppMB / 1024.0)
+                        String.format(java.util.Locale.US, "%.1f", totalAppMB / 1024.0)
                     } else {
-                        String.format("%.1f MB", totalAppMB)
+                        String.format(java.util.Locale.US, "%.1f", totalAppMB)
                     }
                     valTv.text = formattedVal
-
-                    if (deviceTotalGB > 0 && deviceFreeGB > 0) {
-                        subTv.text = String.format("App: %.1f MB • Data: %.2f GB (Free: %.1f GB / Total: %.1f GB Disk)", appMB, totalAppMB / 1024.0, deviceFreeGB, deviceTotalGB)
-                    } else {
-                        subTv.text = String.format("App Package: %.1f MB • Data & Environment: %.1f MB", appMB, dataMB)
-                    }
+                    subTv.text = if (totalAppMB >= 1024.0) "GB" else "MB"
 
                     fillView.post {
                         val parentView = fillView.parent as? View
@@ -4422,7 +5003,8 @@ class MainActivity : AppCompatActivity() {
             env["PD_PROOT_BIN"] = File(nld, "libproot.so").absolutePath
             env["PROOT_LOADER"] = File(nld, "libloader.so").absolutePath
             env["LD_LIBRARY_PATH"] = "/data/data/com.ivarna.nativecode/files/usr/lib"
-            env["LD_PRELOAD"] = "/data/data/com.ivarna.nativecode/files/usr/lib/libtermux-exec.so"
+            val termuxExec = File(filesDir, "usr/lib/libtermux-exec.so")
+            if (termuxExec.exists()) env["LD_PRELOAD"] = termuxExec.absolutePath
             env["HOME"] = "/data/data/com.ivarna.nativecode/files/home"
             env["PREFIX"] = "/data/data/com.ivarna.nativecode/files/usr"
             env["TERMUX__PREFIX"] = "/data/data/com.ivarna.nativecode/files/usr"
@@ -4582,7 +5164,7 @@ class MainActivity : AppCompatActivity() {
         envMap["TERM"] = "xterm-256color"
         envMap["PREFIX"] = "/data/data/com.ivarna.nativecode/files/usr"
         envMap["LD_LIBRARY_PATH"] = "/data/data/com.ivarna.nativecode/files/usr/lib"
-        envMap["LD_PRELOAD"] = "/data/data/com.ivarna.nativecode/files/usr/lib/libtermux-exec.so"
+        setLdPreloadEnv(envMap)
         envMap["TERMUX_APP__PACKAGE_NAME"] = "com.ivarna.nativecode"
         envMap["TERMUX__PREFIX"] = "/data/data/com.ivarna.nativecode/files/usr"
         envMap["TERMUX__HOME"] = "/data/data/com.ivarna.nativecode/files/home"
@@ -5513,5 +6095,84 @@ class MainActivity : AppCompatActivity() {
         card.addView(toggleRow)
 
         return card
+    }
+
+    private class TerminalScanlineDrawable(
+        private val bgColor: Int = Color.parseColor("#131313"),
+        private val lineSpacingDp: Int = 4,
+        private val lineColor: Int = Color.parseColor("#12FFFFFF")
+    ) : Drawable() {
+        private val bgPaint = Paint().apply { color = bgColor }
+        private val linePaint = Paint().apply {
+            color = lineColor
+            strokeWidth = 1f
+        }
+
+        override fun draw(canvas: Canvas) {
+            val b = bounds
+            canvas.drawRect(b, bgPaint)
+
+            val displayMetrics = canvas.density
+            val density = if (displayMetrics <= 0) 2.5f else displayMetrics.toFloat()
+            val spacing = lineSpacingDp * density
+            var y = 0f
+            while (y < b.height()) {
+                canvas.drawLine(0f, y, b.width().toFloat(), y, linePaint)
+                y += spacing
+            }
+        }
+
+        override fun setAlpha(alpha: Int) {}
+        override fun setColorFilter(colorFilter: ColorFilter?) {}
+        @Deprecated("Deprecated in Java")
+        override fun getOpacity(): Int = PixelFormat.TRANSLUCENT
+    }
+
+    private class CircularProgressView(context: Context) : View(context) {
+        var progress: Float = 0f
+            set(value) {
+                field = value.coerceIn(0f, 100f)
+                postInvalidate()
+            }
+        var arcColor: Int = Color.parseColor("#C8B6FF")
+            set(value) {
+                field = value
+                postInvalidate()
+            }
+        var trackColor: Int = Color.parseColor("#222222")
+            set(value) {
+                field = value
+                postInvalidate()
+            }
+
+        private val trackPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE
+        }
+        private val progressPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE
+            strokeCap = Paint.Cap.ROUND
+        }
+        private val rectF = RectF()
+
+        override fun onDraw(canvas: Canvas) {
+            super.onDraw(canvas)
+            val density = resources.displayMetrics.density
+            val strokeWidthPx = 7f * density
+            trackPaint.strokeWidth = strokeWidthPx
+            trackPaint.color = trackColor
+
+            progressPaint.strokeWidth = strokeWidthPx
+            progressPaint.color = arcColor
+
+            val inset = strokeWidthPx / 2f + 2f * density
+            rectF.set(inset, inset, width - inset, height - inset)
+
+            canvas.drawOval(rectF, trackPaint)
+
+            val sweep = (progress / 100f) * 360f
+            if (sweep > 0f) {
+                canvas.drawArc(rectF, -90f, sweep, false, progressPaint)
+            }
+        }
     }
 }
