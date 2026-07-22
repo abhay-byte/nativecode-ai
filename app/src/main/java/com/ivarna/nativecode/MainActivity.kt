@@ -266,7 +266,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var workspaceTerminalView: TerminalView
     private lateinit var workspaceTabBar: LinearLayout
     private lateinit var workspaceTabBarScroll: HorizontalScrollView
-    private lateinit var workspaceHubLayout: LinearLayout
+    private lateinit var workspaceHubLayout: View
     private lateinit var workspaceDirTreeLayout: LinearLayout
     private lateinit var workspaceGitDiffLayout: LinearLayout
     private lateinit var workspaceProjectNameTv: TextView
@@ -5940,13 +5940,20 @@ class MainActivity : AppCompatActivity() {
         for (file in files) {
             if (file.name.startsWith(".")) continue
             val isExpanded = expandedFolders.contains(file.absolutePath)
-            
+            val indentPx = dp(16 * depth + 8)
+            val isDir = file.isDirectory
+
             val row = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
-                setPadding(dp(16 * depth + 12), dp(8), dp(12), dp(8))
+                setPadding(indentPx, dp(9), dp(12), dp(9))
+                background = if (isDir) GradientDrawable().apply {
+                    shape = GradientDrawable.RECTANGLE
+                    setColor(if (isExpanded) NC.SURFACE_CONTAINER else Color.TRANSPARENT)
+                    setStroke(0, Color.TRANSPARENT)
+                } else null
                 setOnClickListener {
-                    if (file.isDirectory) {
+                    if (isDir) {
                         if (isExpanded) {
                             expandedFolders.remove(file.absolutePath)
                         } else {
@@ -5957,14 +5964,34 @@ class MainActivity : AppCompatActivity() {
                         showFileViewer(file.absolutePath, ID_PROJECT_DIR_TREE)
                     }
                 }
+                setOnTouchListener { v, event ->
+                    when (event.action) {
+                        MotionEvent.ACTION_DOWN -> v.setBackgroundColor(NC.SURFACE_HIGH)
+                        MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> v.background = if (isDir && isExpanded) GradientDrawable().apply {
+                            shape = GradientDrawable.RECTANGLE
+                            setColor(NC.SURFACE_CONTAINER)
+                        } else null
+                    }
+                    false
+                }
+            }
+
+            // Left accent bar for directories
+            if (depth == 0 && isDir) {
+                val accent = View(this).apply {
+                    layoutParams = LinearLayout.LayoutParams(dp(2), ViewGroup.LayoutParams.MATCH_PARENT)
+                    setBackgroundColor(if (isExpanded) NC.PRIMARY else NC.OUTLINE_VAR)
+                }
+                row.addView(accent)
+                row.addView(spacer(6).apply { layoutParams = LinearLayout.LayoutParams(dp(6), ViewGroup.LayoutParams.MATCH_PARENT) })
             }
             
             val indicatorTv = TextView(this).apply {
-                if (file.isDirectory) {
+                if (isDir) {
                     typeface = materialTf
                     text = if (isExpanded) "\uE313" else "\uE315"
                     textSize = 16f
-                    setTextColor(NC.ON_SURF_VAR)
+                    setTextColor(if (isExpanded) NC.PRIMARY else NC.ON_SURF_VAR)
                     setPadding(0, 0, dp(4), 0)
                 } else {
                     text = ""
@@ -5975,7 +6002,7 @@ class MainActivity : AppCompatActivity() {
             val iconTv = TextView(this).apply {
                 typeface = materialTf
                 val icon = when {
-                    file.isDirectory -> {
+                    isDir -> {
                         if (isExpanded) "\uE2C8" else "\uE2C7" // folder_open or folder
                     }
                     else -> {
@@ -6013,26 +6040,58 @@ class MainActivity : AppCompatActivity() {
                 text = icon
                 textSize = 16f
                 setPadding(0, 0, dp(8), 0)
-                setTextColor(if (file.isDirectory) NC.PRIMARY else NC.ON_SURF_VAR)
+                setTextColor(if (isDir) NC.PRIMARY else NC.SECONDARY)
             }
             
             val nameTv = TextView(this).apply {
                 text = file.name
                 textSize = 14f
-                setTextColor(if (file.isDirectory) NC.ON_SURFACE else NC.PRIMARY)
-                if (file.isDirectory) {
+                setTextColor(if (isDir) NC.ON_SURFACE else NC.ON_SURF_VAR)
+                layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
+                if (isDir) {
                     typeface = Typeface.DEFAULT_BOLD
                 } else {
                     typeface = Typeface.MONOSPACE
+                }
+            }
+
+            val sizeOrChevron: View = if (isDir) {
+                ImageView(this).apply {
+                    setImageResource(R.drawable.ic_chevron_right)
+                    setColorFilter(if (isExpanded) NC.PRIMARY else NC.OUTLINE_VAR)
+                    layoutParams = LinearLayout.LayoutParams(dp(16), dp(16))
+                }
+            } else {
+                val ext = file.extension.uppercase()
+                TextView(this).apply {
+                    text = if (ext.isNotEmpty()) ext else "FILE"
+                    textSize = 9f
+                    setTextColor(NC.ON_SURF_VAR)
+                    typeface = Typeface.MONOSPACE
+                    background = GradientDrawable().apply {
+                        shape = GradientDrawable.RECTANGLE
+                        setColor(NC.SURFACE_HIGHEST)
+                        setStroke(dp(1), NC.OUTLINE_VAR)
+                    }
+                    setPadding(dp(4), dp(2), dp(4), dp(2))
                 }
             }
             
             row.addView(indicatorTv)
             row.addView(iconTv)
             row.addView(nameTv)
+            row.addView(sizeOrChevron)
             container.addView(row)
+
+            if (depth == 0) {
+                val rowDiv = View(this).apply {
+                    layoutParams = LinearLayout.LayoutParams(MATCH, dp(1))
+                    setBackgroundColor(NC.SURFACE_HIGH)
+                }
+                container.addView(rowDiv)
+            }
             
-            if (file.isDirectory && isExpanded) {
+            if (isDir && isExpanded) {
                 renderDirectoryTree(file, container, depth + 1)
             }
         }
@@ -6086,32 +6145,133 @@ class MainActivity : AppCompatActivity() {
                 mainHandler.post {
                     workspaceGitDiffLayout.removeAllViews()
                     if (filteredLines.isEmpty()) {
-                        val noChanges = TextView(this@MainActivity).apply { text = "No changes detected"; setTextColor(NC.ON_SURF_VAR); setPadding(dp(12), dp(12), dp(12), dp(12)) }
-                        workspaceGitDiffLayout.addView(noChanges)
+                        val noChangesCard = LinearLayout(this@MainActivity).apply {
+                            orientation = LinearLayout.VERTICAL
+                            gravity = Gravity.CENTER
+                            background = cyberBrutalistBg(
+                                fillColor = NC.SURFACE_LOW,
+                                strokeColor = NC.OUTLINE_VAR,
+                                shadowColor = NC.SHADOW_DARK,
+                                offsetDp = 4,
+                                cornerRadiusDp = 0
+                            )
+                            setPadding(dp(16), dp(24), dp(16), dp(24))
+                            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(8) }
+                        }
+                        val noChangesIcon = TextView(this@MainActivity).apply {
+                            text = "✓"
+                            textSize = 28f
+                            setTextColor(NC.PRIMARY)
+                            gravity = Gravity.CENTER
+                            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
+                        }
+                        val noChanges = TextView(this@MainActivity).apply {
+                            text = "NO CHANGES DETECTED"
+                            textSize = 14f
+                            setTextColor(NC.ON_SURFACE)
+                            typeface = Typeface.MONOSPACE
+                            gravity = Gravity.CENTER
+                            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(6) }
+                        }
+                        val noChangesSub = TextView(this@MainActivity).apply {
+                            text = "Working tree is clean"
+                            textSize = 11f
+                            setTextColor(NC.ON_SURF_VAR)
+                            typeface = Typeface.MONOSPACE
+                            gravity = Gravity.CENTER
+                            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(4) }
+                        }
+                        noChangesCard.addView(noChangesIcon)
+                        noChangesCard.addView(noChanges)
+                        noChangesCard.addView(noChangesSub)
+                        workspaceGitDiffLayout.addView(noChangesCard)
                     } else {
                         for (line in filteredLines) {
                             if (line.trim().isEmpty()) continue
-                            val status = line.take(2)
+                            val status = line.take(2).trim()
                             val file = line.substring(3)
+                            val statusChar = status.firstOrNull() ?: ' '
+                            val accentColor = when (statusChar) {
+                                'M' -> NC.PRIMARY_CON       // Modified — green
+                                'A' -> Color.parseColor("#43e188")   // Added — bright green
+                                'D' -> NC.ERROR_CON         // Deleted — red
+                                'R', 'C' -> NC.TERTIARY_CON // Renamed/Copied — amber
+                                '?' -> NC.SECONDARY         // Untracked — grey
+                                else -> NC.SEC_CON
+                            }
+                            val statusLabel = when (statusChar) {
+                                'M' -> "MOD"
+                                'A' -> "ADD"
+                                'D' -> "DEL"
+                                'R' -> "REN"
+                                'C' -> "CPY"
+                                '?' -> "NEW"
+                                '!' -> "IGN"
+                                else -> status.trim().ifEmpty { "---" }
+                            }
                             val row = LinearLayout(this@MainActivity).apply {
                                 orientation = LinearLayout.HORIZONTAL
                                 gravity = Gravity.CENTER_VERTICAL
-                                setPadding(dp(12), dp(8), dp(12), dp(8))
+                                background = GradientDrawable().apply {
+                                    shape = GradientDrawable.RECTANGLE
+                                    setColor(NC.SURFACE_LOW)
+                                    setStroke(dp(1), NC.OUTLINE_VAR)
+                                }
+                                setPadding(dp(12), dp(10), dp(12), dp(10))
+                                layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply {
+                                    bottomMargin = dp(4)
+                                }
                                 setOnClickListener {
                                     showDiffViewer(file, ID_PROJECT_GIT_DIFF)
                                 }
+                                setOnTouchListener { v, event ->
+                                    when (event.action) {
+                                        MotionEvent.ACTION_DOWN -> v.setBackgroundColor(NC.SURFACE_HIGH)
+                                        MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> v.background = GradientDrawable().apply {
+                                            shape = GradientDrawable.RECTANGLE
+                                            setColor(NC.SURFACE_LOW)
+                                            setStroke(dp(1), NC.OUTLINE_VAR)
+                                        }
+                                    }
+                                    false
+                                }
                             }
-                            val statusBadge = textBadge(status, if (status.contains("M")) NC.PRIMARY_CON else NC.SECONDARY, NC.ON_SURFACE)
+                            // Left accent bar by status
+                            val accentBar = View(this@MainActivity).apply {
+                                layoutParams = LinearLayout.LayoutParams(dp(3), ViewGroup.LayoutParams.MATCH_PARENT).apply { rightMargin = dp(10) }
+                                setBackgroundColor(accentColor)
+                            }
+                            val statusBadge = TextView(this@MainActivity).apply {
+                                text = statusLabel
+                                textSize = 9f
+                                setTextColor(NC.SURFACE_LOWEST)
+                                typeface = Typeface.MONOSPACE
+                                paint.isFakeBoldText = true
+                                background = GradientDrawable().apply {
+                                    shape = GradientDrawable.RECTANGLE
+                                    setColor(accentColor)
+                                }
+                                setPadding(dp(5), dp(3), dp(5), dp(3))
+                                layoutParams = LinearLayout.LayoutParams(WRAP, WRAP).apply { rightMargin = dp(10) }
+                            }
                             val fileTv = TextView(this@MainActivity).apply {
-                                text = "  $file"
+                                text = file
                                 textSize = 12f
                                 setTextColor(NC.ON_SURFACE)
                                 typeface = Typeface.MONOSPACE
+                                layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
                                 maxLines = 1
                                 ellipsize = android.text.TextUtils.TruncateAt.END
                             }
+                            val chevron = ImageView(this@MainActivity).apply {
+                                setImageResource(R.drawable.ic_chevron_right)
+                                setColorFilter(NC.OUTLINE)
+                                layoutParams = LinearLayout.LayoutParams(dp(16), dp(16))
+                            }
+                            row.addView(accentBar)
                             row.addView(statusBadge)
                             row.addView(fileTv)
+                            row.addView(chevron)
                             workspaceGitDiffLayout.addView(row)
                         }
                     }
@@ -6479,7 +6639,11 @@ class MainActivity : AppCompatActivity() {
 
         workspaceTabBarScroll = HorizontalScrollView(this).apply {
             layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
-            setBackgroundColor(Color.parseColor("#1d1a24"))
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                setColor(NC.SURFACE_LOWEST)
+                setStroke(dp(1), NC.OUTLINE_VAR)
+            }
             setPadding(dp(8), dp(4), dp(8), dp(4))
             visibility = View.GONE
         }
@@ -6575,23 +6739,48 @@ class MainActivity : AppCompatActivity() {
 
         centerFrame.addView(workspaceTerminalContainer)
 
-        workspaceHubLayout = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER_HORIZONTAL
-            setPadding(dp(16), dp(20), dp(16), dp(20))
+        workspaceHubLayout = ScrollView(this).apply {
             layoutParams = FrameLayout.LayoutParams(MATCH, MATCH)
+            clipToPadding = false
+            setPadding(0, 0, 0, dp(16))
+            setBackgroundColor(NC.BG)
+            isVerticalScrollBarEnabled = false
         }
 
-        val hubTitle = TextView(this).apply {
-            text = "Select AI Tool"
-            textSize = 20f
+        val hubInner = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(12), dp(16), dp(16))
+        }
+        (workspaceHubLayout as ScrollView).addView(hubInner)
+
+        // Hub header
+        val hubHeaderRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, 0, 0, dp(4))
+        }
+        val hubTitleTv = TextView(this).apply {
+            text = "SELECT AI TOOL"
+            textSize = 18f
+            setTextColor(NC.PRIMARY)
+            typeface = Typeface.DEFAULT_BOLD
+            layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
+        }
+        val hubSubTitleTv = TextView(this).apply {
+            text = "// LAUNCH WORKSPACE"
+            textSize = 10f
             setTextColor(NC.ON_SURF_VAR)
             typeface = Typeface.MONOSPACE
-            gravity = Gravity.CENTER
-            setPadding(0, 0, 0, dp(20))
-            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
+            gravity = Gravity.END
         }
-        workspaceHubLayout.addView(hubTitle)
+        hubHeaderRow.addView(hubTitleTv)
+        hubHeaderRow.addView(hubSubTitleTv)
+        val hubDivider = View(this).apply {
+            layoutParams = LinearLayout.LayoutParams(MATCH, dp(1)).apply { bottomMargin = dp(12) }
+            setBackgroundColor(NC.OUTLINE_VAR)
+        }
+        hubInner.addView(hubHeaderRow)
+        hubInner.addView(hubDivider)
 
         data class AiToolDef(val type: String, val label: String, val desc: String, val iconUrl: String?)
 
@@ -6610,12 +6799,45 @@ class MainActivity : AppCompatActivity() {
             val card = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 gravity = Gravity.CENTER
-                background = roundedBg(NC.SURFACE, NC.BORDER, dp(12))
+                background = cyberBrutalistBg(
+                    fillColor = NC.SURFACE_LOW,
+                    strokeColor = NC.OUTLINE_VAR,
+                    shadowColor = NC.SHADOW_DARK,
+                    offsetDp = 4,
+                    cornerRadiusDp = 0
+                )
                 setPadding(dp(16), dp(20), dp(16), dp(18))
                 layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f).apply {
-                    setMargins(dp(5), dp(5), dp(5), dp(5))
+                    setMargins(dp(4), dp(4), dp(4), dp(4))
                 }
                 setOnClickListener { createWorkspaceTerminalTab(tool.type) }
+                setOnTouchListener { v, event ->
+                    when (event.action) {
+                        MotionEvent.ACTION_DOWN -> {
+                            v.translationX = dp(2).toFloat()
+                            v.translationY = dp(2).toFloat()
+                            v.background = cyberBrutalistBg(
+                                fillColor = NC.SURFACE_CONTAINER,
+                                strokeColor = NC.PRIMARY,
+                                shadowColor = NC.SHADOW_DARK,
+                                offsetDp = 2,
+                                cornerRadiusDp = 0
+                            )
+                        }
+                        MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                            v.translationX = 0f
+                            v.translationY = 0f
+                            v.background = cyberBrutalistBg(
+                                fillColor = NC.SURFACE_LOW,
+                                strokeColor = NC.OUTLINE_VAR,
+                                shadowColor = NC.SHADOW_DARK,
+                                offsetDp = 4,
+                                cornerRadiusDp = 0
+                            )
+                        }
+                    }
+                    false
+                }
             }
 
             val iconSize = dp(64)
@@ -6639,7 +6861,7 @@ class MainActivity : AppCompatActivity() {
 
             val nameTv = TextView(this).apply {
                 text = tool.label
-                textSize = 16f
+                textSize = 14f
                 setTextColor(NC.ON_SURFACE)
                 typeface = Typeface.DEFAULT_BOLD
                 gravity = Gravity.CENTER
@@ -6648,8 +6870,9 @@ class MainActivity : AppCompatActivity() {
 
             val descTv = TextView(this).apply {
                 text = tool.desc
-                textSize = 12f
+                textSize = 11f
                 setTextColor(NC.ON_SURF_VAR)
+                typeface = Typeface.MONOSPACE
                 gravity = Gravity.CENTER
                 setPadding(0, dp(2), 0, 0)
             }
@@ -6662,17 +6885,17 @@ class MainActivity : AppCompatActivity() {
         aiTools.chunked(2).forEach { pair ->
             val row = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
-                layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(4) }
+                layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(2) }
             }
             pair.forEach { tool -> row.addView(makeToolCard(tool)) }
             if (pair.size == 1) {
                 // pad empty slot
                 val spacer = android.view.View(this).apply {
-                    layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f).apply { setMargins(dp(5), dp(5), dp(5), dp(5)) }
+                    layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f).apply { setMargins(dp(4), dp(4), dp(4), dp(4)) }
                 }
                 row.addView(spacer)
             }
-            workspaceHubLayout.addView(row)
+            hubInner.addView(row)
         }
 
         centerFrame.addView(workspaceHubLayout)
@@ -6680,6 +6903,7 @@ class MainActivity : AppCompatActivity() {
 
         projectWorkspaceLayout.addView(mainArea)
         projectWorkspaceContainer.addView(projectWorkspaceLayout)
+
     }
 
      private data class StatusCardData(val title: String, val type: String, val desc: String, val color: Int)
@@ -6707,7 +6931,11 @@ class MainActivity : AppCompatActivity() {
         val topBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setBackgroundColor(Color.parseColor("#15121b"))
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                setColor(NC.SURFACE_LOWEST)
+                setStroke(dp(1), NC.OUTLINE_VAR)
+            }
             setPadding(dp(12), dp(10), dp(12), dp(10))
             layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
         }
@@ -6774,33 +7002,97 @@ class MainActivity : AppCompatActivity() {
 
         val settingsContentLayout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(16), dp(16), dp(16), dp(16))
+            setPadding(dp(16), dp(12), dp(16), dp(16))
             layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
         }
         projectSettingsLayout.addView(settingsContentLayout)
 
-        val header = TextView(this).apply {
-            text = "Configure $activeProjectName"
-            textSize = 20f
+        // Settings page header
+        val settingsHeaderRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val settingsHeaderTitle = TextView(this).apply {
+            text = "SETTINGS"
+            textSize = 18f
             setTextColor(NC.PRIMARY)
             typeface = Typeface.DEFAULT_BOLD
-            setPadding(0, 0, 0, dp(16))
+            layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
         }
-        settingsContentLayout.addView(header)
+        val settingsHeaderSub = TextView(this).apply {
+            text = "// PROJECT CONFIG"
+            textSize = 10f
+            setTextColor(NC.ON_SURF_VAR)
+            typeface = Typeface.MONOSPACE
+        }
+        settingsHeaderRow.addView(settingsHeaderTitle)
+        settingsHeaderRow.addView(settingsHeaderSub)
+        val settingsDivider = View(this).apply {
+            layoutParams = LinearLayout.LayoutParams(MATCH, dp(1)).apply {
+                topMargin = dp(8)
+                bottomMargin = dp(16)
+            }
+            setBackgroundColor(NC.OUTLINE_VAR)
+        }
+        settingsContentLayout.addView(settingsHeaderRow)
+        settingsContentLayout.addView(settingsDivider)
         settingsContentLayout.addView(buildTerminalSettingsCard())
         settingsContentLayout.addView(spacer(16))
 
+        // Project Icon card
+        val iconCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = cyberBrutalistBg(
+                fillColor = NC.SURFACE_LOW,
+                strokeColor = NC.OUTLINE_VAR,
+                shadowColor = NC.SHADOW_DARK,
+                offsetDp = 6,
+                cornerRadiusDp = 0
+            )
+            setPadding(dp(16), dp(16), dp(16), dp(16))
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(16) }
+        }
+        val iconCardTitleRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, 0, 0, dp(12))
+        }
+        val iconCardIcon = ImageView(this).apply {
+            setImageResource(R.drawable.ic_folder_special)
+            setColorFilter(NC.PRIMARY)
+            layoutParams = LinearLayout.LayoutParams(dp(20), dp(20)).apply { rightMargin = dp(8) }
+        }
+        val iconCardTitle = TextView(this).apply {
+            text = "PROJECT ICON"
+            textSize = 14f
+            setTextColor(Color.WHITE)
+            typeface = Typeface.DEFAULT_BOLD
+        }
+        iconCardTitleRow.addView(iconCardIcon)
+        iconCardTitleRow.addView(iconCardTitle)
+        iconCard.addView(iconCardTitleRow)
+
+        // Preview + controls in a row
+        val iconRowLayout = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+
         val previewContainer = FrameLayout(this).apply {
-            layoutParams = LinearLayout.LayoutParams(dp(120), dp(120)).apply {
-                gravity = Gravity.CENTER_HORIZONTAL
-                bottomMargin = dp(24)
+            layoutParams = LinearLayout.LayoutParams(dp(80), dp(80)).apply { rightMargin = dp(16) }
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(NC.SURFACE_CONTAINER)
+                setStroke(dp(2), NC.OUTLINE_VAR)
             }
-            background = roundedBg(NC.SURFACE, NC.BORDER, dp(60))
             clipToOutline = true
             outlineProvider = android.view.ViewOutlineProvider.BACKGROUND
         }
-        settingsContentLayout.addView(previewContainer)
 
+        val iconInputCol = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
+        }
 
         fun updatePreview(iconStr: String) {
             previewContainer.removeAllViews()
@@ -6808,15 +7100,19 @@ class MainActivity : AppCompatActivity() {
                 val iv = ImageView(this@MainActivity).apply {
                     setImageResource(R.drawable.ic_folder_special)
                     setColorFilter(NC.PRIMARY)
-                    layoutParams = FrameLayout.LayoutParams(dp(64), dp(64), Gravity.CENTER)
+                    layoutParams = FrameLayout.LayoutParams(dp(40), dp(40), Gravity.CENTER)
                 }
                 previewContainer.addView(iv)
             } else if (iconStr.length <= 4 && !iconStr.startsWith("/") && !iconStr.startsWith("http")) {
-                val tv = TextView(this@MainActivity).apply { text = iconStr; textSize = 48f; gravity = Gravity.CENTER }
+                val tv = TextView(this@MainActivity).apply {
+                    text = iconStr; textSize = 32f; gravity = Gravity.CENTER
+                    layoutParams = FrameLayout.LayoutParams(MATCH, MATCH)
+                }
                 previewContainer.addView(tv)
             } else {
                 val iv = ImageView(this@MainActivity).apply {
                     scaleType = ImageView.ScaleType.CENTER_CROP
+                    layoutParams = FrameLayout.LayoutParams(MATCH, MATCH)
                 }
                 previewContainer.addView(iv)
                 executor.execute {
@@ -6843,7 +7139,7 @@ class MainActivity : AppCompatActivity() {
                                 val defaultIv = ImageView(this@MainActivity).apply {
                                     setImageResource(R.drawable.ic_folder_special)
                                     setColorFilter(NC.PRIMARY)
-                                    layoutParams = FrameLayout.LayoutParams(dp(64), dp(64), Gravity.CENTER)
+                                    layoutParams = FrameLayout.LayoutParams(dp(40), dp(40), Gravity.CENTER)
                                 }
                                 previewContainer.addView(defaultIv)
                             }
@@ -6854,7 +7150,7 @@ class MainActivity : AppCompatActivity() {
                             val defaultIv = ImageView(this@MainActivity).apply {
                                 setImageResource(R.drawable.ic_folder_special)
                                 setColorFilter(NC.PRIMARY)
-                                layoutParams = FrameLayout.LayoutParams(dp(64), dp(64), Gravity.CENTER)
+                                layoutParams = FrameLayout.LayoutParams(dp(40), dp(40), Gravity.CENTER)
                             }
                             previewContainer.addView(defaultIv)
                         }
@@ -6869,6 +7165,18 @@ class MainActivity : AppCompatActivity() {
 
         val configIconInput = EditText(this).apply {
             setText(currentIcon)
+            textSize = 12f
+            setTextColor(NC.ON_SURFACE)
+            setHintTextColor(NC.ON_SURF_VAR)
+            hint = "Path / URL / emoji"
+            typeface = Typeface.MONOSPACE
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                setColor(NC.SURFACE_CONTAINER)
+                setStroke(dp(1), NC.OUTLINE_VAR)
+            }
+            setPadding(dp(10), dp(8), dp(10), dp(8))
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(10) }
             addTextChangedListener(object : android.text.TextWatcher {
                 override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
                 override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
@@ -6878,19 +7186,21 @@ class MainActivity : AppCompatActivity() {
             })
         }
         activeIconInput = configIconInput
-        
+
         val chooseIconBtn = secondaryButton("Browse") {
             activeIconInput = configIconInput
             projectIconPickerLauncher.launch("image/*")
         }.apply {
-            layoutParams = LinearLayout.LayoutParams(WRAP, WRAP).apply {
-                gravity = Gravity.CENTER_HORIZONTAL
-                bottomMargin = dp(32)
-            }
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
         }
-        settingsContentLayout.addView(chooseIconBtn)
+        iconInputCol.addView(configIconInput)
+        iconInputCol.addView(chooseIconBtn)
+        iconRowLayout.addView(previewContainer)
+        iconRowLayout.addView(iconInputCol)
+        iconCard.addView(iconRowLayout)
+        settingsContentLayout.addView(iconCard)
 
-        val saveBtn = primaryButton("Save Configuration") {
+        val saveBtn = primaryButton("SAVE CONFIGURATION") {
             val newIcon = configIconInput.text.toString().trim()
             val list = getProjects().toMutableList()
             val idx = list.indexOfFirst { it.path == activeProjectPath }
@@ -6909,38 +7219,31 @@ class MainActivity : AppCompatActivity() {
         settingsContentLayout.addView(saveBtn)
 
         settingsContentLayout.addView(spacer(16))
-        val removeBtn = TextView(this).apply {
-            text = "Remove Project"
-            textSize = 15f
-            setTextColor(Color.WHITE)
-            typeface = Typeface.DEFAULT_BOLD
-            gravity = Gravity.CENTER
-            background = roundedBg(Color.parseColor("#ba1a1a"), Color.parseColor("#ba1a1a"), dp(24))
-            setPadding(dp(16), dp(12), dp(16), dp(12))
-            setOnClickListener {
-                val list = getProjects().toMutableList()
-                val idx = list.indexOfFirst { it.path == activeProjectPath }
-                if (idx >= 0) {
-                    list.removeAt(idx)
-                    saveProjects(list)
-                    Toast.makeText(this@MainActivity, "Project removed.", Toast.LENGTH_SHORT).show()
-                    activeProjectName = ""
-                    activeProjectPath = ""
-                    while (pageStack.isNotEmpty() && (
-                        pageStack.peek() == ID_PROJECT_WORKSPACE ||
-                        pageStack.peek() == ID_PROJECT_SETTINGS ||
-                        pageStack.peek() == ID_PROJECT_DIR_TREE ||
-                        pageStack.peek() == ID_PROJECT_GIT_DIFF
-                    )) {
-                        pageStack.pop()
-                    }
-                    if (pageStack.isEmpty()) {
-                        pageStack.push(ID_HOME)
-                    }
-                    val nextPage = pageStack.peek()
-                    navigateToPage(nextPage)
+        val removeBtn = dangerButton("REMOVE PROJECT") {
+            val list = getProjects().toMutableList()
+            val idx = list.indexOfFirst { it.path == activeProjectPath }
+            if (idx >= 0) {
+                list.removeAt(idx)
+                saveProjects(list)
+                Toast.makeText(this@MainActivity, "Project removed.", Toast.LENGTH_SHORT).show()
+                activeProjectName = ""
+                activeProjectPath = ""
+                while (pageStack.isNotEmpty() && (
+                    pageStack.peek() == ID_PROJECT_WORKSPACE ||
+                    pageStack.peek() == ID_PROJECT_SETTINGS ||
+                    pageStack.peek() == ID_PROJECT_DIR_TREE ||
+                    pageStack.peek() == ID_PROJECT_GIT_DIFF
+                )) {
+                    pageStack.pop()
                 }
+                if (pageStack.isEmpty()) {
+                    pageStack.push(ID_HOME)
+                }
+                val nextPage = pageStack.peek()
+                navigateToPage(nextPage)
             }
+        }.apply {
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
         }
         settingsContentLayout.addView(removeBtn)
     }
@@ -6967,10 +7270,42 @@ class MainActivity : AppCompatActivity() {
     private fun openProjectDirTree() {
         projectDirTreeLayout.removeAllViews()
         projectDirTreeLayout.addView(createProjectSubpageTopBar())
+
+        // Directory page header
+        val dirHeader = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(12), dp(16), dp(8))
+        }
+        val dirHeaderRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val dirHeaderTitle = TextView(this).apply {
+            text = "DIRECTORY"
+            textSize = 18f
+            setTextColor(NC.PRIMARY)
+            typeface = Typeface.DEFAULT_BOLD
+            layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
+        }
+        val dirHeaderSub = TextView(this).apply {
+            text = "// FILE TREE"
+            textSize = 10f
+            setTextColor(NC.ON_SURF_VAR)
+            typeface = Typeface.MONOSPACE
+        }
+        dirHeaderRow.addView(dirHeaderTitle)
+        dirHeaderRow.addView(dirHeaderSub)
+        val dirDivider = View(this).apply {
+            layoutParams = LinearLayout.LayoutParams(MATCH, dp(1)).apply { topMargin = dp(8) }
+            setBackgroundColor(NC.OUTLINE_VAR)
+        }
+        dirHeader.addView(dirHeaderRow)
+        dirHeader.addView(dirDivider)
+        projectDirTreeLayout.addView(dirHeader)
         
         workspaceDirTreeLayout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(8))
+            setPadding(dp(8), dp(4), dp(8), dp(8))
         }
         projectDirTreeLayout.addView(workspaceDirTreeLayout)
         refreshWorkspaceDirTree()
@@ -6998,10 +7333,42 @@ class MainActivity : AppCompatActivity() {
     private fun openProjectGitDiff() {
         projectGitDiffLayout.removeAllViews()
         projectGitDiffLayout.addView(createProjectSubpageTopBar())
+
+        // Git diff page header
+        val gitHeader = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(12), dp(16), dp(8))
+        }
+        val gitHeaderRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val gitHeaderTitle = TextView(this).apply {
+            text = "GIT DIFF"
+            textSize = 18f
+            setTextColor(NC.PRIMARY)
+            typeface = Typeface.DEFAULT_BOLD
+            layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
+        }
+        val gitHeaderSub = TextView(this).apply {
+            text = "// CHANGED FILES"
+            textSize = 10f
+            setTextColor(NC.ON_SURF_VAR)
+            typeface = Typeface.MONOSPACE
+        }
+        gitHeaderRow.addView(gitHeaderTitle)
+        gitHeaderRow.addView(gitHeaderSub)
+        val gitDivider = View(this).apply {
+            layoutParams = LinearLayout.LayoutParams(MATCH, dp(1)).apply { topMargin = dp(8) }
+            setBackgroundColor(NC.OUTLINE_VAR)
+        }
+        gitHeader.addView(gitHeaderRow)
+        gitHeader.addView(gitDivider)
+        projectGitDiffLayout.addView(gitHeader)
         
         workspaceGitDiffLayout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(8))
+            setPadding(dp(12), dp(4), dp(12), dp(8))
         }
         projectGitDiffLayout.addView(workspaceGitDiffLayout)
         refreshGitDiffTree()
