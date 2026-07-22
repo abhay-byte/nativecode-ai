@@ -49,4 +49,35 @@
         <item name="android:colorAccent">#212121</item>
     </style>
 
+
+    <style name="CustomSwitchCompatStyle" parent="Widget.AppCompat.CompoundButton.Switch">
+        <item name="track">@drawable/custom_switch_track</item>
+        <item name="thumb">@drawable/custom_switch_thumb</item>
+        <item name="android:track">@drawable/custom_switch_track</item>
+        <item name="android:thumb">@drawable/custom_switch_thumb</item>
+        <item name="showText">false</item>
+    </style>
+
+    <style name="CustomSwitchPreferenceCompatStyle" parent="Preference.SwitchPreferenceCompat">
+        <item name="widgetLayout">@layout/custom_preference_widget_switch</item>
+        <item name="android:widgetLayout">@layout/custom_preference_widget_switch</item>
+    </style>
+
+    <style name="CustomPreferenceTheme" parent="PreferenceThemeOverlay">
+        <item name="switchPreferenceCompatStyle">@style/CustomSwitchPreferenceCompatStyle</item>
+    </style>
+
+    <style name="Theme.Termux.Settings" parent="Theme.AppCompat.DayNight.DarkActionBar">
+        <item name="android:windowBackground">#0A0A0A</item>
+        <item name="android:colorBackground">#0A0A0A</item>
+        <item name="colorPrimary">#0A0A0A</item>
+        <item name="colorPrimaryDark">#000000</item>
+        <item name="colorAccent">#3DDC84</item>
+        <item name="colorControlActivated">#3DDC84</item>
+        <item name="colorControlNormal">#888888</item>
+        <item name="switchStyle">@style/CustomSwitchCompatStyle</item>
+        <item name="switchPreferenceCompatStyle">@style/CustomSwitchPreferenceCompatStyle</item>
+        <item name="preferenceTheme">@style/CustomPreferenceTheme</item>
+    </style>
+
 </resources>
