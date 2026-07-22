@@ -49,6 +49,12 @@ class MainActivity : AppCompatActivity() {
     private lateinit var contentFrame: FrameLayout
     private lateinit var bottomNavigation: BottomNavigationView
     private lateinit var projectBottomNavigation: BottomNavigationView
+    private lateinit var mainContentLayout: LinearLayout
+    private lateinit var sideNavContainer: FrameLayout
+    private lateinit var bottomNavContainer: FrameLayout
+    private lateinit var globalNavRail: com.google.android.material.navigationrail.NavigationRailView
+    private lateinit var projectNavRail: com.google.android.material.navigationrail.NavigationRailView
+
 
     // Persistent Header (Unified across all pages)
     private lateinit var unifiedHeader: LinearLayout
@@ -373,23 +379,10 @@ class MainActivity : AppCompatActivity() {
             }
         })
 
-        bottomNavigation.setOnItemSelectedListener { item ->
-            val pageId = item.itemId
-            if (pageStack.isEmpty() || pageStack.peek() != pageId) {
-                pageStack.push(pageId)
-            }
-            navigateToPage(pageId)
-            true
-        }
-
-        projectBottomNavigation.setOnItemSelectedListener { item ->
-            val pageId = item.itemId
-            if (pageStack.isEmpty() || pageStack.peek() != pageId) {
-                pageStack.push(pageId)
-            }
-            navigateToPage(pageId)
-            true
-        }
+        setupBottomNavigationListener()
+        setupProjectBottomNavigationListener()
+        setupGlobalNavRailListener()
+        setupProjectNavRailListener()
 
         deployScripts()
         showHome()
@@ -456,6 +449,74 @@ class MainActivity : AppCompatActivity() {
 
     // ── Unified Navigation & Switcher ────────────────────────────────────────
 
+    private fun setupBottomNavigationListener() {
+        if (!::bottomNavigation.isInitialized) return
+        bottomNavigation.setOnItemSelectedListener { item ->
+            val pageId = item.itemId
+            if (::globalNavRail.isInitialized) {
+                globalNavRail.setOnItemSelectedListener(null)
+                globalNavRail.selectedItemId = pageId
+                setupGlobalNavRailListener()
+            }
+            if (pageStack.isEmpty() || pageStack.peek() != pageId) {
+                pageStack.push(pageId)
+            }
+            navigateToPage(pageId)
+            true
+        }
+    }
+    
+    private fun setupGlobalNavRailListener() {
+        if (!::globalNavRail.isInitialized) return
+        globalNavRail.setOnItemSelectedListener { item ->
+            val pageId = item.itemId
+            if (::bottomNavigation.isInitialized) {
+                bottomNavigation.setOnItemSelectedListener(null)
+                bottomNavigation.selectedItemId = pageId
+                setupBottomNavigationListener()
+            }
+            if (pageStack.isEmpty() || pageStack.peek() != pageId) {
+                pageStack.push(pageId)
+            }
+            navigateToPage(pageId)
+            true
+        }
+    }
+
+    private fun setupProjectBottomNavigationListener() {
+        if (!::projectBottomNavigation.isInitialized) return
+        projectBottomNavigation.setOnItemSelectedListener { item ->
+            val pageId = item.itemId
+            if (::projectNavRail.isInitialized) {
+                projectNavRail.setOnItemSelectedListener(null)
+                projectNavRail.selectedItemId = pageId
+                setupProjectNavRailListener()
+            }
+            if (pageStack.isEmpty() || pageStack.peek() != pageId) {
+                pageStack.push(pageId)
+            }
+            navigateToPage(pageId)
+            true
+        }
+    }
+    
+    private fun setupProjectNavRailListener() {
+        if (!::projectNavRail.isInitialized) return
+        projectNavRail.setOnItemSelectedListener { item ->
+            val pageId = item.itemId
+            if (::projectBottomNavigation.isInitialized) {
+                projectBottomNavigation.setOnItemSelectedListener(null)
+                projectBottomNavigation.selectedItemId = pageId
+                setupProjectBottomNavigationListener()
+            }
+            if (pageStack.isEmpty() || pageStack.peek() != pageId) {
+                pageStack.push(pageId)
+            }
+            navigateToPage(pageId)
+            true
+        }
+    }
+
     private fun navigateToPage(id: Int) {
         navigateToPage(id, true)
     }
@@ -466,6 +527,8 @@ class MainActivity : AppCompatActivity() {
                 pageStack.push(id)
             }
         }
+
+        updateNavigationVisibility(id)
 
         // Hide keyboard when switching pages
         val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
@@ -518,29 +581,19 @@ class MainActivity : AppCompatActivity() {
 
         if (id == ID_TERMINAL) {
             unifiedHeader.visibility = View.GONE
-            bottomNavigation.visibility = View.VISIBLE
-            projectBottomNavigation.visibility = View.GONE
             if (::drawerLayout.isInitialized) drawerLayout.setDrawerLockMode(androidx.drawerlayout.widget.DrawerLayout.LOCK_MODE_UNLOCKED)
         } else if (id == ID_SCRIPT_INSTALL) {
             unifiedHeader.visibility = View.GONE
-            bottomNavigation.menu.findItem(bottomNavigation.selectedItemId)?.isChecked = false
-            bottomNavigation.visibility = View.GONE
-            projectBottomNavigation.visibility = View.GONE
+            if (::bottomNavigation.isInitialized) bottomNavigation.menu.findItem(bottomNavigation.selectedItemId)?.isChecked = false
             if (::drawerLayout.isInitialized) drawerLayout.setDrawerLockMode(androidx.drawerlayout.widget.DrawerLayout.LOCK_MODE_LOCKED_CLOSED)
         } else if (id == ID_PROJECT_CREATE) {
             unifiedHeader.visibility = View.GONE
-            bottomNavigation.visibility = View.GONE
-            projectBottomNavigation.visibility = View.GONE
             if (::drawerLayout.isInitialized) drawerLayout.setDrawerLockMode(androidx.drawerlayout.widget.DrawerLayout.LOCK_MODE_LOCKED_CLOSED)
         } else if (id == ID_PROJECT_WORKSPACE || id == ID_PROJECT_SETTINGS || id == ID_PROJECT_DIR_TREE || id == ID_PROJECT_GIT_DIFF) {
             unifiedHeader.visibility = View.GONE
-            bottomNavigation.visibility = View.GONE
-            projectBottomNavigation.visibility = View.VISIBLE
             if (::drawerLayout.isInitialized) drawerLayout.setDrawerLockMode(androidx.drawerlayout.widget.DrawerLayout.LOCK_MODE_LOCKED_CLOSED)
         } else {
             unifiedHeader.visibility = View.VISIBLE
-            bottomNavigation.visibility = View.VISIBLE
-            projectBottomNavigation.visibility = View.GONE
             if (::drawerLayout.isInitialized) drawerLayout.setDrawerLockMode(androidx.drawerlayout.widget.DrawerLayout.LOCK_MODE_LOCKED_CLOSED)
         }
         
@@ -554,6 +607,8 @@ class MainActivity : AppCompatActivity() {
         when (id) {
             ID_HOME -> {
                 homeScrollView.visibility = View.VISIBLE
+
+        homeScrollView.visibility = View.VISIBLE
                 homeScrollView.descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
                 populateRecentProjects()
                 val valTv = homeLayout.findViewWithTag<TextView>("APP_STORAGE_VAL")
@@ -729,6 +784,99 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+
+    private fun updateNavigationVisibility(id: Int) {
+        val isLandscape = (::rootLayout.isInitialized && rootLayout.isLaidOut && rootLayout.width > rootLayout.height) ||
+            (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R && windowManager.currentWindowMetrics.bounds.width() > windowManager.currentWindowMetrics.bounds.height()) ||
+            resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE ||
+            resources.displayMetrics.widthPixels > resources.displayMetrics.heightPixels
+
+        if (::rootLayout.isInitialized) {
+            rootLayout.orientation = if (isLandscape) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL
+        }
+        if (::mainContentLayout.isInitialized) {
+            mainContentLayout.layoutParams = if (isLandscape) {
+                LinearLayout.LayoutParams(0, MATCH, 1f)
+            } else {
+                LinearLayout.LayoutParams(MATCH, MATCH)
+            }
+        }
+
+        var showGlobalNav = false
+        var showProjectNav = false
+
+        if (id == ID_HOME || id == ID_PROJECTS_LIST || id == ID_TERMINAL || id == ID_SETTINGS) {
+            showGlobalNav = true
+        } else if (id == ID_PROJECT_WORKSPACE || id == ID_PROJECT_SETTINGS || id == ID_PROJECT_DIR_TREE || id == ID_PROJECT_GIT_DIFF) {
+            showProjectNav = true
+        }
+        
+        if (id == ID_SCRIPTS || id == ID_SCRIPT_INSTALL || id == ID_PROJECT_CREATE) {
+            showGlobalNav = false
+            showProjectNav = false
+        }
+
+        if (::sideNavContainer.isInitialized) {
+            sideNavContainer.visibility = if (isLandscape && (showGlobalNav || showProjectNav)) android.view.View.VISIBLE else android.view.View.GONE
+        }
+        if (::bottomNavContainer.isInitialized) {
+            bottomNavContainer.visibility = if (!isLandscape && (showGlobalNav || showProjectNav)) android.view.View.VISIBLE else android.view.View.GONE
+        }
+        
+        if (::globalNavRail.isInitialized) {
+            globalNavRail.visibility = if (showGlobalNav) android.view.View.VISIBLE else android.view.View.GONE
+        }
+        if (::projectNavRail.isInitialized) {
+            projectNavRail.visibility = if (showProjectNav) android.view.View.VISIBLE else android.view.View.GONE
+        }
+        if (::bottomNavigation.isInitialized) {
+            bottomNavigation.visibility = if (showGlobalNav) android.view.View.VISIBLE else android.view.View.GONE
+        }
+        if (::projectBottomNavigation.isInitialized) {
+            projectBottomNavigation.visibility = if (showProjectNav) android.view.View.VISIBLE else android.view.View.GONE
+        }
+        
+        // Handle window insets based on orientation
+        if (isLandscape && ::mainContentLayout.isInitialized) {
+            rootLayout.rootWindowInsets?.let { insets ->
+                val bars = androidx.core.view.WindowInsetsCompat.toWindowInsetsCompat(insets).getInsets(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+                mainContentLayout.setPadding(0, bars.top, bars.right, bars.bottom)
+                bottomNavContainer.setPadding(0, 0, 0, 0)
+                sideNavContainer.setPadding(bars.left, bars.top, 0, bars.bottom)
+            }
+        } else if (::mainContentLayout.isInitialized) {
+            rootLayout.rootWindowInsets?.let { insets ->
+                val bars = androidx.core.view.WindowInsetsCompat.toWindowInsetsCompat(insets).getInsets(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+                mainContentLayout.setPadding(0, bars.top, 0, 0)
+                bottomNavContainer.setPadding(bars.left, 0, bars.right, bars.bottom)
+                sideNavContainer.setPadding(0, 0, 0, 0)
+            }
+        }
+
+        val currentPage = if (pageStack.isNotEmpty()) pageStack.peek() else ID_HOME
+
+        if (isLandscape && showGlobalNav && ::globalNavRail.isInitialized) {
+            globalNavRail.setOnItemSelectedListener(null)
+            globalNavRail.selectedItemId = currentPage
+            setupGlobalNavRailListener()
+        }
+        if (isLandscape && showProjectNav && ::projectNavRail.isInitialized) {
+            projectNavRail.setOnItemSelectedListener(null)
+            projectNavRail.selectedItemId = currentPage
+            setupProjectNavRailListener()
+        }
+        if (!isLandscape && showGlobalNav && ::bottomNavigation.isInitialized) {
+            bottomNavigation.setOnItemSelectedListener(null)
+            bottomNavigation.selectedItemId = currentPage
+            setupBottomNavigationListener()
+        }
+        if (!isLandscape && showProjectNav && ::projectBottomNavigation.isInitialized) {
+            projectBottomNavigation.setOnItemSelectedListener(null)
+            projectBottomNavigation.selectedItemId = currentPage
+            setupProjectBottomNavigationListener()
+        }
+    }
+
     private fun showExitConfirmDialog() {
         androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle("Exit NativeCode?")
@@ -748,12 +896,43 @@ class MainActivity : AppCompatActivity() {
             setBackgroundColor(NC.BG)
         }
 
+        // Detect initial orientation so we don't start with wrong layout params
+        val initLandscape = resources.displayMetrics.widthPixels > resources.displayMetrics.heightPixels
+
         rootLayout = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
+            orientation = if (initLandscape) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL
             setBackgroundColor(NC.BG)
             layoutParams = ViewGroup.LayoutParams(MATCH, MATCH)
+            addOnLayoutChangeListener { _, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
+                val oldWidth = oldRight - oldLeft
+                val oldHeight = oldBottom - oldTop
+                val newWidth = right - left
+                val newHeight = bottom - top
+                if (newWidth != oldWidth || newHeight != oldHeight) {
+                    val currentPage = if (pageStack.isNotEmpty()) pageStack.peek() else ID_HOME
+                    updateNavigationVisibility(currentPage)
+                }
+            }
         }
         drawerLayout.addView(rootLayout)
+
+        sideNavContainer = FrameLayout(this).apply {
+            layoutParams = LinearLayout.LayoutParams(WRAP, MATCH)
+            setBackgroundColor(android.graphics.Color.parseColor("#120F16"))
+            visibility = android.view.View.GONE
+        }
+        rootLayout.addView(sideNavContainer)
+
+        mainContentLayout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(NC.BG)
+            layoutParams = if (initLandscape) {
+                LinearLayout.LayoutParams(0, MATCH, 1f)
+            } else {
+                LinearLayout.LayoutParams(MATCH, MATCH)
+            }
+        }
+        rootLayout.addView(mainContentLayout)
 
         // Sidebar container
         sidebarLayout = LinearLayout(this).apply {
@@ -870,10 +1049,11 @@ class MainActivity : AppCompatActivity() {
         unifiedHeader.addView(logoView)
         unifiedHeader.addView(spacer)
         unifiedHeader.addView(displayBtn)
-        rootLayout.addView(unifiedHeader)
+        mainContentLayout.addView(unifiedHeader)
 
         contentFrame = FrameLayout(this).apply {
             layoutParams = LinearLayout.LayoutParams(MATCH, 0, 1f)
+            setBackgroundColor(NC.BG)
         }
 
         val states = arrayOf(
@@ -887,7 +1067,7 @@ class MainActivity : AppCompatActivity() {
         val tintList = android.content.res.ColorStateList(states, colors)
 
         bottomNavigation = BottomNavigationView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
+            layoutParams = FrameLayout.LayoutParams(MATCH, WRAP)
             setBackgroundColor(Color.parseColor("#120F16"))
             itemIconTintList = tintList
             itemTextColor = tintList
@@ -898,7 +1078,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         projectBottomNavigation = BottomNavigationView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
+            layoutParams = FrameLayout.LayoutParams(MATCH, WRAP)
             setBackgroundColor(Color.parseColor("#120F16"))
             itemIconTintList = tintList
             itemTextColor = tintList
@@ -908,9 +1088,72 @@ class MainActivity : AppCompatActivity() {
             menu.add(Menu.NONE, ID_PROJECT_SETTINGS, Menu.NONE, "Settings").setIcon(R.drawable.ic_settings)
         }
 
-        rootLayout.addView(contentFrame)
-        rootLayout.addView(bottomNavigation)
-        rootLayout.addView(projectBottomNavigation)
+        mainContentLayout.addView(contentFrame)
+        
+        bottomNavContainer = FrameLayout(this).apply {
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
+            setBackgroundColor(android.graphics.Color.parseColor("#120F16"))
+        }
+        mainContentLayout.addView(bottomNavContainer)
+
+        bottomNavContainer.addView(bottomNavigation)
+        bottomNavContainer.addView(projectBottomNavigation)
+
+        globalNavRail = com.google.android.material.navigationrail.NavigationRailView(this).apply {
+            layoutParams = FrameLayout.LayoutParams(WRAP, MATCH)
+            setBackgroundColor(android.graphics.Color.parseColor("#120F16"))
+            itemIconTintList = tintList
+            itemTextColor = tintList
+            labelVisibilityMode = com.google.android.material.navigationrail.NavigationRailView.LABEL_VISIBILITY_LABELED
+            menu.add(android.view.Menu.NONE, ID_HOME,          android.view.Menu.NONE, "Home").setIcon(R.drawable.ic_home)
+            menu.add(android.view.Menu.NONE, ID_PROJECTS_LIST, android.view.Menu.NONE, "Projects").setIcon(R.drawable.ic_folder)
+            menu.add(android.view.Menu.NONE, ID_TERMINAL,      android.view.Menu.NONE, "Terminal").setIcon(R.drawable.ic_terminal)
+            menu.add(android.view.Menu.NONE, ID_SETTINGS,      android.view.Menu.NONE, "Settings").setIcon(R.drawable.ic_settings)
+            
+            setOnItemSelectedListener { item ->
+                val pageId = item.itemId
+                if (::bottomNavigation.isInitialized) {
+                    bottomNavigation.setOnItemSelectedListener(null)
+                    bottomNavigation.selectedItemId = pageId
+                    setupBottomNavigationListener()
+                }
+                if (pageStack.isEmpty() || pageStack.peek() != pageId) {
+                    pageStack.push(pageId)
+                }
+                navigateToPage(pageId)
+                true
+            }
+        }
+
+        projectNavRail = com.google.android.material.navigationrail.NavigationRailView(this).apply {
+            layoutParams = FrameLayout.LayoutParams(WRAP, MATCH)
+            setBackgroundColor(android.graphics.Color.parseColor("#120F16"))
+            itemIconTintList = tintList
+            itemTextColor = tintList
+            labelVisibilityMode = com.google.android.material.navigationrail.NavigationRailView.LABEL_VISIBILITY_LABELED
+            menu.add(android.view.Menu.NONE, ID_PROJECT_WORKSPACE, android.view.Menu.NONE, "Workspace").setIcon(R.drawable.ic_home)
+            menu.add(android.view.Menu.NONE, ID_PROJECT_DIR_TREE, android.view.Menu.NONE, "Directory").setIcon(R.drawable.ic_folder)
+            menu.add(android.view.Menu.NONE, ID_PROJECT_GIT_DIFF, android.view.Menu.NONE, "Diff").setIcon(R.drawable.ic_git)
+            menu.add(android.view.Menu.NONE, ID_PROJECT_SETTINGS, android.view.Menu.NONE, "Settings").setIcon(R.drawable.ic_settings)
+
+            setOnItemSelectedListener { item ->
+                val pageId = item.itemId
+                if (::projectBottomNavigation.isInitialized) {
+                    projectBottomNavigation.setOnItemSelectedListener(null)
+                    projectBottomNavigation.selectedItemId = pageId
+                    setupProjectBottomNavigationListener()
+                }
+                if (pageStack.isEmpty() || pageStack.peek() != pageId) {
+                    pageStack.push(pageId)
+                }
+                navigateToPage(pageId)
+                true
+            }
+        }
+        
+        sideNavContainer.addView(globalNavRail)
+        sideNavContainer.addView(projectNavRail)
+
 
         // Initialize all layout panels
         buildHomeLayout()
@@ -1070,11 +1313,13 @@ class MainActivity : AppCompatActivity() {
             layoutParams = FrameLayout.LayoutParams(MATCH, MATCH)
             visibility = View.GONE
             isVerticalScrollBarEnabled = false
+            setBackgroundColor(NC.BG)
         }
         homeLayout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(16), dp(16), dp(16), dp(32))
             layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
+            setBackgroundColor(NC.BG)
         }
         homeScrollView.addView(homeLayout)
 
@@ -1186,17 +1431,19 @@ class MainActivity : AppCompatActivity() {
 
     private fun animateHomeLayoutEntrance() {
         if (!::homeLayout.isInitialized) return
-        for (i in 0 until homeLayout.childCount) {
-            val child = homeLayout.getChildAt(i)
-            child.alpha = 0f
-            child.translationY = dp(24).toFloat()
-            child.animate()
-                .alpha(1f)
-                .translationY(0f)
-                .setDuration(350)
-                .setStartDelay((i * 50).toLong())
-                .setInterpolator(android.view.animation.DecelerateInterpolator())
-                .start()
+        homeLayout.post {
+            for (i in 0 until homeLayout.childCount) {
+                val child = homeLayout.getChildAt(i)
+                child.alpha = 0f
+                child.translationY = dp(24).toFloat()
+                child.animate()
+                    .alpha(1f)
+                    .translationY(0f)
+                    .setDuration(350)
+                    .setStartDelay((i * 50).toLong())
+                    .setInterpolator(android.view.animation.DecelerateInterpolator())
+                    .start()
+            }
         }
     }
 
@@ -3354,6 +3601,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun showHome() {
         bottomNavigation.selectedItemId = ID_HOME
+        navigateToPage(ID_HOME)
     }
 
     private fun iconButton(icon: String): TextView = TextView(this).apply {
