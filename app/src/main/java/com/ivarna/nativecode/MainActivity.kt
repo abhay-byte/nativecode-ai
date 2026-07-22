@@ -70,6 +70,7 @@ class MainActivity : AppCompatActivity() {
     private var termFontSize = 40
     private var workspaceFontSize = 40
     private var scriptFontSize = 40
+    private var showExtraKeys = true
     private val MIN_FONT_SIZE = 10
     private val MAX_FONT_SIZE = 72
 
@@ -205,6 +206,7 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var workspaceTerminalContainer: LinearLayout
     private lateinit var workspaceKeyboardToolbar: LinearLayout
+    private lateinit var terminalKeyboardToolbar: LinearLayout
 
     private data class ModifierState(
         var ctrlActive: Boolean = false, var ctrlLocked: Boolean = false,
@@ -277,6 +279,12 @@ class MainActivity : AppCompatActivity() {
             finish()
             return
         }
+
+        val prefs = getSharedPreferences("nativecode_prefs", MODE_PRIVATE)
+        termFontSize = prefs.getInt("pref_terminal_zoom", 40)
+        workspaceFontSize = termFontSize
+        scriptFontSize = termFontSize
+        showExtraKeys = prefs.getBoolean("pref_show_extra_keys", true)
 
         buildRootLayout()
         setContentView(drawerLayout)
@@ -1594,8 +1602,19 @@ class MainActivity : AppCompatActivity() {
                 createNewTerminalSession()
             }
         }
+        val toggleExtraKeysBtn = ImageView(this).apply {
+            setImageResource(R.drawable.ic_keyboard)
+            setColorFilter(if (showExtraKeys) NC.PRIMARY else NC.ON_SURF_VAR)
+            setPadding(dp(6), dp(6), dp(6), dp(6))
+            layoutParams = LinearLayout.LayoutParams(dp(36), dp(36)).apply { rightMargin = dp(4) }
+            setOnClickListener {
+                setExtraKeysEnabled(!showExtraKeys)
+                setColorFilter(if (showExtraKeys) NC.PRIMARY else NC.ON_SURF_VAR)
+            }
+        }
         terminalTopBar.addView(menuTerminalBtn)
         terminalTopBar.addView(titleTerminalTv)
+        terminalTopBar.addView(toggleExtraKeysBtn)
         terminalTopBar.addView(addTerminalWorkspaceBtn)
         terminalWorkspaceLayout.addView(terminalTopBar)
 
@@ -1611,7 +1630,7 @@ class MainActivity : AppCompatActivity() {
         terminalWorkspaceLayout.addView(terminalViewContainer)
 
         // Full special-keys toolbar (replaces old dummy bar + attach bar)
-        val toolbar = buildSpecialKeysToolbar(
+        terminalKeyboardToolbar = buildSpecialKeysToolbar(
             tvRef = { if (::terminalView.isInitialized) terminalView else null },
             sessionRef = { terminalSession },
             modState = termModState,
@@ -1622,8 +1641,10 @@ class MainActivity : AppCompatActivity() {
                     termImagePickerLauncher.launch("image/*")
                 }
             }
-        )
-        terminalWorkspaceLayout.addView(toolbar)
+        ).apply {
+            visibility = if (showExtraKeys) View.VISIBLE else View.GONE
+        }
+        terminalWorkspaceLayout.addView(terminalKeyboardToolbar)
     }
 
     private fun buildGitOperationsLayout() {
@@ -1679,6 +1700,10 @@ class MainActivity : AppCompatActivity() {
 
         // Graphical Desktop card
         settingsHubLayout.addView(buildGuiLaunchCard())
+        settingsHubLayout.addView(spacer(12))
+
+        // Terminal Settings card
+        settingsHubLayout.addView(buildTerminalSettingsCard())
         settingsHubLayout.addView(spacer(12))
 
         // Environment card
@@ -2955,8 +2980,8 @@ class MainActivity : AppCompatActivity() {
         viewClient = object : TerminalViewClient {
             override fun onScale(scale: Float): Float {
                 if (scale < 0.9f || scale > 1.1f) {
-                    termFontSize = (termFontSize * scale).toInt().coerceIn(MIN_FONT_SIZE, MAX_FONT_SIZE)
-                    terminalView.setTextSize(termFontSize)
+                    val nextSize = (termFontSize * scale).toInt()
+                    setGlobalTerminalZoom(nextSize)
                     return 1.0f
                 }
                 return scale
@@ -4101,9 +4126,20 @@ class MainActivity : AppCompatActivity() {
             layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
         }
 
+        val workspaceExtraKeysBtn = ImageView(this).apply {
+            setImageResource(R.drawable.ic_keyboard)
+            setColorFilter(if (showExtraKeys) NC.PRIMARY else NC.ON_SURF_VAR)
+            setPadding(dp(6), dp(6), dp(6), dp(6))
+            layoutParams = LinearLayout.LayoutParams(dp(36), dp(36)).apply { rightMargin = dp(4) }
+            setOnClickListener {
+                setExtraKeysEnabled(!showExtraKeys)
+                setColorFilter(if (showExtraKeys) NC.PRIMARY else NC.ON_SURF_VAR)
+            }
+        }
         topBar.addView(backWorkspaceBtn)
         topBar.addView(workspaceProjectIconIv)
         topBar.addView(workspaceProjectNameTv)
+        topBar.addView(workspaceExtraKeysBtn)
         projectWorkspaceLayout.addView(topBar)
 
         workspaceTabBarScroll = HorizontalScrollView(this).apply {
@@ -4155,8 +4191,8 @@ class MainActivity : AppCompatActivity() {
         val workspaceViewClient = object : TerminalViewClient {
             override fun onScale(scale: Float): Float {
                 if (scale < 0.9f || scale > 1.1f) {
-                    workspaceFontSize = (workspaceFontSize * scale).toInt().coerceIn(MIN_FONT_SIZE, MAX_FONT_SIZE)
-                    workspaceTerminalView.setTextSize(workspaceFontSize)
+                    val nextSize = (workspaceFontSize * scale).toInt()
+                    setGlobalTerminalZoom(nextSize)
                     return 1.0f
                 }
                 return scale
@@ -4197,7 +4233,9 @@ class MainActivity : AppCompatActivity() {
             sessionRef = { if (activeWorkspaceTabIndex >= 0 && activeWorkspaceTabIndex < workspaceSessions.size) workspaceSessions[activeWorkspaceTabIndex] else null },
             modState = wsModState,
             onPickImage = { wsImagePickerLauncher.launch("image/*") }
-        )
+        ).apply {
+            visibility = if (showExtraKeys) View.VISIBLE else View.GONE
+        }
         workspaceTerminalContainer.addView(workspaceKeyboardToolbar)
 
         centerFrame.addView(workspaceTerminalContainer)
@@ -4401,6 +4439,8 @@ class MainActivity : AppCompatActivity() {
             setPadding(0, 0, 0, dp(16))
         }
         projectSettingsLayout.addView(header)
+        projectSettingsLayout.addView(buildTerminalSettingsCard())
+        projectSettingsLayout.addView(spacer(16))
 
         val previewContainer = FrameLayout(this).apply {
             layoutParams = LinearLayout.LayoutParams(dp(120), dp(120)).apply {
@@ -4412,6 +4452,7 @@ class MainActivity : AppCompatActivity() {
             outlineProvider = android.view.ViewOutlineProvider.BACKGROUND
         }
         projectSettingsLayout.addView(previewContainer)
+
 
         fun updatePreview(iconStr: String) {
             previewContainer.removeAllViews()
@@ -4602,5 +4643,189 @@ class MainActivity : AppCompatActivity() {
         }
         projectGitDiffLayout.addView(workspaceGitDiffLayout)
         refreshGitDiffTree()
+    }
+
+    private fun setGlobalTerminalZoom(newSize: Int) {
+        val clamped = newSize.coerceIn(MIN_FONT_SIZE, MAX_FONT_SIZE)
+        termFontSize = clamped
+        workspaceFontSize = clamped
+        scriptFontSize = clamped
+        getSharedPreferences("nativecode_prefs", MODE_PRIVATE).edit()
+            .putInt("pref_terminal_zoom", clamped).apply()
+        
+        if (::terminalView.isInitialized) {
+            terminalView.setTextSize(clamped)
+        }
+        if (::workspaceTerminalView.isInitialized) {
+            workspaceTerminalView.setTextSize(clamped)
+        }
+        if (::scriptInstallTerminalView.isInitialized) {
+            scriptInstallTerminalView.setTextSize(clamped)
+        }
+    }
+
+    private fun setExtraKeysEnabled(enabled: Boolean) {
+        showExtraKeys = enabled
+        getSharedPreferences("nativecode_prefs", MODE_PRIVATE).edit()
+            .putBoolean("pref_show_extra_keys", enabled).apply()
+        
+        if (::terminalKeyboardToolbar.isInitialized) {
+            terminalKeyboardToolbar.visibility = if (enabled) View.VISIBLE else View.GONE
+        }
+        if (::workspaceKeyboardToolbar.isInitialized) {
+            workspaceKeyboardToolbar.visibility = if (enabled) View.VISIBLE else View.GONE
+        }
+    }
+
+    private fun buildTerminalSettingsCard(): View {
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = roundedBg(NC.SURFACE, NC.BORDER, dp(12))
+            setPadding(dp(16))
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(12) }
+        }
+
+        val title = TextView(this).apply {
+            text = "Terminal Settings"
+            textSize = 16f
+            setTextColor(NC.ON_SURFACE)
+            typeface = Typeface.DEFAULT_BOLD
+            setPadding(0, 0, 0, dp(4))
+        }
+        val sub = TextView(this).apply {
+            text = "Configure global terminal font zoom size and extra keyboard toolbar buttons."
+            textSize = 13f
+            setTextColor(NC.ON_SURF_VAR)
+            setPadding(0, 0, 0, dp(12))
+        }
+        card.addView(title)
+        card.addView(sub)
+
+        // 1. Global Terminal Zoom Section
+        val zoomHeader = TextView(this).apply {
+            text = "Global Terminal Zoom"
+            textSize = 14f
+            setTextColor(NC.PRIMARY)
+            typeface = Typeface.DEFAULT_BOLD
+            setPadding(0, 0, 0, dp(4))
+        }
+        val zoomValueTv = TextView(this).apply {
+            text = "Font Size: ${termFontSize} pt (${(termFontSize * 100 / 40)}%)"
+            textSize = 13f
+            setTextColor(NC.ON_SURFACE)
+            setPadding(0, 0, 0, dp(8))
+        }
+        
+        val zoomControlRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, 0, 0, dp(12))
+        }
+
+        val zoomMinusBtn = Button(this).apply {
+            text = "-"
+            textSize = 16f
+            setTextColor(NC.ON_SURFACE)
+            background = roundedBg(NC.SURFACE, NC.BORDER, dp(8))
+            layoutParams = LinearLayout.LayoutParams(dp(44), dp(44))
+        }
+        val zoomSeekBar = SeekBar(this).apply {
+            max = MAX_FONT_SIZE - MIN_FONT_SIZE
+            progress = termFontSize - MIN_FONT_SIZE
+            layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f).apply {
+                leftMargin = dp(8)
+                rightMargin = dp(8)
+            }
+        }
+        val zoomPlusBtn = Button(this).apply {
+            text = "+"
+            textSize = 16f
+            setTextColor(NC.ON_SURFACE)
+            background = roundedBg(NC.SURFACE, NC.BORDER, dp(8))
+            layoutParams = LinearLayout.LayoutParams(dp(44), dp(44))
+        }
+
+        fun updateZoomUI() {
+            zoomValueTv.text = "Font Size: ${termFontSize} pt (${(termFontSize * 100 / 40)}%)"
+            val targetProg = termFontSize - MIN_FONT_SIZE
+            if (zoomSeekBar.progress != targetProg) {
+                zoomSeekBar.progress = targetProg
+            }
+        }
+
+        zoomMinusBtn.setOnClickListener {
+            setGlobalTerminalZoom(termFontSize - 2)
+            updateZoomUI()
+        }
+        zoomPlusBtn.setOnClickListener {
+            setGlobalTerminalZoom(termFontSize + 2)
+            updateZoomUI()
+        }
+        zoomSeekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                if (fromUser) {
+                    val newSize = MIN_FONT_SIZE + progress
+                    setGlobalTerminalZoom(newSize)
+                    zoomValueTv.text = "Font Size: ${newSize} pt (${(newSize * 100 / 40)}%)"
+                }
+            }
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+        })
+
+        zoomControlRow.addView(zoomMinusBtn)
+        zoomControlRow.addView(zoomSeekBar)
+        zoomControlRow.addView(zoomPlusBtn)
+
+        card.addView(zoomHeader)
+        card.addView(zoomValueTv)
+        card.addView(zoomControlRow)
+
+        // Divider line
+        val div = View(this).apply {
+            setBackgroundColor(NC.BORDER)
+            layoutParams = LinearLayout.LayoutParams(MATCH, dp(1)).apply {
+                topMargin = dp(4)
+                bottomMargin = dp(12)
+            }
+        }
+        card.addView(div)
+
+        // 2. Extra Keyboard Buttons Toggle Section
+        val toggleRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+
+        val toggleLabelLayout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f).apply { rightMargin = dp(12) }
+        }
+        val toggleTitle = TextView(this).apply {
+            text = "Extra 2 Keyboard Rows"
+            textSize = 14f
+            setTextColor(NC.ON_SURFACE)
+            typeface = Typeface.DEFAULT_BOLD
+        }
+        val toggleSub = TextView(this).apply {
+            text = "Show special key rows (CTRL, ALT, ESC, Arrows, symbols) on terminal screens."
+            textSize = 12f
+            setTextColor(NC.ON_SURF_VAR)
+        }
+        toggleLabelLayout.addView(toggleTitle)
+        toggleLabelLayout.addView(toggleSub)
+
+        val switchToggle = Switch(this).apply {
+            isChecked = showExtraKeys
+            setOnCheckedChangeListener { _, isChecked ->
+                setExtraKeysEnabled(isChecked)
+            }
+        }
+
+        toggleRow.addView(toggleLabelLayout)
+        toggleRow.addView(switchToggle)
+        card.addView(toggleRow)
+
+        return card
     }
 }
