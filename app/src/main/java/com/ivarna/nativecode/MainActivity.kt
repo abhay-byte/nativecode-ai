@@ -1241,6 +1241,7 @@ class MainActivity : AppCompatActivity() {
         mainContentLayout.addView(bottomNavContainer)
 
         bottomNavContainer.addView(buildCustomBottomNav())
+        bottomNavContainer.addView(buildCustomProjectBottomNav())
 
         globalNavRail = com.google.android.material.navigationrail.NavigationRailView(this).apply {
             layoutParams = FrameLayout.LayoutParams(WRAP, MATCH)
@@ -1582,6 +1583,8 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var customBottomNav: LinearLayout
     private val navTabViews = ArrayList<LinearLayout>()
+    private lateinit var customProjectBottomNav: LinearLayout
+    private val projectNavTabViews = ArrayList<LinearLayout>()
 
     private fun buildCustomBottomNav(): LinearLayout {
         customBottomNav = LinearLayout(this).apply {
@@ -1642,31 +1645,121 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updateCustomBottomNavSelection(activeId: Int) {
-        if (!::customBottomNav.isInitialized) return
-        for (tab in navTabViews) {
-            val pageId = tab.tag as? Int ?: continue
-            val isSelected = when (pageId) {
-                ID_HOME -> activeId == ID_HOME
-                ID_PROJECTS_LIST -> activeId == ID_PROJECTS_LIST || activeId == ID_PROJECT_WORKSPACE || activeId == ID_PROJECT_DIR_TREE || activeId == ID_PROJECT_GIT_DIFF
-                ID_TERMINAL -> activeId == ID_TERMINAL
-                ID_SETTINGS -> activeId == ID_SETTINGS || activeId == ID_PROJECT_SETTINGS
-                else -> pageId == activeId
-            }
-            val iconIv = tab.findViewWithTag<ImageView>("TAB_ICON")
-            val labelTv = tab.findViewWithTag<TextView>("TAB_LABEL")
+        val isProjectPage = activeId == ID_PROJECT_WORKSPACE ||
+            activeId == ID_PROJECT_DIR_TREE ||
+            activeId == ID_PROJECT_GIT_DIFF ||
+            activeId == ID_PROJECT_SETTINGS
 
-            if (isSelected) {
-                tab.setBackgroundColor(NC.PRIMARY)
-                iconIv?.imageTintList = android.content.res.ColorStateList.valueOf(NC.SURFACE_LOWEST)
-                labelTv?.setTextColor(NC.SURFACE_LOWEST)
-                labelTv?.typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
-            } else {
-                tab.setBackgroundColor(NC.SURFACE_LOWEST)
-                iconIv?.imageTintList = android.content.res.ColorStateList.valueOf(Color.parseColor("#99FFFFFF"))
-                labelTv?.setTextColor(Color.parseColor("#99FFFFFF"))
-                labelTv?.typeface = Typeface.create(Typeface.MONOSPACE, Typeface.NORMAL)
+        // Toggle which nav is visible
+        if (::customBottomNav.isInitialized) {
+            customBottomNav.visibility = if (isProjectPage) View.GONE else View.VISIBLE
+        }
+        if (::customProjectBottomNav.isInitialized) {
+            customProjectBottomNav.visibility = if (isProjectPage) View.VISIBLE else View.GONE
+        }
+
+        // Update global nav tab highlights
+        if (::customBottomNav.isInitialized) {
+            for (tab in navTabViews) {
+                val pageId = tab.tag as? Int ?: continue
+                val isSelected = when (pageId) {
+                    ID_HOME -> activeId == ID_HOME
+                    ID_PROJECTS_LIST -> activeId == ID_PROJECTS_LIST
+                    ID_TERMINAL -> activeId == ID_TERMINAL
+                    ID_SETTINGS -> activeId == ID_SETTINGS
+                    else -> pageId == activeId
+                }
+                val iconIv = tab.findViewWithTag<ImageView>("TAB_ICON")
+                val labelTv = tab.findViewWithTag<TextView>("TAB_LABEL")
+                if (isSelected) {
+                    tab.setBackgroundColor(NC.PRIMARY)
+                    iconIv?.imageTintList = android.content.res.ColorStateList.valueOf(NC.SURFACE_LOWEST)
+                    labelTv?.setTextColor(NC.SURFACE_LOWEST)
+                    labelTv?.typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
+                } else {
+                    tab.setBackgroundColor(NC.SURFACE_LOWEST)
+                    iconIv?.imageTintList = android.content.res.ColorStateList.valueOf(Color.parseColor("#99FFFFFF"))
+                    labelTv?.setTextColor(Color.parseColor("#99FFFFFF"))
+                    labelTv?.typeface = Typeface.create(Typeface.MONOSPACE, Typeface.NORMAL)
+                }
             }
         }
+
+        // Update project nav tab highlights
+        if (::customProjectBottomNav.isInitialized) {
+            for (tab in projectNavTabViews) {
+                val pageId = tab.tag as? Int ?: continue
+                val isSelected = pageId == activeId
+                val iconIv = tab.findViewWithTag<ImageView>("TAB_ICON")
+                val labelTv = tab.findViewWithTag<TextView>("TAB_LABEL")
+                if (isSelected) {
+                    tab.setBackgroundColor(NC.PRIMARY)
+                    iconIv?.imageTintList = android.content.res.ColorStateList.valueOf(NC.SURFACE_LOWEST)
+                    labelTv?.setTextColor(NC.SURFACE_LOWEST)
+                    labelTv?.typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
+                } else {
+                    tab.setBackgroundColor(NC.SURFACE_LOWEST)
+                    iconIv?.imageTintList = android.content.res.ColorStateList.valueOf(Color.parseColor("#99FFFFFF"))
+                    labelTv?.setTextColor(Color.parseColor("#99FFFFFF"))
+                    labelTv?.typeface = Typeface.create(Typeface.MONOSPACE, Typeface.NORMAL)
+                }
+            }
+        }
+    }
+
+    private fun buildCustomProjectBottomNav(): LinearLayout {
+        customProjectBottomNav = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutParams = FrameLayout.LayoutParams(MATCH, dp(64))
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                setColor(NC.SURFACE_LOWEST)
+            }
+            visibility = View.GONE // hidden by default; shown when in project pages
+        }
+
+        val tabsData = listOf(
+            Triple(ID_PROJECT_WORKSPACE, R.drawable.ic_home, "WORKSPACE"),
+            Triple(ID_PROJECT_DIR_TREE, R.drawable.ic_folder, "DIRECTORY"),
+            Triple(ID_PROJECT_GIT_DIFF, R.drawable.ic_git, "DIFF"),
+            Triple(ID_PROJECT_SETTINGS, R.drawable.ic_settings, "SETTINGS")
+        )
+
+        projectNavTabViews.clear()
+        for ((pageId, iconRes, label) in tabsData) {
+            val tabLayout = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER
+                setPadding(0, dp(6), 0, dp(6))
+                layoutParams = LinearLayout.LayoutParams(0, MATCH, 1f)
+                setOnClickListener {
+                    if (pageStack.isEmpty() || pageStack.peek() != pageId) {
+                        pageStack.push(pageId)
+                    }
+                    navigateToPage(pageId)
+                }
+            }
+            val iconIv = ImageView(this).apply {
+                tag = "TAB_ICON"
+                setImageResource(iconRes)
+                layoutParams = LinearLayout.LayoutParams(dp(26), dp(26))
+            }
+            val labelTv = TextView(this).apply {
+                tag = "TAB_LABEL"
+                text = label
+                textSize = 11f
+                typeface = Typeface.MONOSPACE
+                gravity = Gravity.CENTER
+                layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(3) }
+            }
+            tabLayout.addView(iconIv)
+            tabLayout.addView(labelTv)
+            tabLayout.tag = pageId
+            projectNavTabViews.add(tabLayout)
+            customProjectBottomNav.addView(tabLayout)
+        }
+
+        return customProjectBottomNav
     }
 
     // ── Screen Builders ──────────────────────────────────────────────────────
