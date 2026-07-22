@@ -134,6 +134,14 @@ class MainActivity : AppCompatActivity() {
     private lateinit var startGuiBtn: TextView
     private lateinit var stopGuiBtn: TextView
 
+    private val composeCpuState = androidx.compose.runtime.mutableIntStateOf(34)
+    private val composeMemState = androidx.compose.runtime.mutableIntStateOf(82)
+    private val composeRamUsedState = androidx.compose.runtime.mutableLongStateOf(0L)
+    private val composeRamTotalState = androidx.compose.runtime.mutableLongStateOf(0L)
+    private val composeSwapUsedState = androidx.compose.runtime.mutableLongStateOf(0L)
+    private val composeSwapTotalState = androidx.compose.runtime.mutableLongStateOf(0L)
+    private val composeDiskState = androidx.compose.runtime.mutableIntStateOf(0)
+
     private val executor = Executors.newCachedThreadPool()
     private val mainHandler = Handler(Looper.getMainLooper())
 
@@ -1664,147 +1672,24 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun buildSystemTelemetryCards(): View {
-        val container = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
-        }
-
-        fun createTelemetryCard(
-            sysLabel: String,
-            defaultTag: String,
-            defaultTagColor: Int,
-            defaultVal: String,
-            subLabel: String,
-            arcColor: Int,
-            valTagStr: String,
-            tagTagStr: String,
-            ringTagStr: String
-        ): LinearLayout {
-            val card = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                background = cyberBrutalistBg(
-                    fillColor = NC.SURFACE_LOW,
-                    strokeColor = Color.parseColor("#3c4a3f"),
-                    shadowColor = NC.SHADOW_GREEN,
-                    offsetDp = 6
+        return androidx.compose.ui.platform.ComposeView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply {
+                leftMargin = -dp(16)
+                rightMargin = -dp(16)
+                bottomMargin = dp(16)
+            }
+            setContent {
+                SystemTelemetryCards(
+                    cpuPercentage = composeCpuState.intValue,
+                    memPercentage = composeMemState.intValue,
+                    ramUsedMb = composeRamUsedState.longValue,
+                    ramTotalMb = composeRamTotalState.longValue,
+                    swapUsedMb = composeSwapUsedState.longValue,
+                    swapTotalMb = composeSwapTotalState.longValue,
+                    diskPercentage = composeDiskState.intValue
                 )
-                setPadding(dp(16), dp(14), dp(16), dp(16))
-                layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply {
-                    bottomMargin = dp(16)
-                }
             }
-
-            // Top Header Row
-            val headerRow = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-                layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
-            }
-
-            val labelTv = TextView(this).apply {
-                text = sysLabel
-                textSize = 12f
-                setTextColor(Color.parseColor("#80FFFFFF"))
-                typeface = Typeface.MONOSPACE
-                layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
-            }
-
-            val statusTv = TextView(this).apply {
-                tag = tagTagStr
-                text = defaultTag
-                textSize = 12f
-                setTextColor(defaultTagColor)
-                typeface = Typeface.MONOSPACE
-            }
-
-            headerRow.addView(labelTv)
-            headerRow.addView(statusTv)
-            card.addView(headerRow)
-
-            // Divider Line
-            val divider = View(this).apply {
-                setBackgroundColor(Color.parseColor("#26FFFFFF"))
-                layoutParams = LinearLayout.LayoutParams(MATCH, dp(1)).apply {
-                    topMargin = dp(8)
-                    bottomMargin = dp(14)
-                }
-            }
-            card.addView(divider)
-
-            // Body Row
-            val bodyRow = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-                layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
-            }
-
-            val leftCol = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
-            }
-
-            val valueTv = TextView(this).apply {
-                tag = valTagStr
-                text = defaultVal
-                textSize = 34f
-                setTextColor(Color.WHITE)
-                typeface = Typeface.DEFAULT_BOLD
-            }
-
-            val subTv = TextView(this).apply {
-                text = subLabel
-                textSize = 13f
-                setTextColor(Color.parseColor("#80FFFFFF"))
-                typeface = Typeface.MONOSPACE
-                setPadding(0, dp(4), 0, 0)
-            }
-
-            leftCol.addView(valueTv)
-            leftCol.addView(subTv)
-
-            val ringView = CircularProgressView(this).apply {
-                tag = ringTagStr
-                this.arcColor = arcColor
-                this.trackColor = Color.parseColor("#222222")
-                this.progress = if (sysLabel == "SYS_CPU") 34f else 82f
-                layoutParams = LinearLayout.LayoutParams(dp(64), dp(64))
-            }
-
-            bodyRow.addView(leftCol)
-            bodyRow.addView(ringView)
-            card.addView(bodyRow)
-
-            return card
         }
-
-        val cpuCard = createTelemetryCard(
-            sysLabel = "SYS_CPU",
-            defaultTag = "[OK]",
-            defaultTagColor = Color.parseColor("#3DDC84"),
-            defaultVal = "34%",
-            subLabel = "Load Avg",
-            arcColor = Color.parseColor("#C8B6FF"),
-            valTagStr = "HOME_CPU_VAL",
-            tagTagStr = "HOME_CPU_TAG",
-            ringTagStr = "HOME_CPU_RING"
-        )
-
-        val memCard = createTelemetryCard(
-            sysLabel = "SYS_MEM",
-            defaultTag = "[WARN]",
-            defaultTagColor = Color.parseColor("#FF8A8A"),
-            defaultVal = "82%",
-            subLabel = "Allocated",
-            arcColor = Color.parseColor("#FF8A8A"),
-            valTagStr = "HOME_MEM_VAL",
-            tagTagStr = "HOME_MEM_TAG",
-            ringTagStr = "HOME_MEM_RING"
-        )
-
-        container.addView(cpuCard)
-        container.addView(memCard)
-
-        return container
     }
 
     private fun buildHomeHeaderBanner(): View {
@@ -4302,7 +4187,16 @@ class MainActivity : AppCompatActivity() {
                         headerRam?.text = "R: $memUsage"
                         headerBat?.text = "$batUsage%"
                     }
+                    val memStats = readMemDetails()
                     if (::homeLayout.isInitialized) {
+                        composeCpuState.intValue = cpuUsage
+                        composeMemState.intValue = memPercent
+                        composeRamUsedState.longValue = memStats.ramUsedMb
+                        composeRamTotalState.longValue = memStats.ramTotalMb
+                        composeSwapUsedState.longValue = memStats.swapUsedMb
+                        composeSwapTotalState.longValue = memStats.swapTotalMb
+                        composeDiskState.intValue = diskUsage
+
                         val cpuValTv = homeLayout.findViewWithTag<TextView>("HOME_CPU_VAL")
                         val cpuRing = homeLayout.findViewWithTag<CircularProgressView>("HOME_CPU_RING")
                         val cpuTag = homeLayout.findViewWithTag<TextView>("HOME_CPU_TAG")
@@ -4345,7 +4239,16 @@ class MainActivity : AppCompatActivity() {
                             headerRam?.text = "R: $memUsage"
                             headerBat?.text = "$batUsage%"
                         }
+                        val memStats = readMemDetails()
                         if (::homeLayout.isInitialized) {
+                            composeCpuState.intValue = cpuUsage
+                            composeMemState.intValue = memPercent
+                            composeRamUsedState.longValue = memStats.ramUsedMb
+                            composeRamTotalState.longValue = memStats.ramTotalMb
+                            composeSwapUsedState.longValue = memStats.swapUsedMb
+                            composeSwapTotalState.longValue = memStats.swapTotalMb
+                            composeDiskState.intValue = diskUsage
+
                             val cpuValTv = homeLayout.findViewWithTag<TextView>("HOME_CPU_VAL")
                             val cpuRing = homeLayout.findViewWithTag<CircularProgressView>("HOME_CPU_RING")
                             val cpuTag = homeLayout.findViewWithTag<TextView>("HOME_CPU_TAG")
@@ -4408,6 +4311,60 @@ class MainActivity : AppCompatActivity() {
     private fun readCpuUsage(): Int {
         val snapshot = CpuUtilizationProvider.getCpuSnapshot()
         return snapshot.overallPercent.toInt()
+    }
+
+    data class MemStats(
+        val ramUsedMb: Long = 0,
+        val ramTotalMb: Long = 0,
+        val swapUsedMb: Long = 0,
+        val swapTotalMb: Long = 0
+    )
+
+    private fun readMemDetails(): MemStats {
+        var ramTotalKb = 0L
+        var ramAvailKb = 0L
+        var swapTotalKb = 0L
+        var swapFreeKb = 0L
+
+        try {
+            val file = File("/proc/meminfo")
+            if (file.exists()) {
+                file.forEachLine { line ->
+                    if (line.startsWith("MemTotal:")) {
+                        val parts = line.split(Regex("\\s+"))
+                        if (parts.size >= 2) ramTotalKb = parts[1].toLong()
+                    } else if (line.startsWith("MemAvailable:")) {
+                        val parts = line.split(Regex("\\s+"))
+                        if (parts.size >= 2) ramAvailKb = parts[1].toLong()
+                    } else if (line.startsWith("SwapTotal:")) {
+                        val parts = line.split(Regex("\\s+"))
+                        if (parts.size >= 2) swapTotalKb = parts[1].toLong()
+                    } else if (line.startsWith("SwapFree:")) {
+                        val parts = line.split(Regex("\\s+"))
+                        if (parts.size >= 2) swapFreeKb = parts[1].toLong()
+                    }
+                }
+            }
+        } catch (e: Exception) {}
+
+        if (ramTotalKb == 0L) {
+            try {
+                val am = getSystemService(Context.ACTIVITY_SERVICE) as? android.app.ActivityManager
+                if (am != null) {
+                    val mi = android.app.ActivityManager.MemoryInfo()
+                    am.getMemoryInfo(mi)
+                    ramTotalKb = mi.totalMem / 1024
+                    ramAvailKb = mi.availMem / 1024
+                }
+            } catch (e: Exception) {}
+        }
+
+        val ramTotalMb = ramTotalKb / 1024
+        val ramUsedMb = ((ramTotalKb - ramAvailKb).coerceAtLeast(0)) / 1024
+        val swapTotalMb = swapTotalKb / 1024
+        val swapUsedMb = ((swapTotalKb - swapFreeKb).coerceAtLeast(0)) / 1024
+
+        return MemStats(ramUsedMb, ramTotalMb, swapUsedMb, swapTotalMb)
     }
 
     private fun readMemUsage(): String {
