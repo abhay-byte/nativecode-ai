@@ -46,7 +46,7 @@ class OnboardingActivity : AppCompatActivity() {
     // ── Shared setup status state ──────────────────────────────────────────────
     private var isDebianBaseSetupStarted = false
     private var isCliToolsSetupStarted = false
-    private var enableDebianCustomization = false
+    private var enableDebianCustomization = true
 
     // page 4 (Debian Base) views
     private lateinit var baseStatusText: TextView
@@ -680,6 +680,10 @@ class OnboardingActivity : AppCompatActivity() {
 
         val customToggle = CustomBrutalistToggle(this, enableDebianCustomization) { isChecked ->
             enableDebianCustomization = isChecked
+        }.apply {
+            isEnabled = false
+            isClickable = false
+            alpha = 0.75f
         }
         customToggleCard.addView(customTextCol)
         customToggleCard.addView(customToggle)
@@ -1653,6 +1657,7 @@ class OnboardingActivity : AppCompatActivity() {
             updateState(animate = false)
 
             setOnClickListener {
+                if (!isEnabled) return@setOnClickListener
                 isChecked = !isChecked
                 updateState(animate = true)
                 onCheckedChange?.invoke(isChecked)
