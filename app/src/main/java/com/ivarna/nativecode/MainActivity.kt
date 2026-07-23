@@ -82,6 +82,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var scriptInstallBackBtn: ImageView
 
     private val sessionsList = ArrayList<TerminalSession>()
+    private val terminalSessionTypes = ArrayList<String>()
+    private lateinit var terminalToolSelectorScrollView: ScrollView
+    private lateinit var toggleExtraKeysBtn: ImageView
     private var activeSessionIndex = -1
 
     private var termFontSize = 40
@@ -690,9 +693,18 @@ class MainActivity : AppCompatActivity() {
             }
             ID_TERMINAL -> {
                 terminalWorkspaceLayout.visibility = View.VISIBLE
-                terminalView.isFocusable = true
-                terminalView.isFocusableInTouchMode = true
-                terminalView.requestFocus()
+                if (sessionsList.isNotEmpty() && activeSessionIndex >= 0 && activeSessionIndex < sessionsList.size) {
+                    if (::terminalToolSelectorScrollView.isInitialized) terminalToolSelectorScrollView.visibility = View.GONE
+                    if (::terminalViewContainer.isInitialized) terminalViewContainer.visibility = View.VISIBLE
+                    if (::terminalKeyboardToolbar.isInitialized) terminalKeyboardToolbar.visibility = if (showExtraKeys) View.VISIBLE else View.GONE
+                    terminalView.isFocusable = true
+                    terminalView.isFocusableInTouchMode = true
+                    terminalView.requestFocus()
+                } else {
+                    if (::terminalViewContainer.isInitialized) terminalViewContainer.visibility = View.GONE
+                    if (::terminalKeyboardToolbar.isInitialized) terminalKeyboardToolbar.visibility = View.GONE
+                    if (::terminalToolSelectorScrollView.isInitialized) terminalToolSelectorScrollView.visibility = View.VISIBLE
+                }
             }
             ID_GIT -> {
                 gitOperationsScrollView.visibility = View.VISIBLE
@@ -1012,15 +1024,36 @@ class MainActivity : AppCompatActivity() {
         }
 
         // Add header to sidebar
+        val sidebarHeaderRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, 0, 0, dp(16))
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
+        }
         val sidebarTitle = TextView(this).apply {
             text = "Active Terminals"
             textSize = 18f
             setTextColor(NC.PRIMARY)
             typeface = Typeface.MONOSPACE
             paint.isFakeBoldText = true
-            setPadding(0, 0, 0, dp(16))
+            layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
         }
-        sidebarLayout.addView(sidebarTitle)
+        val sidebarAddBtn = ImageView(this).apply {
+            setImageResource(R.drawable.ic_add)
+            setColorFilter(NC.PRIMARY)
+            setPadding(dp(4), dp(4), dp(4), dp(4))
+            layoutParams = LinearLayout.LayoutParams(dp(28), dp(28))
+            setOnClickListener {
+                drawerLayout.closeDrawer(sidebarLayout)
+                val topBarAddBtn = terminalWorkspaceLayout.findViewWithTag<View>("ADD_TERM_BTN")
+                showNewTerminalDropdown(topBarAddBtn ?: it) { type ->
+                    createNewTerminalSession(type)
+                }
+            }
+        }
+        sidebarHeaderRow.addView(sidebarTitle)
+        sidebarHeaderRow.addView(sidebarAddBtn)
+        sidebarLayout.addView(sidebarHeaderRow)
 
         // Scroll view for terminal list
         sidebarScrollView = ScrollView(this).apply {
@@ -1462,12 +1495,35 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun createNewTerminalSession() {
+    private fun createNewTerminalSession(type: String = "shell") {
+        if (sessionsList.size >= 10) {
+            Toast.makeText(this, "Maximum 10 tabs allowed", Toast.LENGTH_SHORT).show()
+            return
+        }
         ensureBootstrapExtracted()
         val nld     = applicationInfo.nativeLibraryDir
         val shell   = File(nld, "libbash.so").absolutePath
         val cwd     = File(filesDir, "home").absolutePath
-        val args    = arrayOf(shell, "-c", "exec python /data/data/com.ivarna.nativecode/files/usr/bin/proot-distro login debian --shared-tmp --user flux")
+        val envInit = "export PATH=/home/flux/.local/bin:/home/flux/bin:/home/flux/.cargo/bin:\\\$PATH && export NVM_DIR=/home/flux/.nvm && [ -s /home/flux/.nvm/nvm.sh ] && . /home/flux/.nvm/nvm.sh"
+        val workDir = "/home/flux"
+
+        val toolCmd = when (type) {
+            "opencode"    -> "$envInit && cd $workDir && exec opencode"
+            "codex"       -> "$envInit && cd $workDir && exec codex"
+            "agy"         -> "$envInit && cd $workDir && exec agy"
+            "claude-code" -> "$envInit && cd $workDir && exec claude"
+            "qwen-code"   -> "$envInit && cd $workDir && exec qwen"
+            "grok"        -> "$envInit && cd $workDir && exec grok"
+            "kiro"        -> "$envInit && cd $workDir && exec kiro-cli"
+            else          -> "exec zsh"
+        }
+
+        val args = if (type == "shell") {
+            arrayOf(shell, "-c", "exec python /data/data/com.ivarna.nativecode/files/usr/bin/proot-distro login debian --shared-tmp --user flux")
+        } else {
+            arrayOf(shell, "-c", "exec python /data/data/com.ivarna.nativecode/files/usr/bin/proot-distro login debian --shared-tmp --user flux -- zsh -c \"$toolCmd\"")
+        }
+
         val envMap  = HashMap(System.getenv())
         envMap["PATH"]                       = "$nld:/data/data/com.ivarna.nativecode/files/usr/bin:/system/bin"
         envMap["PD_PROOT_BIN"]               = File(nld, "libproot.so").absolutePath
@@ -1487,6 +1543,7 @@ class MainActivity : AppCompatActivity() {
         if (::sessionClient.isInitialized) {
             val session = TerminalSession(shell, cwd, args, env, 10000, sessionClient)
             sessionsList.add(session)
+            terminalSessionTypes.add(type)
             switchTerminalSession(sessionsList.size - 1)
             updateAppTerminalService()
         }
@@ -1500,6 +1557,19 @@ class MainActivity : AppCompatActivity() {
         terminalView.attachSession(session)
         terminalView.onScreenUpdated()
         terminalView.requestFocus()
+
+        if (::terminalToolSelectorScrollView.isInitialized) {
+            terminalToolSelectorScrollView.visibility = View.GONE
+        }
+        if (::terminalViewContainer.isInitialized) {
+            terminalViewContainer.visibility = View.VISIBLE
+        }
+        if (::terminalKeyboardToolbar.isInitialized) {
+            terminalKeyboardToolbar.visibility = if (showExtraKeys) View.VISIBLE else View.GONE
+        }
+        if (::toggleExtraKeysBtn.isInitialized) {
+            toggleExtraKeysBtn.visibility = View.VISIBLE
+        }
         updateSidebarTerminalsList()
     }
 
@@ -1508,9 +1578,22 @@ class MainActivity : AppCompatActivity() {
         val session = sessionsList[index]
         session.finishIfRunning()
         sessionsList.removeAt(index)
+        if (index < terminalSessionTypes.size) {
+            terminalSessionTypes.removeAt(index)
+        }
 
         if (sessionsList.isEmpty()) {
-            createNewTerminalSession()
+            activeSessionIndex = -1
+            terminalSession = null
+            if (::terminalViewContainer.isInitialized) {
+                terminalViewContainer.visibility = View.GONE
+            }
+            if (::terminalKeyboardToolbar.isInitialized) {
+                terminalKeyboardToolbar.visibility = View.GONE
+            }
+            if (::terminalToolSelectorScrollView.isInitialized) {
+                terminalToolSelectorScrollView.visibility = View.VISIBLE
+            }
         } else {
             if (activeSessionIndex >= sessionsList.size) {
                 activeSessionIndex = sessionsList.size - 1
@@ -1526,6 +1609,17 @@ class MainActivity : AppCompatActivity() {
         sidebarListContainer.removeAllViews()
         for (i in 0 until sessionsList.size) {
             val isSelected = (i == activeSessionIndex)
+            val type = terminalSessionTypes.getOrNull(i) ?: "shell"
+            val toolLabel = when (type) {
+                "opencode"    -> "opencode"
+                "codex"       -> "codex"
+                "agy"         -> "agy"
+                "claude-code" -> "claude-code"
+                "qwen-code"   -> "qwen-code"
+                "grok"        -> "grok"
+                "kiro"        -> "kiro"
+                else          -> "Debian Shell"
+            }
             val row = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
@@ -1547,15 +1641,29 @@ class MainActivity : AppCompatActivity() {
             }
 
             val terminalIcon = ImageView(this@MainActivity).apply {
-                setImageResource(R.drawable.ic_terminal)
-                setColorFilter(if (isSelected) NC.PRIMARY else NC.ON_SURF_VAR)
                 layoutParams = LinearLayout.LayoutParams(dp(18), dp(18)).apply {
                     rightMargin = dp(10)
                 }
+                scaleType = ImageView.ScaleType.FIT_CENTER
+            }
+            val filename = if (type == "qwen-code") "qwen-code.webp" else "$type.png"
+            try {
+                assets.open("images/cli/$filename").use { input ->
+                    val bmp = android.graphics.BitmapFactory.decodeStream(input)
+                    if (bmp != null) {
+                        terminalIcon.setImageBitmap(bmp)
+                    } else {
+                        terminalIcon.setImageResource(R.drawable.ic_terminal)
+                        terminalIcon.setColorFilter(if (isSelected) NC.PRIMARY else NC.ON_SURF_VAR)
+                    }
+                }
+            } catch (_: Exception) {
+                terminalIcon.setImageResource(R.drawable.ic_terminal)
+                terminalIcon.setColorFilter(if (isSelected) NC.PRIMARY else NC.ON_SURF_VAR)
             }
 
             val nameTv = TextView(this@MainActivity).apply {
-                text = "Terminal ${i + 1}"
+                text = "${i + 1}. $toolLabel"
                 textSize = 14f
                 setTextColor(if (isSelected) NC.ON_SURFACE else NC.ON_SURF_VAR)
                 typeface = Typeface.MONOSPACE
@@ -1577,6 +1685,185 @@ class MainActivity : AppCompatActivity() {
             row.addView(closeBtn)
             sidebarListContainer.addView(row)
         }
+    }
+
+    private fun buildTerminalToolSelectorView(): ScrollView {
+        val scrollView = ScrollView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(MATCH, 0, 1f)
+            setBackgroundColor(NC.BG)
+            isFillViewport = true
+        }
+
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(16), dp(16), dp(24))
+            layoutParams = FrameLayout.LayoutParams(MATCH, WRAP)
+        }
+
+        data class TermToolDef(val type: String, val label: String, val desc: String)
+
+        val shellTools = listOf(
+            TermToolDef("shell", "Debian Shell", "Debian Shell")
+        )
+        val freeTools = listOf(
+            TermToolDef("opencode", "opencode", "Claude Agent")
+        )
+        val paidTools = listOf(
+            TermToolDef("codex",       "codex",       "OpenAI Codex"),
+            TermToolDef("agy",         "agy",         "Antigravity"),
+            TermToolDef("claude-code", "claude-code", "Claude Code"),
+            TermToolDef("qwen-code",   "qwen-code",   "Qwen Code"),
+            TermToolDef("grok",        "grok",        "Grok CLI"),
+            TermToolDef("kiro",        "kiro",        "Kiro CLI")
+        )
+
+        fun makeToolCard(tool: TermToolDef): LinearLayout {
+            val card = LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER
+                background = cyberBrutalistBg(
+                    fillColor = NC.SURFACE_LOW,
+                    strokeColor = NC.OUTLINE_VAR,
+                    shadowColor = NC.SHADOW_DARK,
+                    offsetDp = 4,
+                    cornerRadiusDp = 0
+                )
+                setPadding(dp(16), dp(20), dp(16), dp(18))
+                layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f).apply {
+                    setMargins(dp(4), dp(4), dp(4), dp(4))
+                }
+                setOnClickListener { createNewTerminalSession(tool.type) }
+                setOnTouchListener { v, event ->
+                    when (event.action) {
+                        MotionEvent.ACTION_DOWN -> {
+                            v.translationX = dp(2).toFloat()
+                            v.translationY = dp(2).toFloat()
+                            v.background = cyberBrutalistBg(
+                                fillColor = NC.SURFACE_CONTAINER,
+                                strokeColor = NC.PRIMARY,
+                                shadowColor = NC.SHADOW_DARK,
+                                offsetDp = 2,
+                                cornerRadiusDp = 0
+                            )
+                        }
+                        MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                            v.translationX = 0f
+                            v.translationY = 0f
+                            v.background = cyberBrutalistBg(
+                                fillColor = NC.SURFACE_LOW,
+                                strokeColor = NC.OUTLINE_VAR,
+                                shadowColor = NC.SHADOW_DARK,
+                                offsetDp = 4,
+                                cornerRadiusDp = 0
+                            )
+                        }
+                    }
+                    false
+                }
+            }
+
+            val iconSize = dp(64)
+            val iconView = ImageView(this@MainActivity).apply {
+                layoutParams = LinearLayout.LayoutParams(iconSize, iconSize).apply { bottomMargin = dp(10) }
+                scaleType = ImageView.ScaleType.FIT_CENTER
+            }
+
+            val filename = if (tool.type == "qwen-code") "qwen-code.webp" else "${tool.type}.png"
+            try {
+                assets.open("images/cli/$filename").use {
+                    val bmp = android.graphics.BitmapFactory.decodeStream(it)
+                    if (bmp != null) iconView.setImageBitmap(bmp)
+                }
+            } catch (_: Exception) {
+                iconView.setImageResource(R.drawable.ic_terminal_thick)
+                iconView.setColorFilter(NC.PRIMARY)
+            }
+
+            card.addView(iconView)
+
+            val nameTv = TextView(this@MainActivity).apply {
+                text = tool.label
+                textSize = 14f
+                setTextColor(NC.ON_SURFACE)
+                typeface = Typeface.DEFAULT_BOLD
+                gravity = Gravity.CENTER
+            }
+            card.addView(nameTv)
+
+            val descTv = TextView(this@MainActivity).apply {
+                text = tool.desc
+                textSize = 11f
+                setTextColor(NC.ON_SURF_VAR)
+                typeface = Typeface.MONOSPACE
+                gravity = Gravity.CENTER
+                setPadding(0, dp(2), 0, 0)
+            }
+            card.addView(descTv)
+
+            return card
+        }
+
+        fun addSection(title: String, subtitle: String, tools: List<TermToolDef>) {
+            val headerRow = LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(4), dp(12), dp(4), dp(4))
+            }
+            val titleTv = TextView(this@MainActivity).apply {
+                text = title
+                textSize = 15f
+                setTextColor(NC.PRIMARY)
+                typeface = Typeface.DEFAULT_BOLD
+                layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
+            }
+            val subTitleTv = TextView(this@MainActivity).apply {
+                text = subtitle
+                textSize = 10f
+                setTextColor(NC.ON_SURF_VAR)
+                typeface = Typeface.MONOSPACE
+                gravity = Gravity.END
+            }
+            headerRow.addView(titleTv)
+            headerRow.addView(subTitleTv)
+
+            val divider = View(this@MainActivity).apply {
+                layoutParams = LinearLayout.LayoutParams(MATCH, dp(1)).apply { bottomMargin = dp(8); topMargin = dp(2) }
+                setBackgroundColor(NC.OUTLINE_VAR)
+            }
+
+            container.addView(headerRow)
+            container.addView(divider)
+
+            tools.chunked(2).forEach { rowTools ->
+                val row = LinearLayout(this@MainActivity).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply {
+                        bottomMargin = dp(4)
+                    }
+                }
+                val card1 = makeToolCard(rowTools[0])
+                row.addView(card1)
+                if (rowTools.size > 1) {
+                    val card2 = makeToolCard(rowTools[1])
+                    row.addView(card2)
+                } else {
+                    val dummySpacer = View(this@MainActivity).apply {
+                        layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f).apply {
+                            setMargins(dp(4), dp(4), dp(4), dp(4))
+                        }
+                    }
+                    row.addView(dummySpacer)
+                }
+                container.addView(row)
+            }
+        }
+
+        addSection("DEBIAN SHELL", "// SYSTEM SHELL", shellTools)
+        addSection("FREE CLI TOOLS", "// OPEN SOURCE / FREE", freeTools)
+        addSection("PAID CLI TOOLS", "// PRO / SUBSCRIPTION", paidTools)
+
+        scrollView.addView(container)
+        return scrollView
     }
 
     // ── Custom Cyber-Brutalist Bottom Navigation ────────────────────────────
@@ -2608,15 +2895,18 @@ class MainActivity : AppCompatActivity() {
             layoutParams = LinearLayout.LayoutParams(0, dp(1), 1f)
         }
         val addTerminalWorkspaceBtn = ImageView(this).apply {
+            tag = "ADD_TERM_BTN"
             setImageResource(R.drawable.ic_add)
             setColorFilter(NC.ON_SURFACE)
             setPadding(dp(6), dp(6), dp(6), dp(6))
             layoutParams = LinearLayout.LayoutParams(dp(36), dp(36))
             setOnClickListener {
-                createNewTerminalSession()
+                showNewTerminalDropdown(this) { type ->
+                    createNewTerminalSession(type)
+                }
             }
         }
-        val toggleExtraKeysBtn = ImageView(this).apply {
+        toggleExtraKeysBtn = ImageView(this).apply {
             setImageResource(R.drawable.ic_keyboard)
             setColorFilter(if (showExtraKeys) NC.PRIMARY else NC.ON_SURF_VAR)
             setPadding(dp(6), dp(6), dp(6), dp(6))
@@ -2633,9 +2923,15 @@ class MainActivity : AppCompatActivity() {
         terminalTopBar.addView(addTerminalWorkspaceBtn)
         terminalWorkspaceLayout.addView(terminalTopBar)
 
+        terminalToolSelectorScrollView = buildTerminalToolSelectorView().apply {
+            visibility = View.VISIBLE
+        }
+        terminalWorkspaceLayout.addView(terminalToolSelectorScrollView)
+
         terminalViewContainer = FrameLayout(this).apply {
             setBackgroundColor(Color.BLACK)
             layoutParams = LinearLayout.LayoutParams(MATCH, 0, 1f)
+            visibility = View.GONE
         }
         terminalView = TerminalView(this, null).apply {
             isFocusable = false; isFocusableInTouchMode = false
@@ -5490,7 +5786,6 @@ class MainActivity : AppCompatActivity() {
         }
 
         terminalView.setTerminalViewClient(viewClient)
-        createNewTerminalSession()
     }
 
     override fun onDestroy() {
@@ -8017,7 +8312,7 @@ class MainActivity : AppCompatActivity() {
         updateProjectTerminalService()
     }
 
-    private fun showNewTerminalDropdown(anchorView: View) {
+    private fun showNewTerminalDropdown(anchorView: View, onSelect: ((String) -> Unit)? = null) {
         val tools = listOf(
             Pair("Debian Shell", "shell"),
             Pair("opencode", "opencode"),
@@ -8114,7 +8409,11 @@ class MainActivity : AppCompatActivity() {
 
                 setOnClickListener {
                     popupWindow.dismiss()
-                    createWorkspaceTerminalTab(type)
+                    if (onSelect != null) {
+                        onSelect.invoke(type)
+                    } else {
+                        createWorkspaceTerminalTab(type)
+                    }
                 }
             }
 
