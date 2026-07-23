@@ -5,6 +5,7 @@ import android.system.Os
 import java.io.InputStream
 import android.animation.ValueAnimator
 import android.content.Intent
+import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.Canvas
 import android.graphics.Paint
@@ -12,6 +13,7 @@ import android.graphics.RectF
 import android.graphics.PixelFormat
 import android.graphics.ColorFilter
 import android.graphics.Typeface
+import java.util.Locale
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.LayerDrawable
@@ -112,6 +114,8 @@ class MainActivity : AppCompatActivity() {
 
     // Sub-pages (pushed on stack)
     private lateinit var fileViewerScrollView: ScrollView
+    private lateinit var fileViewerContainer: LinearLayout
+    private var dirSearchQuery: String = ""
     private lateinit var diffViewerScrollView: ScrollView
     private lateinit var diffViewerContainer: LinearLayout
     private lateinit var scriptsScrollView: ScrollView
@@ -2754,6 +2758,10 @@ class MainActivity : AppCompatActivity() {
 
         // System Scripts
         settingsHubLayout.addView(buildScriptsSectionButton())
+        settingsHubLayout.addView(spacer(16))
+
+        // Onboarding Setup
+        settingsHubLayout.addView(buildOnboardingSectionButton())
     }
 
     private fun buildScriptsSectionButton(): View {
@@ -2820,6 +2828,87 @@ class MainActivity : AppCompatActivity() {
             }
             val sub = TextView(this@MainActivity).apply {
                 text = "Run installation, configuration, or control scripts"
+                textSize = 11f
+                setTextColor(NC.ON_SURF_VAR)
+                typeface = Typeface.MONOSPACE
+            }
+            details.addView(name)
+            details.addView(sub)
+            val arrow = ImageView(this@MainActivity).apply {
+                setImageResource(R.drawable.ic_chevron_right)
+                setColorFilter(NC.PRIMARY)
+                layoutParams = LinearLayout.LayoutParams(dp(20), dp(20))
+            }
+            addView(icon)
+            addView(details)
+            addView(arrow)
+        }
+    }
+
+    private fun buildOnboardingSectionButton(): View {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            background = cyberBrutalistBg(
+                fillColor = NC.SURFACE_LOW,
+                strokeColor = NC.OUTLINE_VAR,
+                shadowColor = NC.SHADOW_DARK,
+                offsetDp = 6,
+                cornerRadiusDp = 0
+            )
+            setPadding(dp(16), dp(16), dp(16), dp(16))
+            setOnClickListener {
+                val intent = Intent(this@MainActivity, OnboardingActivity::class.java).apply {
+                    putExtra("force_onboarding", true)
+                }
+                startActivity(intent)
+            }
+
+            setOnTouchListener { v, event ->
+                when (event.action) {
+                    MotionEvent.ACTION_DOWN -> {
+                        v.translationX = dp(4).toFloat()
+                        v.translationY = dp(4).toFloat()
+                        v.background = cyberBrutalistBg(
+                            fillColor = NC.SURFACE_LOW,
+                            strokeColor = NC.OUTLINE_VAR,
+                            shadowColor = NC.SHADOW_DARK,
+                            offsetDp = 2,
+                            cornerRadiusDp = 0
+                        )
+                    }
+                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                        v.translationX = 0f
+                        v.translationY = 0f
+                        v.background = cyberBrutalistBg(
+                            fillColor = NC.SURFACE_LOW,
+                            strokeColor = NC.OUTLINE_VAR,
+                            shadowColor = NC.SHADOW_DARK,
+                            offsetDp = 6,
+                            cornerRadiusDp = 0
+                        )
+                    }
+                }
+                false
+            }
+            
+            val icon = ImageView(this@MainActivity).apply {
+                setImageResource(R.drawable.ic_reset_thick)
+                setColorFilter(NC.PRIMARY)
+                layoutParams = LinearLayout.LayoutParams(dp(24), dp(24)).apply { rightMargin = dp(12) }
+            }
+            val details = LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
+            }
+            val name = TextView(this@MainActivity).apply {
+                text = "RE-RUN ONBOARDING"
+                textSize = 15f
+                setTextColor(Color.WHITE)
+                typeface = Typeface.DEFAULT_BOLD
+            }
+            val sub = TextView(this@MainActivity).apply {
+                text = "Relaunch initial setup and onboarding walkthrough"
                 textSize = 11f
                 setTextColor(NC.ON_SURF_VAR)
                 typeface = Typeface.MONOSPACE
@@ -3117,19 +3206,15 @@ class MainActivity : AppCompatActivity() {
         fileViewerScrollView = ScrollView(this).apply {
             layoutParams = FrameLayout.LayoutParams(MATCH, MATCH)
             visibility = View.GONE
+            setBackgroundColor(NC.BG)
+            clipToPadding = false
+            setPadding(0, 0, 0, dp(100))
         }
-        val container = LinearLayout(this).apply {
+        fileViewerContainer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(16))
+            setPadding(0, 0, 0, dp(16))
         }
-        fileViewerScrollView.addView(container)
-
-        // Image preview card
-        container.addView(buildImagePreviewCard())
-        container.addView(spacer(16))
-
-        // Code viewer card
-        container.addView(buildCodeViewerCard())
+        fileViewerScrollView.addView(fileViewerContainer)
     }
 
     private fun buildDiffViewerLayout() {
@@ -3170,6 +3255,888 @@ class MainActivity : AppCompatActivity() {
         if (::projectDirTreeContainer.isInitialized) projectDirTreeContainer.visibility = View.GONE
 
         fileViewerScrollView.visibility = View.VISIBLE
+
+        renderFileViewerContent(name, backPage)
+    }
+
+    private fun renderFileViewerContent(pathStr: String, backPage: Int) {
+        fileViewerContainer.removeAllViews()
+
+        if (backPage == ID_PROJECT_DIR_TREE) {
+            fileViewerContainer.addView(createProjectSubpageTopBar())
+        }
+
+        var targetFile = File(pathStr)
+        if (!targetFile.exists() && !targetFile.isAbsolute) {
+            targetFile = File(getProjectHostFile(), pathStr)
+        }
+
+        val headerCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(12), dp(16), dp(8))
+        }
+        val headerRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val titleTv = TextView(this).apply {
+            text = "FILE VIEWER"
+            textSize = 18f
+            setTextColor(NC.PRIMARY)
+            typeface = Typeface.DEFAULT_BOLD
+            layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
+        }
+        val relativePathStr = if (targetFile.absolutePath.contains(getProjectHostFile().absolutePath)) {
+            targetFile.absolutePath.removePrefix(getProjectHostFile().absolutePath).trimStart('/')
+        } else {
+            targetFile.name
+        }
+        val subTv = TextView(this).apply {
+            text = "// $relativePathStr"
+            textSize = 10f
+            setTextColor(NC.ON_SURF_VAR)
+            typeface = Typeface.MONOSPACE
+        }
+        val copyPathHeaderBtn = TextView(this).apply {
+            text = "COPY PATH"
+            textSize = 10f
+            setTextColor(NC.PRIMARY)
+            typeface = Typeface.DEFAULT_BOLD
+            background = roundedBg(NC.SURFACE_VAR, NC.BORDER, dp(4))
+            setPadding(dp(8), dp(4), dp(8), dp(4))
+            layoutParams = LinearLayout.LayoutParams(WRAP, WRAP).apply { leftMargin = dp(8) }
+            setOnClickListener {
+                copyToClipboard("File Path", targetFile.absolutePath)
+            }
+        }
+        headerRow.addView(titleTv)
+        headerRow.addView(subTv)
+        headerRow.addView(copyPathHeaderBtn)
+        val divider = View(this).apply {
+            layoutParams = LinearLayout.LayoutParams(MATCH, dp(1)).apply { topMargin = dp(8) }
+            setBackgroundColor(NC.OUTLINE_VAR)
+        }
+        headerCard.addView(headerRow)
+        headerCard.addView(divider)
+        fileViewerContainer.addView(headerCard)
+
+        val contentWrapper = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(8), dp(16), dp(16))
+        }
+        fileViewerContainer.addView(contentWrapper)
+
+        if (!targetFile.exists()) {
+            val errorTv = TextView(this).apply {
+                text = "File not found: ${targetFile.absolutePath}"
+                setTextColor(NC.ERROR)
+                textSize = 14f
+                typeface = Typeface.MONOSPACE
+            }
+            contentWrapper.addView(errorTv)
+            return
+        }
+
+        val ext = targetFile.extension.lowercase(Locale.ROOT)
+        when {
+            ext in listOf("png", "jpg", "jpeg", "webp", "gif", "bmp", "ico", "svg") -> {
+                contentWrapper.addView(buildImageGifCard(targetFile))
+            }
+            ext in listOf("mp4", "webm", "mkv", "3gp", "avi", "mov") -> {
+                contentWrapper.addView(buildVideoCard(targetFile))
+            }
+            ext in listOf("html", "htm") -> {
+                contentWrapper.addView(buildHtmlCard(targetFile))
+            }
+            ext == "apk" -> {
+                contentWrapper.addView(buildApkCard(targetFile))
+            }
+            ext == "md" || ext == "markdown" -> {
+                contentWrapper.addView(buildMarkdownViewerCard(targetFile))
+            }
+            else -> {
+                if (isTextFile(targetFile, ext)) {
+                    contentWrapper.addView(buildCodeViewerCard(targetFile))
+                } else {
+                    contentWrapper.addView(buildBinaryFileCard(targetFile))
+                }
+            }
+        }
+    }
+
+    private fun buildImageGifCard(file: File): View {
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = roundedBg(NC.SURFACE, NC.BORDER, dp(12))
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
+        }
+
+        val imgArea = FrameLayout(this).apply {
+            setBackgroundColor(NC.SURFACE_HIGH)
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply {
+                minimumHeight = dp(180)
+            }
+            setPadding(dp(12), dp(12), dp(12), dp(12))
+        }
+
+        var dimensionsStr = "Unknown resolution"
+        val bitmap = try {
+            BitmapFactory.decodeFile(file.absolutePath)
+        } catch (e: Exception) {
+            null
+        }
+
+        if (bitmap != null) {
+            dimensionsStr = "${bitmap.width}×${bitmap.height}"
+            val imageView = ImageView(this).apply {
+                layoutParams = FrameLayout.LayoutParams(MATCH, WRAP).apply {
+                    gravity = Gravity.CENTER
+                }
+                adjustViewBounds = true
+                maxHeight = dp(300)
+                scaleType = ImageView.ScaleType.FIT_CENTER
+                setImageBitmap(bitmap)
+            }
+            imgArea.addView(imageView)
+        } else {
+            val placeholder = ImageView(this).apply {
+                setImageResource(R.drawable.ic_attach_image)
+                setColorFilter(NC.ON_SURF_VAR)
+                layoutParams = FrameLayout.LayoutParams(dp(64), dp(64)).apply {
+                    gravity = Gravity.CENTER
+                }
+            }
+            imgArea.addView(placeholder)
+        }
+        card.addView(imgArea)
+
+        val infoRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+        }
+
+        val infoTv = TextView(this).apply {
+            text = "  ${file.name} • $dimensionsStr • ${formatFileSize(file.length())}"
+            textSize = 12f
+            setTextColor(NC.ON_SURF_VAR)
+            typeface = Typeface.MONOSPACE
+            layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
+        }
+        infoRow.addView(infoTv)
+
+        val openExtBtn = TextView(this).apply {
+            text = "OPEN"
+            textSize = 10f
+            setTextColor(NC.PRIMARY)
+            typeface = Typeface.DEFAULT_BOLD
+            background = roundedBg(NC.SURFACE_VAR, NC.BORDER, dp(4))
+            setPadding(dp(10), dp(6), dp(10), dp(6))
+            setOnClickListener { openExternalFile(file, "image/*") }
+        }
+        infoRow.addView(openExtBtn)
+
+        card.addView(infoRow)
+        return card
+    }
+
+    private fun buildVideoCard(file: File): View {
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = roundedBg(NC.SURFACE, NC.BORDER, dp(12))
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
+        }
+
+        val videoArea = FrameLayout(this).apply {
+            setBackgroundColor(NC.SURFACE_HIGH)
+            layoutParams = LinearLayout.LayoutParams(MATCH, dp(240))
+        }
+
+        val videoView = android.widget.VideoView(this).apply {
+            layoutParams = FrameLayout.LayoutParams(MATCH, MATCH, Gravity.CENTER)
+            setVideoPath(file.absolutePath)
+        }
+        val mediaController = android.widget.MediaController(this)
+        mediaController.setAnchorView(videoView)
+        videoView.setMediaController(mediaController)
+
+        videoArea.addView(videoView)
+        card.addView(videoArea)
+
+        val infoRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+        }
+
+        val infoTv = TextView(this).apply {
+            text = "  ${file.name} • VIDEO • ${formatFileSize(file.length())}"
+            textSize = 12f
+            setTextColor(NC.ON_SURF_VAR)
+            typeface = Typeface.MONOSPACE
+            layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
+        }
+        infoRow.addView(infoTv)
+
+        val openExtBtn = TextView(this).apply {
+            text = "EXTERNAL PLAYER"
+            textSize = 10f
+            setTextColor(NC.PRIMARY)
+            typeface = Typeface.DEFAULT_BOLD
+            background = roundedBg(NC.SURFACE_VAR, NC.BORDER, dp(4))
+            setPadding(dp(10), dp(6), dp(10), dp(6))
+            setOnClickListener { openExternalFile(file, "video/*") }
+        }
+        infoRow.addView(openExtBtn)
+
+        card.addView(infoRow)
+        return card
+    }
+
+    private fun buildHtmlCard(file: File): View {
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
+        }
+
+        val actionCard = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            background = cyberBrutalistBg(
+                fillColor = NC.SURFACE_LOW,
+                strokeColor = NC.BORDER,
+                shadowColor = NC.SHADOW_GREEN,
+                offsetDp = 4,
+                cornerRadiusDp = 0,
+                rightFaceColor = NC.BORDER
+            )
+            setPadding(dp(14), dp(12), dp(14), dp(12))
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(16) }
+        }
+
+        val htmlIcon = ImageView(this).apply {
+            setImageResource(R.drawable.ic_display)
+            setColorFilter(NC.PRIMARY)
+            layoutParams = LinearLayout.LayoutParams(dp(28), dp(28)).apply { rightMargin = dp(12) }
+        }
+
+        val infoCol = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
+        }
+        val titleTv = TextView(this).apply {
+            text = file.name
+            textSize = 14f
+            setTextColor(Color.WHITE)
+            typeface = Typeface.DEFAULT_BOLD
+        }
+        val subTv = TextView(this).apply {
+            text = "HTML Document • ${formatFileSize(file.length())}"
+            textSize = 11f
+            setTextColor(NC.ON_SURF_VAR)
+            typeface = Typeface.MONOSPACE
+        }
+        infoCol.addView(titleTv)
+        infoCol.addView(subTv)
+
+        val openBrowserBtn = primaryButton("OPEN IN BROWSER") {
+            openHtmlFile(file)
+        }
+
+        actionCard.addView(htmlIcon)
+        actionCard.addView(infoCol)
+        actionCard.addView(openBrowserBtn)
+
+        container.addView(actionCard)
+        container.addView(buildCodeViewerCard(file))
+
+        return container
+    }
+
+    private fun buildApkCard(file: File): View {
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
+        }
+
+        val apkCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = cyberBrutalistBg(
+                fillColor = NC.SURFACE_LOW,
+                strokeColor = NC.BORDER,
+                shadowColor = NC.SHADOW_GREEN,
+                offsetDp = 6,
+                cornerRadiusDp = 0,
+                rightFaceColor = NC.BORDER
+            )
+            setPadding(dp(16), dp(16), dp(16), dp(16))
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
+        }
+
+        val pm = packageManager
+        val pkgInfo = try { pm.getPackageArchiveInfo(file.absolutePath, 0) } catch (e: Exception) { null }
+        var appLabel = file.name
+        var pkgName = "Package Archive"
+        var verStr = "v1.0"
+        var iconDrawable: Drawable? = null
+
+        pkgInfo?.applicationInfo?.let { appInfo ->
+            appInfo.sourceDir = file.absolutePath
+            appInfo.publicSourceDir = file.absolutePath
+            appLabel = try { appInfo.loadLabel(pm).toString() } catch (e: Exception) { file.name }
+            pkgName = pkgInfo.packageName ?: ""
+            verStr = "v${pkgInfo.versionName ?: "1.0"}"
+            iconDrawable = try { appInfo.loadIcon(pm) } catch (e: Exception) { null }
+        }
+
+        val headerRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+
+        val iconIv = ImageView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(dp(48), dp(48)).apply { rightMargin = dp(12) }
+            if (iconDrawable != null) {
+                setImageDrawable(iconDrawable)
+            } else {
+                setImageResource(R.drawable.ic_extension)
+                setColorFilter(NC.PRIMARY)
+            }
+        }
+
+        val infoCol = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
+        }
+
+        val titleTv = TextView(this).apply {
+            text = appLabel
+            textSize = 16f
+            setTextColor(Color.WHITE)
+            typeface = Typeface.DEFAULT_BOLD
+        }
+        val subTv = TextView(this).apply {
+            text = "$pkgName • $verStr\n${formatFileSize(file.length())}"
+            textSize = 11f
+            setTextColor(NC.ON_SURF_VAR)
+            typeface = Typeface.MONOSPACE
+        }
+        infoCol.addView(titleTv)
+        infoCol.addView(subTv)
+
+        headerRow.addView(iconIv)
+        headerRow.addView(infoCol)
+        apkCard.addView(headerRow)
+
+        val btnRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.END
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(16) }
+        }
+
+        val installBtn = primaryButton("INSTALL APK") {
+            installApkFile(file)
+        }
+
+        btnRow.addView(installBtn)
+        apkCard.addView(btnRow)
+
+        container.addView(apkCard)
+        return container
+    }
+
+    private fun buildCodeViewerCard(file: File): LinearLayout {
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = roundedBg(NC.LOGBG, NC.BORDER_VAR, dp(12))
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
+        }
+
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setBackgroundColor(NC.SURFACE)
+            setPadding(dp(12), dp(8), dp(12), dp(8))
+        }
+
+        val fileContentStr = try {
+            val maxLength = 500 * 1024
+            if (file.length() > maxLength) {
+                file.inputStream().use { input ->
+                    val bytes = ByteArray(maxLength)
+                    val read = input.read(bytes)
+                    String(bytes, 0, read, Charsets.UTF_8) + "\n... [Truncated file content]"
+                }
+            } else {
+                file.readText(Charsets.UTF_8)
+            }
+        } catch (e: Exception) {
+            "Error reading file: ${e.message}"
+        }
+
+        val lines = fileContentStr.lines()
+
+        val fileNameTv = TextView(this).apply {
+            text = "${file.name} (${lines.size} L • ${formatFileSize(file.length())})"
+            textSize = 12f
+            setTextColor(NC.ON_SURFACE)
+            typeface = Typeface.MONOSPACE
+            layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
+        }
+
+        val copyBtn = TextView(this).apply {
+            text = "COPY"
+            textSize = 10f
+            setTextColor(NC.ON_SURFACE)
+            background = roundedBg(NC.SURFACE_VAR, NC.BORDER, dp(4))
+            setPadding(dp(8), dp(4), dp(8), dp(4))
+            setOnClickListener {
+                val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                val clip = ClipData.newPlainText("File content", fileContentStr)
+                clipboard.setPrimaryClip(clip)
+                Toast.makeText(this@MainActivity, "Copied to clipboard", Toast.LENGTH_SHORT).show()
+            }
+        }
+        header.addView(fileNameTv)
+        header.addView(copyBtn)
+        card.addView(header)
+
+        val codeScroll = HorizontalScrollView(this).apply {
+            setPadding(dp(12), dp(12), dp(12), dp(12))
+        }
+        val codeLines = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+
+        val maxLinesToShow = 1000
+        val displayLines = if (lines.size > maxLinesToShow) lines.take(maxLinesToShow) else lines
+
+        for ((idx, line) in displayLines.withIndex()) {
+            val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+            val num = TextView(this).apply {
+                text = "${idx + 1}".padStart(4, ' ')
+                textSize = 11f
+                setTextColor(NC.OUTLINE)
+                typeface = Typeface.MONOSPACE
+                setPadding(0, 0, dp(10), 0)
+            }
+            val code = TextView(this).apply {
+                text = line
+                textSize = 11f
+                setTextColor(NC.ON_SURFACE)
+                typeface = Typeface.MONOSPACE
+                setTextIsSelectable(true)
+            }
+            row.addView(num)
+            row.addView(code)
+            codeLines.addView(row)
+        }
+
+        if (lines.size > maxLinesToShow) {
+            val moreTv = TextView(this).apply {
+                text = "... ${lines.size - maxLinesToShow} more lines hidden"
+                textSize = 11f
+                setTextColor(NC.ON_SURF_VAR)
+                typeface = Typeface.MONOSPACE
+                setPadding(dp(20), dp(8), 0, 0)
+            }
+            codeLines.addView(moreTv)
+        }
+
+        codeScroll.addView(codeLines)
+        card.addView(codeScroll)
+        return card
+    }
+
+    private fun buildBinaryFileCard(file: File): View {
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = cyberBrutalistBg(
+                fillColor = NC.SURFACE_LOW,
+                strokeColor = NC.BORDER,
+                shadowColor = NC.SHADOW_DARK,
+                offsetDp = 6,
+                cornerRadiusDp = 0,
+                rightFaceColor = NC.BORDER
+            )
+            setPadding(dp(16), dp(16), dp(16), dp(16))
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
+        }
+
+        val iconIv = ImageView(this).apply {
+            setImageResource(R.drawable.ic_extension)
+            setColorFilter(NC.PRIMARY)
+            layoutParams = LinearLayout.LayoutParams(dp(48), dp(48)).apply {
+                bottomMargin = dp(12)
+            }
+        }
+
+        val titleTv = TextView(this).apply {
+            text = file.name
+            textSize = 15f
+            setTextColor(Color.WHITE)
+            typeface = Typeface.MONOSPACE
+            paint.isFakeBoldText = true
+        }
+
+        val descTv = TextView(this).apply {
+            text = "Binary File • ${formatFileSize(file.length())}\nDirect preview not available for this file type."
+            textSize = 11f
+            setTextColor(NC.ON_SURF_VAR)
+            typeface = Typeface.MONOSPACE
+            setPadding(0, dp(4), 0, dp(16))
+        }
+
+        val openExtBtn = primaryButton("OPEN WITH EXTERNAL APP") {
+            openExternalFile(file)
+        }
+
+        card.addView(iconIv)
+        card.addView(titleTv)
+        card.addView(descTv)
+        card.addView(openExtBtn)
+
+        return card
+    }
+
+    private fun isTextFile(file: File, ext: String): Boolean {
+        val knownTextExts = setOf(
+            "txt", "md", "json", "xml", "kt", "java", "py", "rs", "c", "cpp", "h", "hpp", "sh",
+            "yml", "yaml", "gradle", "kts", "properties", "conf", "ini", "js", "ts", "css", "log",
+            "env", "toml", "lock", "bat", "cmd", "diff", "patch", "sql", "go", "rb", "php", "swift",
+            "m", "mm", "cs", "lua", "zig", "asm", "dockerfile", "gitignore", "cmake"
+        )
+        if (knownTextExts.contains(ext) || file.name.startsWith(".")) return true
+        if (file.length() > 2 * 1024 * 1024) return false
+        return try {
+            file.inputStream().use { input ->
+                val bytes = ByteArray(1024.coerceAtMost(file.length().toInt()))
+                val read = input.read(bytes)
+                if (read <= 0) return true
+                var nullCount = 0
+                for (i in 0 until read) {
+                    if (bytes[i] == 0.toByte()) nullCount++
+                }
+                nullCount == 0
+            }
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    private fun openHtmlFile(file: File) {
+        val uri = getFileUri(file)
+        val intent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, "text/html")
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        try {
+            startActivity(Intent.createChooser(intent, "Open HTML in Browser"))
+        } catch (e: Exception) {
+            Toast.makeText(this, "No browser found to open HTML", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun installApkFile(file: File) {
+        val uri = getFileUri(file)
+        val intent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, "application/vnd.android.package-archive")
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        try {
+            startActivity(intent)
+        } catch (e: Exception) {
+            Toast.makeText(this, "Unable to launch APK installer: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun openExternalFile(file: File, mimeType: String = "*/*") {
+        val uri = getFileUri(file)
+        val intent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, mimeType)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        try {
+            startActivity(Intent.createChooser(intent, "Open with"))
+        } catch (e: Exception) {
+            Toast.makeText(this, "No application available to open this file", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun getFileUri(file: File): Uri {
+        return try {
+            androidx.core.content.FileProvider.getUriForFile(
+                this,
+                "$packageName.fileprovider",
+                file
+            )
+        } catch (e: Exception) {
+            Uri.fromFile(file)
+        }
+    }
+
+    private fun formatFileSize(size: Long): String {
+        if (size <= 0) return "0 B"
+        val units = arrayOf("B", "KB", "MB", "GB")
+        val digitGroups = (Math.log10(size.toDouble()) / Math.log10(1024.0)).toInt()
+        return String.format(Locale.US, "%.1f %s", size / Math.pow(1024.0, digitGroups.toDouble()), units[digitGroups.coerceAtMost(3)])
+    }
+
+    private fun copyToClipboard(label: String, text: String) {
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        val clip = ClipData.newPlainText(label, text)
+        clipboard.setPrimaryClip(clip)
+        Toast.makeText(this, "Copied: $text", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun buildMarkdownViewerCard(file: File): View {
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
+        }
+
+        var isPreviewMode = true
+
+        val tabBar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            background = roundedBg(NC.SURFACE_LOW, NC.BORDER, dp(8))
+            setPadding(dp(4), dp(4), dp(4), dp(4))
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(12) }
+        }
+
+        val previewTab = TextView(this).apply {
+            text = "PREVIEW"
+            textSize = 12f
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            setPadding(dp(16), dp(8), dp(16), dp(8))
+            layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
+        }
+
+        val sourceTab = TextView(this).apply {
+            text = "SOURCE"
+            textSize = 12f
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            setPadding(dp(16), dp(8), dp(16), dp(8))
+            layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
+        }
+
+        fun updateTabs() {
+            if (isPreviewMode) {
+                previewTab.setTextColor(NC.ON_PRIMARY)
+                previewTab.background = roundedBg(NC.PRIMARY, NC.PRIMARY, dp(6))
+                sourceTab.setTextColor(NC.ON_SURF_VAR)
+                sourceTab.background = null
+            } else {
+                sourceTab.setTextColor(NC.ON_PRIMARY)
+                sourceTab.background = roundedBg(NC.PRIMARY, NC.PRIMARY, dp(6))
+                previewTab.setTextColor(NC.ON_SURF_VAR)
+                previewTab.background = null
+            }
+        }
+        updateTabs()
+
+        tabBar.addView(previewTab)
+        tabBar.addView(sourceTab)
+        container.addView(tabBar)
+
+        val mdContent = try { file.readText(Charsets.UTF_8) } catch (e: Exception) { "" }
+
+        val webView = android.webkit.WebView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply { minimumHeight = dp(350) }
+            setBackgroundColor(NC.BG)
+            settings.javaScriptEnabled = true
+            settings.domStorageEnabled = true
+            val html = buildObsidianMarkdownHtml(mdContent, file.parentFile?.absolutePath ?: "")
+            loadDataWithBaseURL("file://${file.parent}/", html, "text/html", "UTF-8", null)
+        }
+
+        val codeCard = buildCodeViewerCard(file)
+        codeCard.visibility = View.GONE
+
+        previewTab.setOnClickListener {
+            if (!isPreviewMode) {
+                isPreviewMode = true
+                updateTabs()
+                webView.visibility = View.VISIBLE
+                codeCard.visibility = View.GONE
+            }
+        }
+
+        sourceTab.setOnClickListener {
+            if (isPreviewMode) {
+                isPreviewMode = false
+                updateTabs()
+                webView.visibility = View.GONE
+                codeCard.visibility = View.VISIBLE
+            }
+        }
+
+        container.addView(webView)
+        container.addView(codeCard)
+        return container
+    }
+
+    private fun buildObsidianMarkdownHtml(rawMd: String, basePath: String): String {
+        val safeMd = rawMd
+            .replace("\\", "\\\\")
+            .replace("`", "\\`")
+            .replace("$", "\\$")
+
+        return """
+            <!DOCTYPE html>
+            <html>
+            <head>
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+            <style>
+              body {
+                background-color: #131313;
+                color: #e5e2e1;
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+                padding: 16px;
+                line-height: 1.6;
+                margin: 0;
+                word-wrap: break-word;
+              }
+              h1, h2, h3, h4, h5, h6 {
+                color: #60f99e;
+                font-family: monospace, sans-serif;
+                border-bottom: 1px solid #3c4a3f;
+                padding-bottom: 6px;
+                margin-top: 24px;
+                margin-bottom: 12px;
+              }
+              a { color: #60f99e; text-decoration: none; font-weight: 500; }
+              code {
+                background-color: #201f1f;
+                color: #60f99e;
+                font-family: monospace;
+                padding: 2px 6px;
+                border-radius: 4px;
+                font-size: 0.9em;
+              }
+              pre {
+                background-color: #0e0e0e;
+                border: 1px solid #3c4a3f;
+                padding: 12px;
+                border-radius: 8px;
+                overflow-x: auto;
+              }
+              pre code { background: transparent; padding: 0; color: #e5e2e1; }
+              blockquote {
+                border-left: 3px solid #60f99e;
+                margin: 12px 0;
+                padding-left: 14px;
+                color: #bbcbbc;
+                background: #1c1b1b;
+                padding-top: 4px;
+                padding-bottom: 4px;
+              }
+              ul, ol { padding-left: 24px; margin: 12px 0; }
+              li { margin-bottom: 6px; }
+              table {
+                width: 100%;
+                border-collapse: collapse;
+                margin: 18px 0;
+                background: #1c1b1b;
+                border-radius: 6px;
+                overflow: hidden;
+              }
+              th, td {
+                border: 1px solid #3c4a3f;
+                padding: 10px 14px;
+                text-align: left;
+              }
+              th { background-color: #201f1f; color: #60f99e; font-family: monospace; }
+              hr { border: none; border-top: 1px solid #3c4a3f; margin: 24px 0; }
+              img { max-width: 100%; height: auto; border-radius: 6px; display: block; margin: 12px auto; }
+              div[align="center"] { text-align: center; }
+            </style>
+            </head>
+            <body>
+              <div id="content"></div>
+              <script>
+                const rawMarkdown = `$safeMd`;
+
+                function parseMarkdownOffline(md) {
+                  let html = md;
+
+                  // Code blocks ```
+                  html = html.replace(/```(\w*)\n([\s\S]*?)```/g, function(m, lang, code) {
+                    return '<pre><code>' + escapeXml(code) + '</code></pre>';
+                  });
+
+                  // Tables
+                  html = html.replace(/(?:^|\n)((?:\|[^\n]+\|\n?)+)/g, function(m, tableStr) {
+                    const lines = tableStr.trim().split('\n').filter(l => l.trim().length > 0);
+                    if (lines.length < 2) return m;
+                    let tHtml = '<table>';
+                    lines.forEach((line, idx) => {
+                      if (line.includes('---')) return;
+                      const cells = line.split('|').map(c => c.trim()).filter((c, i, a) => i > 0 && i < a.length - 1);
+                      const tag = idx === 0 ? 'th' : 'td';
+                      tHtml += '<tr>' + cells.map(c => '<' + tag + '>' + parseInline(c) + '</' + tag + '>').join('') + '</tr>';
+                    });
+                    tHtml += '</table>';
+                    return tHtml;
+                  });
+
+                  // Headers
+                  html = html.replace(/^######\s*(.*)$/gm, '<h6>$1</h6>');
+                  html = html.replace(/^#####\s*(.*)$/gm, '<h5>$1</h5>');
+                  html = html.replace(/^####\s*(.*)$/gm, '<h4>$1</h4>');
+                  html = html.replace(/^###\s*(.*)$/gm, '<h3>$1</h3>');
+                  html = html.replace(/^##\s*(.*)$/gm, '<h2>$1</h2>');
+                  html = html.replace(/^#\s*(.*)$/gm, '<h1>$1</h1>');
+
+                  // Blockquotes
+                  html = html.replace(/^>\s*(.*)$/gm, '<blockquote>$1</blockquote>');
+
+                  // HR
+                  html = html.replace(/^---+$|^\*\*\*+$/gm, '<hr>');
+
+                  // Inline
+                  html = parseInline(html);
+
+                  // Lists
+                  html = html.replace(/^\s*[-*]\s+(.*)$/gm, '<li>$1</li>');
+                  html = html.replace(/(?:<li>.*?<\/li>\n?)+/g, function(m) { return '<ul>' + m + '</ul>'; });
+
+                  // Paragraphs
+                  html = html.replace(/\n{2,}/g, '</p><p>');
+
+                  return html;
+                }
+
+                function parseInline(text) {
+                  return text
+                    .replace(/\!\s*\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" />')
+                    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>')
+                    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+                    .replace(/\*([^*]+)\*/g, '<em>$1</em>')
+                    .replace(/`([^`]+)`/g, '<code>$1</code>');
+                }
+
+                function escapeXml(str) {
+                  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                }
+
+                try {
+                  if (typeof marked !== 'undefined' && marked.parse) {
+                    document.getElementById('content').innerHTML = marked.parse(rawMarkdown);
+                  } else {
+                    document.getElementById('content').innerHTML = parseMarkdownOffline(rawMarkdown);
+                  }
+                } catch(e) {
+                  document.getElementById('content').innerHTML = parseMarkdownOffline(rawMarkdown);
+                }
+              </script>
+            </body>
+            </html>
+        """.trimIndent()
     }
 
     private fun showDiffViewer(name: String, backPage: Int = ID_GIT) {
@@ -3367,7 +4334,13 @@ class MainActivity : AppCompatActivity() {
 
         val diffCard = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            background = roundedBg(NC.SURFACE, NC.BORDER, dp(10))
+            background = cyberBrutalistBg(
+                fillColor = NC.SURFACE,
+                strokeColor = NC.BORDER,
+                shadowColor = NC.SHADOW_DARK,
+                offsetDp = 8,
+                cornerRadiusDp = 0
+            )
             layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
         }
 
@@ -4194,42 +5167,6 @@ class MainActivity : AppCompatActivity() {
         card.addView(infoRow("Container Method", "PRoot"))
         card.addView(spacer(8))
         card.addView(infoRow("OS Version", "Debian Trixie"))
-        return card
-    }
-
-    private fun buildImagePreviewCard(): LinearLayout {
-        val card = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL; background = roundedBg(NC.SURFACE, NC.BORDER, dp(12))
-        }
-        val imgArea = LinearLayout(this).apply { gravity = Gravity.CENTER; setBackgroundColor(NC.SURFACE_HIGH); layoutParams = LinearLayout.LayoutParams(MATCH, dp(150)) }
-        val placeholder = ImageView(this).apply { setImageResource(R.drawable.ic_attach_image); setColorFilter(NC.ON_SURF_VAR); layoutParams = LinearLayout.LayoutParams(dp(48), dp(48)) }
-        imgArea.addView(placeholder); card.addView(imgArea)
-        val info = TextView(this).apply { text = "  main.png • 1920×1080 • 2.4 MB"; textSize = 12f; setTextColor(NC.ON_SURF_VAR); setPadding(dp(12), dp(10), dp(12), dp(10)) }
-        card.addView(info)
-        return card
-    }
-
-    private fun buildCodeViewerCard(): LinearLayout {
-        val card = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL; background = roundedBg(NC.LOGBG, NC.BORDER_VAR, dp(12))
-        }
-        val header = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setBackgroundColor(NC.SURFACE); setPadding(dp(12), dp(8), dp(12), dp(8))
-        }
-        val fileNameTv = TextView(this).apply { text = "main.rs"; textSize = 13f; setTextColor(NC.ON_SURFACE); typeface = Typeface.MONOSPACE; layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f) }
-        val copyBtn = TextView(this).apply { text = "COPY"; textSize = 10f; setTextColor(NC.ON_SURFACE); background = roundedBg(NC.SURFACE_VAR, NC.BORDER, dp(4)); setPadding(dp(8), dp(4), dp(8), dp(4)) }
-        header.addView(fileNameTv); header.addView(copyBtn); card.addView(header)
-
-        val codeScroll = HorizontalScrollView(this).apply { setPadding(dp(12), dp(12), dp(12), dp(12)) }
-        val codeLines = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        val lines = listOf("fn main() {", "    println!(\"Hello World!\");", "}")
-        for ((idx, line) in lines.withIndex()) {
-            val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-            val num = TextView(this).apply { text = "${idx + 1}"; textSize = 12f; setTextColor(NC.OUTLINE); typeface = Typeface.MONOSPACE; setPadding(0, 0, dp(10), 0) }
-            val code = TextView(this).apply { text = line; textSize = 12f; setTextColor(NC.ON_SURFACE); typeface = Typeface.MONOSPACE }
-            row.addView(num); row.addView(code); codeLines.addView(row)
-        }
-        codeScroll.addView(codeLines); card.addView(codeScroll)
         return card
     }
 
@@ -6219,7 +7156,11 @@ class MainActivity : AppCompatActivity() {
         workspaceDirTreeLayout.removeAllViews()
         val projectHostDir = getProjectHostFile()
         if (projectHostDir.exists() && projectHostDir.isDirectory) {
-            renderDirectoryTree(projectHostDir, workspaceDirTreeLayout, 0)
+            if (dirSearchQuery.isEmpty()) {
+                renderDirectoryTree(projectHostDir, workspaceDirTreeLayout, 0)
+            } else {
+                renderSearchDirectoryResults(projectHostDir, dirSearchQuery, workspaceDirTreeLayout)
+            }
             if (workspaceDirTreeLayout.childCount == 0) {
                 val emptyCard = LinearLayout(this).apply {
                     orientation = LinearLayout.VERTICAL
@@ -6341,6 +7282,175 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun renderSearchDirectoryResults(rootDir: File, query: String, container: LinearLayout) {
+        val matches = mutableListOf<File>()
+        fun scan(dir: File) {
+            val files = dir.listFiles() ?: return
+            for (f in files) {
+                if (f.name.startsWith(".")) continue
+                val relPath = if (f.absolutePath.startsWith(rootDir.absolutePath)) {
+                    f.absolutePath.removePrefix(rootDir.absolutePath).trimStart('/')
+                } else {
+                    f.name
+                }
+                if (f.name.contains(query, ignoreCase = true) || relPath.contains(query, ignoreCase = true)) {
+                    matches.add(f)
+                }
+                if (f.isDirectory) {
+                    scan(f)
+                }
+            }
+        }
+        scan(rootDir)
+        matches.sortWith(compareBy({ !it.isDirectory }, { it.name }))
+
+        if (matches.isEmpty()) {
+            val emptyCard = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER
+                background = cyberBrutalistBg(
+                    fillColor = NC.SURFACE_LOW,
+                    strokeColor = NC.BORDER,
+                    shadowColor = NC.SHADOW_DARK,
+                    offsetDp = 4,
+                    cornerRadiusDp = 0,
+                    rightFaceColor = NC.BORDER
+                )
+                setPadding(dp(20), dp(24), dp(20), dp(24))
+                layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(8) }
+            }
+            val emptyTv = TextView(this).apply {
+                text = "NO FILES MATCHING \"$query\""
+                textSize = 13f
+                setTextColor(NC.ON_SURF_VAR)
+                typeface = Typeface.MONOSPACE
+                gravity = Gravity.CENTER
+            }
+            emptyCard.addView(emptyTv)
+            container.addView(emptyCard)
+            return
+        }
+
+        val searchHeaderRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(4), dp(8), dp(4), dp(8))
+        }
+        val searchHeaderTitle = TextView(this).apply {
+            text = "SEARCH RESULTS // ${matches.size} MATCHES FOR \"$query\""
+            textSize = 10f
+            setTextColor(NC.PRIMARY)
+            typeface = Typeface.MONOSPACE
+            paint.isFakeBoldText = true
+        }
+        searchHeaderRow.addView(searchHeaderTitle)
+        container.addView(searchHeaderRow)
+
+        val resultsCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = cyberBrutalistBg(
+                fillColor = NC.SURFACE_LOW,
+                strokeColor = NC.BORDER,
+                shadowColor = NC.SHADOW_DARK,
+                offsetDp = 6,
+                cornerRadiusDp = 0,
+                rightFaceColor = NC.BORDER
+            )
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
+        }
+
+        for ((idx, file) in matches.withIndex()) {
+            val relPath = if (file.absolutePath.startsWith(rootDir.absolutePath)) {
+                file.absolutePath.removePrefix(rootDir.absolutePath).trimStart('/')
+            } else {
+                file.name
+            }
+            val isDir = file.isDirectory
+
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(12), dp(10), dp(12), dp(10))
+                setOnClickListener {
+                    if (isDir) {
+                        expandedFolders.add(file.absolutePath)
+                        dirSearchQuery = ""
+                        refreshWorkspaceDirTree()
+                    } else {
+                        showFileViewer(file.absolutePath, ID_PROJECT_DIR_TREE)
+                    }
+                }
+                setOnLongClickListener {
+                    copyToClipboard("File Path", file.absolutePath)
+                    true
+                }
+                setOnTouchListener { v, event ->
+                    when (event.action) {
+                        MotionEvent.ACTION_DOWN -> v.setBackgroundColor(NC.SURFACE_HIGH)
+                        MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> v.setBackgroundColor(Color.TRANSPARENT)
+                    }
+                    false
+                }
+            }
+
+            val iconIv = ImageView(this).apply {
+                setImageResource(if (isDir) R.drawable.ic_folder else R.drawable.ic_extension)
+                setColorFilter(if (isDir) NC.PRIMARY else NC.ON_SURF_VAR)
+                layoutParams = LinearLayout.LayoutParams(dp(20), dp(20)).apply { rightMargin = dp(10) }
+            }
+
+            val textCol = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
+            }
+
+            val nameTv = TextView(this).apply {
+                text = file.name
+                textSize = 13f
+                setTextColor(NC.ON_SURFACE)
+                typeface = Typeface.DEFAULT_BOLD
+            }
+            val pathTv = TextView(this).apply {
+                text = relPath
+                textSize = 10f
+                setTextColor(NC.ON_SURF_VAR)
+                typeface = Typeface.MONOSPACE
+            }
+            textCol.addView(nameTv)
+            textCol.addView(pathTv)
+
+            val copyPathBtn = TextView(this).apply {
+                text = "COPY PATH"
+                textSize = 9f
+                setTextColor(NC.PRIMARY)
+                typeface = Typeface.DEFAULT_BOLD
+                background = roundedBg(NC.SURFACE_VAR, NC.BORDER, dp(4))
+                setPadding(dp(8), dp(4), dp(8), dp(4))
+                setOnClickListener {
+                    copyToClipboard("File Path", file.absolutePath)
+                }
+            }
+
+            row.addView(iconIv)
+            row.addView(textCol)
+            row.addView(copyPathBtn)
+            resultsCard.addView(row)
+
+            if (idx < matches.size - 1) {
+                val divider = View(this).apply {
+                    layoutParams = LinearLayout.LayoutParams(MATCH, dp(1)).apply {
+                        leftMargin = dp(12)
+                        rightMargin = dp(12)
+                    }
+                    setBackgroundColor(NC.BORDER_VAR)
+                }
+                resultsCard.addView(divider)
+            }
+        }
+
+        container.addView(resultsCard)
+    }
+
     private fun renderDirectoryTree(dir: File, container: LinearLayout, depth: Int) {
         val materialTf = try {
             Typeface.createFromAsset(assets, "fonts/material_icons.ttf")
@@ -6374,6 +7484,10 @@ class MainActivity : AppCompatActivity() {
                     } else {
                         showFileViewer(file.absolutePath, ID_PROJECT_DIR_TREE)
                     }
+                }
+                setOnLongClickListener {
+                    copyToClipboard("File Path", file.absolutePath)
+                    true
                 }
                 setOnTouchListener { v, event ->
                     when (event.action) {
@@ -6563,7 +7677,7 @@ class MainActivity : AppCompatActivity() {
                                 fillColor = NC.SURFACE_LOW,
                                 strokeColor = NC.OUTLINE_VAR,
                                 shadowColor = NC.SHADOW_DARK,
-                                offsetDp = 4,
+                                offsetDp = 8,
                                 cornerRadiusDp = 0
                             )
                             setPadding(dp(16), dp(24), dp(16), dp(24))
@@ -6624,26 +7738,36 @@ class MainActivity : AppCompatActivity() {
                             val row = LinearLayout(this@MainActivity).apply {
                                 orientation = LinearLayout.HORIZONTAL
                                 gravity = Gravity.CENTER_VERTICAL
-                                background = GradientDrawable().apply {
-                                    shape = GradientDrawable.RECTANGLE
-                                    setColor(NC.SURFACE_LOW)
-                                    setStroke(dp(1), NC.OUTLINE_VAR)
-                                }
+                                background = cyberBrutalistBg(
+                                    fillColor = NC.SURFACE_LOW,
+                                    strokeColor = NC.OUTLINE_VAR,
+                                    shadowColor = NC.SHADOW_DARK,
+                                    offsetDp = 8,
+                                    cornerRadiusDp = 0
+                                )
                                 setPadding(dp(12), dp(10), dp(12), dp(10))
                                 layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply {
-                                    bottomMargin = dp(4)
+                                    bottomMargin = dp(8)
                                 }
                                 setOnClickListener {
                                     showDiffViewer(file, ID_PROJECT_GIT_DIFF)
                                 }
                                 setOnTouchListener { v, event ->
                                     when (event.action) {
-                                        MotionEvent.ACTION_DOWN -> v.setBackgroundColor(NC.SURFACE_HIGH)
-                                        MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> v.background = GradientDrawable().apply {
-                                            shape = GradientDrawable.RECTANGLE
-                                            setColor(NC.SURFACE_LOW)
-                                            setStroke(dp(1), NC.OUTLINE_VAR)
-                                        }
+                                        MotionEvent.ACTION_DOWN -> v.background = cyberBrutalistBg(
+                                            fillColor = NC.SURFACE_HIGH,
+                                            strokeColor = NC.OUTLINE_VAR,
+                                            shadowColor = NC.SHADOW_DARK,
+                                            offsetDp = 8,
+                                            cornerRadiusDp = 0
+                                        )
+                                        MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> v.background = cyberBrutalistBg(
+                                            fillColor = NC.SURFACE_LOW,
+                                            strokeColor = NC.OUTLINE_VAR,
+                                            shadowColor = NC.SHADOW_DARK,
+                                            offsetDp = 8,
+                                            cornerRadiusDp = 0
+                                        )
                                     }
                                     false
                                 }
@@ -7833,11 +8957,67 @@ class MainActivity : AppCompatActivity() {
         }
         dirHeaderRow.addView(dirHeaderTitle)
         dirHeaderRow.addView(dirHeaderSub)
+
+        val searchCard = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            background = roundedBg(NC.SURFACE_LOW, NC.BORDER, dp(8))
+            setPadding(dp(12), dp(8), dp(12), dp(8))
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply {
+                topMargin = dp(10)
+            }
+        }
+
+        val searchIcon = ImageView(this).apply {
+            setImageResource(R.drawable.ic_search)
+            setColorFilter(NC.PRIMARY)
+            layoutParams = LinearLayout.LayoutParams(dp(18), dp(18)).apply { rightMargin = dp(8) }
+        }
+
+        val searchEt = EditText(this).apply {
+            hint = "// SEARCH FILES IN WORKSPACE..."
+            setHintTextColor(NC.OUTLINE)
+            setTextColor(NC.ON_SURFACE)
+            textSize = 12f
+            typeface = Typeface.MONOSPACE
+            background = null
+            setSingleLine(true)
+            imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH
+            layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
+            setText(dirSearchQuery)
+        }
+
+        val clearBtn = ImageView(this).apply {
+            setImageResource(R.drawable.ic_close)
+            setColorFilter(NC.OUTLINE)
+            setPadding(dp(4), dp(4), dp(4), dp(4))
+            layoutParams = LinearLayout.LayoutParams(dp(24), dp(24))
+            visibility = if (dirSearchQuery.isNotEmpty()) View.VISIBLE else View.GONE
+            setOnClickListener {
+                searchEt.setText("")
+            }
+        }
+
+        searchEt.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                dirSearchQuery = s?.toString()?.trim() ?: ""
+                clearBtn.visibility = if (dirSearchQuery.isNotEmpty()) View.VISIBLE else View.GONE
+                refreshWorkspaceDirTree()
+            }
+            override fun afterTextChanged(s: android.text.Editable?) {}
+        })
+
+        searchCard.addView(searchIcon)
+        searchCard.addView(searchEt)
+        searchCard.addView(clearBtn)
+
         val dirDivider = View(this).apply {
-            layoutParams = LinearLayout.LayoutParams(MATCH, dp(1)).apply { topMargin = dp(8) }
+            layoutParams = LinearLayout.LayoutParams(MATCH, dp(1)).apply { topMargin = dp(10) }
             setBackgroundColor(NC.OUTLINE_VAR)
         }
         dirHeader.addView(dirHeaderRow)
+        dirHeader.addView(searchCard)
         dirHeader.addView(dirDivider)
         projectDirTreeLayout.addView(dirHeader)
         
