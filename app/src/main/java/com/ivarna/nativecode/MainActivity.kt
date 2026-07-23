@@ -113,6 +113,13 @@ class MainActivity : AppCompatActivity() {
     private lateinit var settingsHubLayout: LinearLayout
 
     // Sub-pages (pushed on stack)
+    private var cachedProjectIconPath: String? = null
+    private var cachedProjectIconBitmap: android.graphics.Bitmap? = null
+    private lateinit var fileViewerRootContainer: LinearLayout
+    private lateinit var fileViewerTopBar: LinearLayout
+    private lateinit var projectDirTreeTopBar: LinearLayout
+    private lateinit var projectSettingsTopBar: LinearLayout
+    private lateinit var projectGitDiffTopBar: LinearLayout
     private lateinit var fileViewerScrollView: ScrollView
     private lateinit var fileViewerContainer: LinearLayout
     private var dirSearchQuery: String = ""
@@ -606,7 +613,9 @@ class MainActivity : AppCompatActivity() {
         terminalWorkspaceLayout.visibility = View.GONE
         gitOperationsScrollView.visibility = View.GONE
         settingsHubScrollView.visibility = View.GONE
-        fileViewerScrollView.visibility = View.GONE
+        if (::fileViewerRootContainer.isInitialized) {
+            fileViewerRootContainer.visibility = View.GONE
+        }
         diffViewerScrollView.visibility = View.GONE
         if (::scriptsScrollView.isInitialized) {
             scriptsScrollView.visibility = View.GONE
@@ -809,8 +818,8 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        if (fileViewerScrollView.visibility == View.VISIBLE || diffViewerScrollView.visibility == View.VISIBLE) {
-            val prevPage = if (fileViewerScrollView.visibility == View.VISIBLE) fileViewerBackPage else diffViewerBackPage
+        if ((::fileViewerRootContainer.isInitialized && fileViewerRootContainer.visibility == View.VISIBLE) || diffViewerScrollView.visibility == View.VISIBLE) {
+            val prevPage = if (::fileViewerRootContainer.isInitialized && fileViewerRootContainer.visibility == View.VISIBLE) fileViewerBackPage else diffViewerBackPage
             navigateToPage(prevPage)
             return
         }
@@ -1313,7 +1322,7 @@ class MainActivity : AppCompatActivity() {
         contentFrame.addView(terminalWorkspaceLayout)
         contentFrame.addView(gitOperationsScrollView)
         contentFrame.addView(settingsHubScrollView)
-        contentFrame.addView(fileViewerScrollView)
+        contentFrame.addView(fileViewerRootContainer)
         contentFrame.addView(diffViewerScrollView)
         contentFrame.addView(scriptsScrollView)
         contentFrame.addView(scriptInstallLayout)
@@ -3203,9 +3212,15 @@ class MainActivity : AppCompatActivity() {
     // ── Sub-pages Builders ───────────────────────────────────────────────────
 
     private fun buildFileViewerLayout() {
-        fileViewerScrollView = ScrollView(this).apply {
+        fileViewerRootContainer = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
             layoutParams = FrameLayout.LayoutParams(MATCH, MATCH)
             visibility = View.GONE
+            setBackgroundColor(NC.BG)
+        }
+        fileViewerTopBar = createProjectSubpageTopBar()
+        fileViewerScrollView = ScrollView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(MATCH, 0, 1f)
             setBackgroundColor(NC.BG)
             clipToPadding = false
             setPadding(0, 0, 0, dp(100))
@@ -3215,6 +3230,8 @@ class MainActivity : AppCompatActivity() {
             setPadding(0, 0, 0, dp(16))
         }
         fileViewerScrollView.addView(fileViewerContainer)
+        fileViewerRootContainer.addView(fileViewerTopBar)
+        fileViewerRootContainer.addView(fileViewerScrollView)
     }
 
     private fun buildDiffViewerLayout() {
@@ -3237,10 +3254,13 @@ class MainActivity : AppCompatActivity() {
             unifiedHeader.visibility = View.GONE
             projectBottomNavigation.visibility = View.VISIBLE
             bottomNavigation.visibility = View.GONE
+            fileViewerTopBar.visibility = View.VISIBLE
+            updateProjectSubpageTopBar(fileViewerTopBar)
         } else {
             unifiedHeader.visibility = View.VISIBLE
             projectBottomNavigation.visibility = View.GONE
             bottomNavigation.visibility = View.VISIBLE
+            fileViewerTopBar.visibility = View.GONE
         }
         homeScrollView.visibility = View.GONE
         fileExplorerScrollView.visibility = View.GONE
@@ -3254,17 +3274,13 @@ class MainActivity : AppCompatActivity() {
         if (::projectSettingsContainer.isInitialized) projectSettingsContainer.visibility = View.GONE
         if (::projectDirTreeContainer.isInitialized) projectDirTreeContainer.visibility = View.GONE
 
-        fileViewerScrollView.visibility = View.VISIBLE
+        fileViewerRootContainer.visibility = View.VISIBLE
 
         renderFileViewerContent(name, backPage)
     }
 
     private fun renderFileViewerContent(pathStr: String, backPage: Int) {
         fileViewerContainer.removeAllViews()
-
-        if (backPage == ID_PROJECT_DIR_TREE) {
-            fileViewerContainer.addView(createProjectSubpageTopBar())
-        }
 
         var targetFile = File(pathStr)
         if (!targetFile.exists() && !targetFile.isAbsolute) {
@@ -8576,8 +8592,13 @@ class MainActivity : AppCompatActivity() {
             visibility = View.GONE
             setBackgroundColor(NC.BG)
         }
-        projectSettingsScrollView = ScrollView(this).apply {
+        val col = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
             layoutParams = FrameLayout.LayoutParams(MATCH, MATCH)
+        }
+        projectSettingsTopBar = createProjectSubpageTopBar()
+        projectSettingsScrollView = ScrollView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(MATCH, 0, 1f)
             clipToPadding = false
             setPadding(0, 0, 0, dp(100))
             setBackgroundColor(NC.BG)
@@ -8586,7 +8607,9 @@ class MainActivity : AppCompatActivity() {
             orientation = LinearLayout.VERTICAL
         }
         projectSettingsScrollView.addView(projectSettingsLayout)
-        projectSettingsContainer.addView(projectSettingsScrollView)
+        col.addView(projectSettingsTopBar)
+        col.addView(projectSettingsScrollView)
+        projectSettingsContainer.addView(col)
     }
 
     private fun createProjectSubpageTopBar(): LinearLayout {
@@ -8622,45 +8645,63 @@ class MainActivity : AppCompatActivity() {
             typeface = Typeface.DEFAULT_BOLD
             layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
         }
-        val iconStr = getProjects().find { it.path == activeProjectPath }?.icon ?: ""
-        if (iconStr.isNotEmpty()) {
-            executor.execute {
-                try {
-                    val bitmap = when {
-                        iconStr.startsWith("content://") -> {
-                            contentResolver.openInputStream(android.net.Uri.parse(iconStr)).use {
-                                android.graphics.BitmapFactory.decodeStream(it)
-                            }
-                        }
-                        iconStr.startsWith("http://") || iconStr.startsWith("https://") -> {
-                            java.net.URL(iconStr).openStream().use {
-                                android.graphics.BitmapFactory.decodeStream(it)
-                            }
-                        }
-                        else -> {
-                            android.graphics.BitmapFactory.decodeFile(iconStr)
-                        }
-                    }
-                    mainHandler.post {
-                        if (bitmap != null) {
-                            workspaceIconIv.setImageBitmap(bitmap)
-                            workspaceIconIv.visibility = View.VISIBLE
-                        }
-                    }
-                } catch (e: Exception) {
-                    mainHandler.post { workspaceIconIv.visibility = View.GONE }
-                }
-            }
-        }
         topBar.addView(backBtn)
         topBar.addView(workspaceIconIv)
         topBar.addView(titleTv)
+
+        updateProjectSubpageTopBar(topBar)
         return topBar
+    }
+
+    private fun updateProjectSubpageTopBar(topBar: LinearLayout) {
+        val workspaceIconIv = topBar.getChildAt(1) as? ImageView
+        val titleTv = topBar.getChildAt(2) as? TextView
+        titleTv?.text = activeProjectName
+
+        val iconStr = getProjects().find { it.path == activeProjectPath }?.icon ?: ""
+        if (iconStr.isNotEmpty()) {
+            if (iconStr == cachedProjectIconPath && cachedProjectIconBitmap != null) {
+                workspaceIconIv?.setImageBitmap(cachedProjectIconBitmap)
+                workspaceIconIv?.visibility = View.VISIBLE
+            } else {
+                executor.execute {
+                    try {
+                        val bitmap = when {
+                            iconStr.startsWith("content://") -> {
+                                contentResolver.openInputStream(android.net.Uri.parse(iconStr)).use {
+                                    android.graphics.BitmapFactory.decodeStream(it)
+                                }
+                            }
+                            iconStr.startsWith("http://") || iconStr.startsWith("https://") -> {
+                                java.net.URL(iconStr).openStream().use {
+                                    android.graphics.BitmapFactory.decodeStream(it)
+                                }
+                            }
+                            else -> {
+                                android.graphics.BitmapFactory.decodeFile(iconStr)
+                            }
+                        }
+                        mainHandler.post {
+                            if (bitmap != null) {
+                                cachedProjectIconPath = iconStr
+                                cachedProjectIconBitmap = bitmap
+                                workspaceIconIv?.setImageBitmap(bitmap)
+                                workspaceIconIv?.visibility = View.VISIBLE
+                            }
+                        }
+                    } catch (e: Exception) {
+                        mainHandler.post { workspaceIconIv?.visibility = View.GONE }
+                    }
+                }
+            }
+        } else {
+            workspaceIconIv?.visibility = View.GONE
+        }
     }
 
     private fun openProjectSettings() {
         projectSettingsLayout.removeAllViews()
-        projectSettingsLayout.addView(createProjectSubpageTopBar())
+        updateProjectSubpageTopBar(projectSettingsTopBar)
 
         val settingsContentLayout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -8916,8 +8957,13 @@ class MainActivity : AppCompatActivity() {
             visibility = View.GONE
             setBackgroundColor(NC.BG)
         }
-        projectDirTreeScrollView = ScrollView(this).apply {
+        val col = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
             layoutParams = FrameLayout.LayoutParams(MATCH, MATCH)
+        }
+        projectDirTreeTopBar = createProjectSubpageTopBar()
+        projectDirTreeScrollView = ScrollView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(MATCH, 0, 1f)
             clipToPadding = false
             setPadding(0, 0, 0, dp(100))
             setBackgroundColor(NC.BG)
@@ -8926,12 +8972,14 @@ class MainActivity : AppCompatActivity() {
             orientation = LinearLayout.VERTICAL
         }
         projectDirTreeScrollView.addView(projectDirTreeLayout)
-        projectDirTreeContainer.addView(projectDirTreeScrollView)
+        col.addView(projectDirTreeTopBar)
+        col.addView(projectDirTreeScrollView)
+        projectDirTreeContainer.addView(col)
     }
 
     private fun openProjectDirTree() {
         projectDirTreeLayout.removeAllViews()
-        projectDirTreeLayout.addView(createProjectSubpageTopBar())
+        updateProjectSubpageTopBar(projectDirTreeTopBar)
 
         // Directory page header
         val dirHeader = LinearLayout(this).apply {
@@ -9035,8 +9083,13 @@ class MainActivity : AppCompatActivity() {
             visibility = View.GONE
             setBackgroundColor(NC.BG)
         }
-        projectGitDiffScrollView = ScrollView(this).apply {
+        val col = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
             layoutParams = FrameLayout.LayoutParams(MATCH, MATCH)
+        }
+        projectGitDiffTopBar = createProjectSubpageTopBar()
+        projectGitDiffScrollView = ScrollView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(MATCH, 0, 1f)
             clipToPadding = false
             setPadding(0, 0, 0, dp(100))
             setBackgroundColor(NC.BG)
@@ -9045,12 +9098,14 @@ class MainActivity : AppCompatActivity() {
             orientation = LinearLayout.VERTICAL
         }
         projectGitDiffScrollView.addView(projectGitDiffLayout)
-        projectGitDiffContainer.addView(projectGitDiffScrollView)
+        col.addView(projectGitDiffTopBar)
+        col.addView(projectGitDiffScrollView)
+        projectGitDiffContainer.addView(col)
     }
 
     private fun openProjectGitDiff() {
         projectGitDiffLayout.removeAllViews()
-        projectGitDiffLayout.addView(createProjectSubpageTopBar())
+        updateProjectSubpageTopBar(projectGitDiffTopBar)
 
         // Git diff page header
         val gitHeader = LinearLayout(this).apply {
