@@ -5983,13 +5983,124 @@ class MainActivity : AppCompatActivity() {
         val projectHostDir = getProjectHostFile()
         if (projectHostDir.exists() && projectHostDir.isDirectory) {
             renderDirectoryTree(projectHostDir, workspaceDirTreeLayout, 0)
-        } else {
-            val emptyTv = TextView(this).apply {
-                text = "Dir not found on host:\n${projectHostDir.absolutePath}\n\nCreate directory to browse."
-                textSize = 12f
-                setTextColor(NC.ERROR)
+            if (workspaceDirTreeLayout.childCount == 0) {
+                val emptyCard = LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                    gravity = Gravity.CENTER
+                    background = cyberBrutalistBg(
+                        fillColor = NC.SURFACE_LOW,
+                        strokeColor = Color.parseColor("#3c4a3f"),
+                        shadowColor = NC.SHADOW_DARK,
+                        offsetDp = 6,
+                        cornerRadiusDp = 0,
+                        rightFaceColor = Color.parseColor("#3c4a3f")
+                    )
+                    setPadding(dp(24), dp(32), dp(24), dp(32))
+                    layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply {
+                        topMargin = dp(16)
+                        leftMargin = dp(8)
+                        rightMargin = dp(8)
+                    }
+                }
+
+                val emptyIcon = ImageView(this).apply {
+                    setImageResource(R.drawable.ic_folder_special)
+                    setColorFilter(NC.PRIMARY)
+                    layoutParams = LinearLayout.LayoutParams(dp(48), dp(48)).apply {
+                        bottomMargin = dp(12)
+                    }
+                }
+
+                val emptyTitle = TextView(this).apply {
+                    text = "NO FILES IN DIRECTORY"
+                    textSize = 15f
+                    setTextColor(Color.WHITE)
+                    typeface = Typeface.MONOSPACE
+                    paint.isFakeBoldText = true
+                    gravity = Gravity.CENTER
+                }
+
+                val emptyDesc = TextView(this).apply {
+                    text = "Workspace folder is currently empty:\n${projectHostDir.absolutePath}\n\nUse terminal to create files or refresh directory below."
+                    textSize = 11f
+                    setTextColor(NC.ON_SURF_VAR)
+                    typeface = Typeface.MONOSPACE
+                    gravity = Gravity.CENTER
+                    setPadding(0, dp(8), 0, dp(16))
+                }
+
+                val refreshBtn = primaryButton("⚡ REFRESH DIRECTORY") {
+                    refreshWorkspaceDirTree()
+                }
+
+                emptyCard.addView(emptyIcon)
+                emptyCard.addView(emptyTitle)
+                emptyCard.addView(emptyDesc)
+                emptyCard.addView(refreshBtn)
+
+                workspaceDirTreeLayout.addView(emptyCard)
             }
-            workspaceDirTreeLayout.addView(emptyTv)
+        } else {
+            val emptyCard = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER
+                background = cyberBrutalistBg(
+                    fillColor = NC.SURFACE_LOW,
+                    strokeColor = Color.parseColor("#93000a"),
+                    shadowColor = NC.SHADOW_DARK,
+                    offsetDp = 6,
+                    cornerRadiusDp = 0,
+                    rightFaceColor = Color.parseColor("#93000a")
+                )
+                setPadding(dp(24), dp(32), dp(24), dp(32))
+                layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply {
+                    topMargin = dp(16)
+                    leftMargin = dp(8)
+                    rightMargin = dp(8)
+                }
+            }
+
+            val emptyIcon = ImageView(this).apply {
+                setImageResource(R.drawable.ic_folder)
+                setColorFilter(Color.parseColor("#ffb4ab"))
+                layoutParams = LinearLayout.LayoutParams(dp(48), dp(48)).apply {
+                    bottomMargin = dp(12)
+                }
+            }
+
+            val emptyTitle = TextView(this).apply {
+                text = "DIRECTORY NOT FOUND"
+                textSize = 15f
+                setTextColor(Color.WHITE)
+                typeface = Typeface.MONOSPACE
+                paint.isFakeBoldText = true
+                gravity = Gravity.CENTER
+            }
+
+            val emptyDesc = TextView(this).apply {
+                text = "Workspace folder does not exist:\n${projectHostDir.absolutePath}\n\nTap below to initialize directory."
+                textSize = 11f
+                setTextColor(Color.parseColor("#ffb4ab"))
+                typeface = Typeface.MONOSPACE
+                gravity = Gravity.CENTER
+                setPadding(0, dp(8), 0, dp(16))
+            }
+
+            val createDirBtn = primaryButton("📁 CREATE DIRECTORY") {
+                try {
+                    projectHostDir.mkdirs()
+                    refreshWorkspaceDirTree()
+                } catch (e: Exception) {
+                    Toast.makeText(this@MainActivity, "Failed to create directory", Toast.LENGTH_SHORT).show()
+                }
+            }
+
+            emptyCard.addView(emptyIcon)
+            emptyCard.addView(emptyTitle)
+            emptyCard.addView(emptyDesc)
+            emptyCard.addView(createDirBtn)
+
+            workspaceDirTreeLayout.addView(emptyCard)
         }
     }
 
@@ -6528,6 +6639,113 @@ class MainActivity : AppCompatActivity() {
         updateProjectTerminalService()
     }
 
+    private fun showNewTerminalDropdown(anchorView: View) {
+        val tools = listOf(
+            Pair("Debian Shell", "shell"),
+            Pair("opencode", "opencode"),
+            Pair("codex", "codex"),
+            Pair("agy", "agy"),
+            Pair("claude-code", "claude-code"),
+            Pair("qwen-code", "qwen-code"),
+            Pair("grok", "grok"),
+            Pair("kiro", "kiro")
+        )
+
+        val popupView = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(4), dp(4), dp(4), dp(4))
+            background = cyberBrutalistBg(
+                fillColor = NC.SURFACE_CONTAINER,
+                strokeColor = NC.PRIMARY,
+                shadowColor = NC.SHADOW_DARK,
+                offsetDp = 4,
+                cornerRadiusDp = 0,
+                rightFaceColor = NC.OUTLINE_VAR
+            )
+        }
+
+        val popupWindow = PopupWindow(
+            popupView,
+            dp(200),
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+            true
+        ).apply {
+            isOutsideTouchable = true
+            isFocusable = true
+            setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.TRANSPARENT))
+            elevation = dp(8).toFloat()
+        }
+
+        for (item in tools) {
+            val label = item.first
+            val type = item.second
+
+            val itemLayout = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(12), dp(10), dp(12), dp(10))
+                background = roundedBg(NC.SURFACE_CONTAINER, Color.TRANSPARENT, 0)
+
+                val iconView = ImageView(this@MainActivity).apply {
+                    layoutParams = LinearLayout.LayoutParams(dp(18), dp(18)).apply {
+                        rightMargin = dp(10)
+                        gravity = Gravity.CENTER_VERTICAL
+                    }
+                    scaleType = ImageView.ScaleType.FIT_CENTER
+                }
+
+                val filename = if (type == "qwen-code") "qwen-code.webp" else "$type.png"
+                try {
+                    assets.open("images/cli/$filename").use { input ->
+                        val bmp = android.graphics.BitmapFactory.decodeStream(input)
+                        if (bmp != null) {
+                            iconView.setImageBitmap(bmp)
+                        } else {
+                            iconView.setImageResource(R.drawable.ic_terminal_thick)
+                            iconView.setColorFilter(NC.PRIMARY)
+                        }
+                    }
+                } catch (_: Exception) {
+                    iconView.setImageResource(R.drawable.ic_terminal_thick)
+                    iconView.setColorFilter(NC.PRIMARY)
+                }
+
+                val labelTv = TextView(this@MainActivity).apply {
+                    text = label
+                    textSize = 13f
+                    setTextColor(NC.ON_SURFACE)
+                    typeface = Typeface.MONOSPACE
+                }
+
+                addView(iconView)
+                addView(labelTv)
+
+                setOnTouchListener { v, event ->
+                    when (event.action) {
+                        MotionEvent.ACTION_DOWN -> {
+                            v.background = roundedBg(NC.SURFACE_HIGH, NC.PRIMARY, 0)
+                            labelTv.setTextColor(NC.PRIMARY)
+                        }
+                        MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                            v.background = roundedBg(NC.SURFACE_CONTAINER, Color.TRANSPARENT, 0)
+                            labelTv.setTextColor(NC.ON_SURFACE)
+                        }
+                    }
+                    false
+                }
+
+                setOnClickListener {
+                    popupWindow.dismiss()
+                    createWorkspaceTerminalTab(type)
+                }
+            }
+
+            popupView.addView(itemLayout)
+        }
+
+        popupWindow.showAsDropDown(anchorView, 0, dp(4))
+    }
+
     private fun rebuildWorkspaceTabs() {
         workspaceTabBar.removeAllViews()
         
@@ -6553,37 +6771,69 @@ class MainActivity : AppCompatActivity() {
             val tab = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
-                setPadding(dp(12), dp(6), dp(12), dp(6))
-                background = roundedBg(
-                    if (isSelected) NC.SURFACE_HIGH else Color.TRANSPARENT,
-                    if (isSelected) NC.BORDER else Color.TRANSPARENT,
-                    dp(6)
+                setPadding(dp(10), dp(6), dp(10), dp(6))
+                background = cyberBrutalistBg(
+                    fillColor = if (isSelected) NC.SURFACE_CONTAINER else NC.SURFACE_LOW,
+                    strokeColor = if (isSelected) NC.PRIMARY else NC.OUTLINE_VAR,
+                    shadowColor = NC.SHADOW_DARK,
+                    offsetDp = if (isSelected) 3 else 2,
+                    cornerRadiusDp = 0,
+                    rightFaceColor = NC.OUTLINE_VAR
                 )
                 layoutParams = LinearLayout.LayoutParams(WRAP, WRAP).apply {
-                    rightMargin = dp(4)
+                    rightMargin = dp(6)
+                    topMargin = dp(2)
+                    bottomMargin = dp(4)
                 }
                 setOnClickListener {
                     switchWorkspaceTab(i)
                 }
             }
+
+            val iconView = ImageView(this).apply {
+                layoutParams = LinearLayout.LayoutParams(dp(16), dp(16)).apply {
+                    rightMargin = dp(6)
+                    gravity = Gravity.CENTER_VERTICAL
+                }
+                scaleType = ImageView.ScaleType.FIT_CENTER
+            }
+            val filename = if (tabName == "qwen-code") "qwen-code.webp" else "$tabName.png"
+            try {
+                assets.open("images/cli/$filename").use { input ->
+                    val bmp = android.graphics.BitmapFactory.decodeStream(input)
+                    if (bmp != null) {
+                        iconView.setImageBitmap(bmp)
+                    } else {
+                        iconView.setImageResource(R.drawable.ic_terminal_thick)
+                        iconView.setColorFilter(if (isSelected) NC.PRIMARY else NC.ON_SURF_VAR)
+                    }
+                }
+            } catch (_: Exception) {
+                iconView.setImageResource(R.drawable.ic_terminal_thick)
+                iconView.setColorFilter(if (isSelected) NC.PRIMARY else NC.ON_SURF_VAR)
+            }
             
             val titleTv = TextView(this).apply {
                 text = "${i + 1}. $tabName"
                 textSize = 12f
-                setTextColor(if (isSelected) NC.PRIMARY else NC.ON_SURF_VAR)
+                setTextColor(if (isSelected) NC.PRIMARY else NC.ON_SURFACE)
                 typeface = Typeface.MONOSPACE
             }
             
             val closeTv = ImageView(this).apply {
                 setImageResource(R.drawable.ic_close)
-                setColorFilter(NC.ERROR)
-                setPadding(dp(4), dp(4), dp(4), dp(4))
-                layoutParams = LinearLayout.LayoutParams(dp(20), dp(20))
+                setColorFilter(if (isSelected) NC.PRIMARY else NC.ON_SURF_VAR)
+                setPadding(dp(2), dp(2), dp(2), dp(2))
+                layoutParams = LinearLayout.LayoutParams(dp(18), dp(18)).apply {
+                    leftMargin = dp(6)
+                    gravity = Gravity.CENTER_VERTICAL
+                }
                 setOnClickListener {
                     closeWorkspaceTab(i)
                 }
             }
             
+            tab.addView(iconView)
             tab.addView(titleTv)
             tab.addView(closeTv)
             workspaceTabBar.addView(tab)
@@ -6592,37 +6842,24 @@ class MainActivity : AppCompatActivity() {
         if (workspaceSessions.size < 10) {
             val addTabBtn = ImageView(this).apply {
                 setImageResource(R.drawable.ic_add)
-                setColorFilter(NC.SECONDARY)
+                setColorFilter(NC.PRIMARY)
                 setPadding(dp(6), dp(6), dp(6), dp(6))
-                layoutParams = LinearLayout.LayoutParams(dp(28), dp(28)).apply {
-                    leftMargin = dp(8)
+                background = cyberBrutalistBg(
+                    fillColor = NC.SURFACE_CONTAINER,
+                    strokeColor = NC.PRIMARY,
+                    shadowColor = NC.SHADOW_DARK,
+                    offsetDp = 3,
+                    cornerRadiusDp = 0,
+                    rightFaceColor = NC.OUTLINE_VAR
+                )
+                layoutParams = LinearLayout.LayoutParams(dp(30), dp(30)).apply {
+                    leftMargin = dp(4)
+                    topMargin = dp(2)
+                    bottomMargin = dp(4)
                     gravity = Gravity.CENTER_VERTICAL
                 }
                 setOnClickListener {
-                    val popup = PopupMenu(this@MainActivity, this)
-                    popup.menu.add("Debian Shell")
-                    popup.menu.add("opencode")
-                    popup.menu.add("codex")
-                    popup.menu.add("agy")
-                    popup.menu.add("claude-code")
-                    popup.menu.add("qwen-code")
-                    popup.menu.add("grok")
-                    popup.menu.add("kiro")
-                    popup.setOnMenuItemClickListener { item ->
-                        val type = when(item.title) {
-                            "opencode"    -> "opencode"
-                            "codex"       -> "codex"
-                            "agy"         -> "agy"
-                            "claude-code" -> "claude-code"
-                            "qwen-code"   -> "qwen-code"
-                            "grok"        -> "grok"
-                            "kiro"        -> "kiro"
-                            else          -> "shell"
-                        }
-                        createWorkspaceTerminalTab(type)
-                        true
-                    }
-                    popup.show()
+                    showNewTerminalDropdown(this)
                 }
             }
             workspaceTabBar.addView(addTabBtn)
