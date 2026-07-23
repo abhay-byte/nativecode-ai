@@ -99,30 +99,28 @@ echo "FluxLinux: Installing Themes..."
 mkdir -p "$THEME_DIR"
 extract_all_assets "$BASE_URL/theme.zip" "$THEME_DIR"
 
-# Install Icons
-echo "FluxLinux: Installing Icons..."
-mkdir -p "$ICON_DIR"
-extract_all_assets "$BASE_URL/icons.zip" "$ICON_DIR"
-# Icons are assumed to have known names or we use the selected one directly.
-# SEL_ICON is already set based on theme choice.
+# Install Icons (Disabled)
+# echo "FluxLinux: Installing Icons..."
+# mkdir -p "$ICON_DIR"
+# extract_all_assets "$BASE_URL/icons.zip" "$ICON_DIR"
 
-# Install Cursors (Both variants)
-echo "FluxLinux: Installing Cursors..."
-extract_all_assets "$BASE_URL/cursor.zip" "$ICON_DIR"
+# Install Cursors (Both variants) (Disabled)
+# echo "FluxLinux: Installing Cursors..."
+# extract_all_assets "$BASE_URL/cursor.zip" "$ICON_DIR"
 
-# Wallpaper Setup
-WALLPAPER_DIR="$USER_HOME/Pictures/Wallpapers"
-mkdir -p "$WALLPAPER_DIR"
-chown -R "$CUSTOM_USER:$CUSTOM_GROUP" "$USER_HOME/Pictures" 2>/dev/null
+# Wallpaper Setup (Disabled)
+# WALLPAPER_DIR="$USER_HOME/Pictures/Wallpapers"
+# mkdir -p "$WALLPAPER_DIR"
+# chown -R "$CUSTOM_USER:$CUSTOM_GROUP" "$USER_HOME/Pictures" 2>/dev/null
 
-echo "FluxLinux: Downloading Wallpaper..."
-TEMP_WP_ZIP="/tmp/wallpaper.zip"
-wget -q --show-progress "$BASE_URL/wallpaper.zip" -O "$TEMP_WP_ZIP"
-unzip -o -j "$TEMP_WP_ZIP" -d "$WALLPAPER_DIR"
-rm "$TEMP_WP_ZIP"
-[ -f "$WALLPAPER_DIR/dark.png" ] && mv "$WALLPAPER_DIR/dark.png" "$WALLPAPER_DIR/fluxlinux-dark.png"
-[ -f "$WALLPAPER_DIR/light.png" ] && mv "$WALLPAPER_DIR/light.png" "$WALLPAPER_DIR/fluxlinux-light.png"
-chown "$CUSTOM_USER:$CUSTOM_GROUP" "$WALLPAPER_DIR"/*
+# echo "FluxLinux: Downloading Wallpaper..."
+# TEMP_WP_ZIP="/tmp/wallpaper.zip"
+# wget -q --show-progress "$BASE_URL/wallpaper.zip" -O "$TEMP_WP_ZIP"
+# unzip -o -j "$TEMP_WP_ZIP" -d "$WALLPAPER_DIR"
+# rm "$TEMP_WP_ZIP"
+# [ -f "$WALLPAPER_DIR/dark.png" ] && mv "$WALLPAPER_DIR/dark.png" "$WALLPAPER_DIR/fluxlinux-dark.png"
+# [ -f "$WALLPAPER_DIR/light.png" ] && mv "$WALLPAPER_DIR/light.png" "$WALLPAPER_DIR/fluxlinux-light.png"
+# chown "$CUSTOM_USER:$CUSTOM_GROUP" "$WALLPAPER_DIR"/*
 
 
 # Install JetBrains Mono Nerd Font
@@ -197,13 +195,13 @@ cat <<EOF > "$XFCONF_DIR/xsettings.xml"
 <channel name="xsettings" version="1.0">
   <property name="Net" type="empty">
     <property name="ThemeName" type="string" value="$SEL_THEME"/>
-    <property name="IconThemeName" type="string" value="$SEL_ICON"/>
+    <!-- <property name="IconThemeName" type="string" value="$SEL_ICON"/> -->
     <property name="EnableEventSounds" type="bool" value="false"/>
     <property name="EnableInputFeedbackSounds" type="bool" value="false"/>
   </property>
   <property name="Gtk" type="empty">
-    <property name="CursorThemeName" type="string" value="$SEL_CURSOR"/>
-    <property name="CursorThemeSize" type="int" value="52"/>
+    <!-- <property name="CursorThemeName" type="string" value="$SEL_CURSOR"/> -->
+    <!-- <property name="CursorThemeSize" type="int" value="52"/> -->
     <property name="FontName" type="string" value="JetBrainsMono Nerd Font 10"/>
     <property name="MonospaceFontName" type="string" value="JetBrainsMono Nerd Font Mono 10"/>
     <property name="DecorationLayout" type="string" value="menu:minimize,maximize,close"/>
@@ -264,10 +262,12 @@ cat <<EOF > "$XFCONF_DIR/xfce4-desktop.xml"
 <?xml version="1.0" encoding="UTF-8"?>
 
 <channel name="xfce4-desktop" version="1.0">
+  <!-- Backdrop Wallpaper setting disabled
   <property name="backdrop" type="empty">
     <property name="screen0" type="empty">$MONITOR_PROPS
     </property>
   </property>
+  -->
   <property name="desktop-icons" type="empty">
     <property name="style" type="int" value="2"/>
     <property name="file-icons" type="empty">

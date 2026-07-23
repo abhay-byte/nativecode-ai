@@ -703,7 +703,13 @@ class MainActivity : AppCompatActivity() {
                 } else {
                     if (::terminalViewContainer.isInitialized) terminalViewContainer.visibility = View.GONE
                     if (::terminalKeyboardToolbar.isInitialized) terminalKeyboardToolbar.visibility = View.GONE
-                    if (::terminalToolSelectorScrollView.isInitialized) terminalToolSelectorScrollView.visibility = View.VISIBLE
+                    if (::terminalToolSelectorScrollView.isInitialized) {
+                        terminalToolSelectorScrollView.visibility = View.VISIBLE
+                        terminalToolSelectorScrollView.post {
+                            terminalToolSelectorScrollView.requestLayout()
+                            terminalToolSelectorScrollView.invalidate()
+                        }
+                    }
                 }
             }
             ID_GIT -> {
@@ -1091,7 +1097,7 @@ class MainActivity : AppCompatActivity() {
             layoutParams = LinearLayout.LayoutParams(dp(40), dp(40))
         }
         val logoView = ImageView(this).apply {
-            setImageResource(R.mipmap.logo)
+            setImageResource(R.drawable.logo_highres)
             layoutParams = FrameLayout.LayoutParams(MATCH, MATCH)
         }
         logoContainer.addView(logoView)
@@ -1848,7 +1854,7 @@ class MainActivity : AppCompatActivity() {
                     row.addView(card2)
                 } else {
                     val dummySpacer = View(this@MainActivity).apply {
-                        layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f).apply {
+                        layoutParams = LinearLayout.LayoutParams(0, dp(140), 1f).apply {
                             setMargins(dp(4), dp(4), dp(4), dp(4))
                         }
                     }
@@ -1863,6 +1869,11 @@ class MainActivity : AppCompatActivity() {
         addSection("PAID CLI TOOLS", "// PRO / SUBSCRIPTION", paidTools)
 
         scrollView.addView(container)
+        scrollView.post {
+            scrollView.requestLayout()
+            container.requestLayout()
+            scrollView.invalidate()
+        }
         return scrollView
     }
 
@@ -2338,12 +2349,12 @@ class MainActivity : AppCompatActivity() {
         }
 
         val subtextTv = TextView(this).apply {
-            text = "Initializing high-performance workspace.\nSecure connection established. All systems operational and ready for command execution."
+            text = "Full Linux development environment on Android. Run AI coding assistants, code in Node.js, Python, or C++, and build projects on your device."
             textSize = 11f
             setTextColor(Color.parseColor("#D0D0D0"))
             typeface = Typeface.MONOSPACE
             setPadding(0, dp(10), 0, dp(16))
-            setLineSpacing(0f, 1.2f)
+            setLineSpacing(0f, 1.25f)
         }
 
         val createBtn = TextView(this).apply {
@@ -3387,10 +3398,24 @@ class MainActivity : AppCompatActivity() {
 
     private fun runScriptInTerminal(scriptName: String, runInDebian: Boolean) {
         scriptInstallTerminalView.setTextSize(scriptFontSize)
+
+        // Ensure all scripts are deployed to files/home
+        deployScripts()
+
         val nld     = applicationInfo.nativeLibraryDir
         val shell   = File(nld, "libbash.so").absolutePath
         val cwd     = File(filesDir, "home").absolutePath
-        val scriptPath = File(cwd, scriptName).absolutePath
+        val scriptFile = File(cwd, scriptName)
+        if (!scriptFile.exists()) {
+            try {
+                val assetPath = if (scriptName.contains("tweaks")) "scripts/termux_tweaks.sh" else "scripts/$scriptName"
+                assets.open(assetPath).use { input -> FileOutputStream(scriptFile).use { input.copyTo(it) } }
+                scriptFile.setExecutable(true)
+            } catch (e: Exception) {
+                Log.e("ScriptRun", "Failed to deploy script $scriptName", e)
+            }
+        }
+        val scriptPath = scriptFile.absolutePath
         val args = if (runInDebian) {
             arrayOf(
                 shell,
@@ -5580,7 +5605,17 @@ class MainActivity : AppCompatActivity() {
     private fun deployScripts() {
         try {
             val homeDir = File(filesDir, "home").also { it.mkdirs() }
-            val scripts = arrayOf("setup_termux.sh", "termux_tweaks.sh", "flux_install.sh", "start_gui.sh", "stop_gui.sh", "setup_cli_tools.sh")
+            val scripts = arrayOf(
+                "setup_termux.sh",
+                "termux_tweaks.sh",
+                "flux_install.sh",
+                "start_gui.sh",
+                "stop_gui.sh",
+                "setup_debian_family.sh",
+                "setup_customization_debian.sh",
+                "setup_hw_accel_debian.sh",
+                "setup_cli_tools.sh"
+            )
             for (script in scripts) {
                 val assetPath = if (script.contains("tweaks")) "scripts/termux_tweaks.sh" else "scripts/$script"
                 val out = File(homeDir, script)

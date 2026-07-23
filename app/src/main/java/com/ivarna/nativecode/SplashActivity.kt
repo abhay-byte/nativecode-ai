@@ -103,7 +103,7 @@ class SplashActivity : AppCompatActivity() {
         }
 
         val logoIv = ImageView(this).apply {
-            setImageResource(R.mipmap.logo)
+            setImageResource(R.drawable.logo_highres)
             scaleType = ImageView.ScaleType.FIT_CENTER
             layoutParams = FrameLayout.LayoutParams(dpToPx(88), dpToPx(88)).apply {
                 gravity = Gravity.CENTER

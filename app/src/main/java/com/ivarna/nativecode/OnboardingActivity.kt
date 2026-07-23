@@ -162,7 +162,7 @@ class OnboardingActivity : AppCompatActivity() {
             }
         }
         val logoIv = ImageView(this).apply {
-            setImageResource(R.mipmap.logo)
+            setImageResource(R.drawable.logo_highres)
             scaleType = ImageView.ScaleType.FIT_CENTER
             layoutParams = LinearLayout.LayoutParams(dp(130), dp(130))
         }
@@ -285,16 +285,16 @@ class OnboardingActivity : AppCompatActivity() {
         fun renderMockup(type: PreviewType): View {
             val box = FrameLayout(this).apply {
                 background = cyberBrutalistBg(
-                    fillColor = NC.SURFACE_LOWEST,
+                    fillColor = Color.parseColor("#121212"),
                     strokeColor = NC.BORDER,
                     shadowColor = NC.SURFACE_BRIGHT,
-                    offsetDp = 4,
+                    offsetDp = 6,
                     cornerRadiusDp = 0,
                     rightFaceColor = NC.OUTLINE_VAR
                 )
-                setPadding(dp(2), dp(2), dp(2), dp(2))
-                layoutParams = LinearLayout.LayoutParams(MATCH, dp(140)).apply {
-                    bottomMargin = dp(16)
+                setPadding(dp(4), dp(4), dp(4), dp(4))
+                layoutParams = LinearLayout.LayoutParams(MATCH, dp(200)).apply {
+                    bottomMargin = dp(14)
                 }
             }
 
@@ -302,14 +302,14 @@ class OnboardingActivity : AppCompatActivity() {
                 PreviewType.PROJECT_TREE -> R.drawable.img_slide_workspace
                 PreviewType.AI_CLI -> R.drawable.img_slide_ai
                 PreviewType.DEV_SUITE -> R.drawable.img_slide_dev
-                PreviewType.XFCE_GUI -> R.drawable.img_slide_workspace
-                PreviewType.DEBIAN_ENV -> R.drawable.img_slide_ai
-                PreviewType.GIT_DIFF -> R.drawable.img_slide_dev
+                PreviewType.XFCE_GUI -> R.drawable.img_slide_xfce
+                PreviewType.DEBIAN_ENV -> R.drawable.img_slide_debian
+                PreviewType.GIT_DIFF -> R.drawable.img_slide_git
             }
 
             val iv = ImageView(this).apply {
                 setImageResource(imgRes)
-                scaleType = ImageView.ScaleType.CENTER_CROP
+                scaleType = ImageView.ScaleType.FIT_CENTER
                 layoutParams = FrameLayout.LayoutParams(MATCH, MATCH)
             }
             box.addView(iv)
@@ -318,7 +318,18 @@ class OnboardingActivity : AppCompatActivity() {
 
         fun renderSlideCard(slideIdx: Int): View {
             val slide = slides[slideIdx]
-            val card = LinearLayout(this).apply {
+            val container = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutParams = FrameLayout.LayoutParams(MATCH, WRAP).apply {
+                    gravity = Gravity.CENTER
+                }
+            }
+
+            // Top Card 1: Nexus Style Image Preview Card
+            container.addView(renderMockup(slide.type))
+
+            // Bottom Card 2: Capability Info & Text Card
+            val textCard = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 background = cyberBrutalistBg(
                     fillColor = NC.SURFACE_CONTAINER,
@@ -328,57 +339,53 @@ class OnboardingActivity : AppCompatActivity() {
                     cornerRadiusDp = 0,
                     rightFaceColor = NC.OUTLINE_VAR
                 )
-                setPadding(dp(20), dp(20), dp(20), dp(20))
-                layoutParams = FrameLayout.LayoutParams(MATCH, WRAP).apply {
-                    gravity = Gravity.CENTER
-                }
+                setPadding(dp(18), dp(16), dp(18), dp(16))
+                layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
             }
 
             // Slide Index Tag
             val tagTv = TextView(this).apply {
                 text = "[ ${slide.category} — 0${slideIdx + 1} / 0${slides.size} ]"
-                textSize = 11f
+                textSize = 10f
                 setTextColor(NC.PRIMARY)
                 typeface = Typeface.MONOSPACE
-                setPadding(0, 0, 0, dp(14))
+                setPadding(0, 0, 0, dp(8))
             }
-            card.addView(tagTv)
-
-            // Dynamic Mockup Box
-            card.addView(renderMockup(slide.type))
+            textCard.addView(tagTv)
 
             // Slide Header (Icon + Title)
             val headerRow = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
-                setPadding(0, 0, 0, dp(10))
+                setPadding(0, 0, 0, dp(6))
             }
             val iconIv = ImageView(this).apply {
                 setImageResource(slide.iconResId)
                 setColorFilter(NC.PRIMARY)
-                layoutParams = LinearLayout.LayoutParams(dp(26), dp(26)).apply {
-                    rightMargin = dp(10)
+                layoutParams = LinearLayout.LayoutParams(dp(22), dp(22)).apply {
+                    rightMargin = dp(8)
                 }
             }
             val titleTv = TextView(this).apply {
                 text = slide.title
-                textSize = 18f
+                textSize = 16f
                 setTextColor(NC.ON_SURFACE)
                 typeface = Typeface.DEFAULT_BOLD
             }
             headerRow.addView(iconIv)
             headerRow.addView(titleTv)
-            card.addView(headerRow)
+            textCard.addView(headerRow)
 
             val descTv = TextView(this).apply {
                 text = slide.desc
-                textSize = 13f
+                textSize = 12f
                 setTextColor(NC.ON_SURF_VAR)
-                setLineSpacing(dp(2).toFloat(), 1.25f)
+                setLineSpacing(dp(2).toFloat(), 1.2f)
             }
-            card.addView(descTv)
+            textCard.addView(descTv)
 
-            return card
+            container.addView(textCard)
+            return container
         }
 
         contentFrame.addView(renderSlideCard(0))
