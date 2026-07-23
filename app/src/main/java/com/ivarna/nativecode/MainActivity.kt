@@ -1106,7 +1106,8 @@ class MainActivity : AppCompatActivity() {
         }
 
         val batIcon = ImageView(this).apply {
-            setImageResource(R.drawable.ic_battery)
+            tag = "HEADER_BAT_ICON"
+            setImageResource(if (isBatteryCharging()) R.drawable.ic_battery_charging else R.drawable.ic_battery_discharging)
             setColorFilter(Color.WHITE)
             layoutParams = LinearLayout.LayoutParams(dp(18), dp(18)).apply {
                 rightMargin = dp(4)
@@ -1211,7 +1212,7 @@ class MainActivity : AppCompatActivity() {
             menu.add(Menu.NONE, ID_PROJECT_WORKSPACE, Menu.NONE, "WORKSPACE").setIcon(R.drawable.ic_home)
             menu.add(Menu.NONE, ID_PROJECT_DIR_TREE, Menu.NONE, "DIRECTORY").setIcon(R.drawable.ic_folder)
             menu.add(Menu.NONE, ID_PROJECT_GIT_DIFF, Menu.NONE, "DIFF").setIcon(R.drawable.ic_git)
-            menu.add(Menu.NONE, ID_PROJECT_SETTINGS, Menu.NONE, "SETTINGS").setIcon(R.drawable.ic_settings)
+            menu.add(Menu.NONE, ID_PROJECT_SETTINGS, Menu.NONE, "CONFIG").setIcon(R.drawable.ic_project_config)
         }
 
         mainContentLayout.addView(contentFrame)
@@ -1264,7 +1265,7 @@ class MainActivity : AppCompatActivity() {
             menu.add(android.view.Menu.NONE, ID_PROJECT_WORKSPACE, android.view.Menu.NONE, "Workspace").setIcon(R.drawable.ic_home)
             menu.add(android.view.Menu.NONE, ID_PROJECT_DIR_TREE, android.view.Menu.NONE, "Directory").setIcon(R.drawable.ic_folder)
             menu.add(android.view.Menu.NONE, ID_PROJECT_GIT_DIFF, android.view.Menu.NONE, "Diff").setIcon(R.drawable.ic_git)
-            menu.add(android.view.Menu.NONE, ID_PROJECT_SETTINGS, android.view.Menu.NONE, "Settings").setIcon(R.drawable.ic_settings)
+            menu.add(android.view.Menu.NONE, ID_PROJECT_SETTINGS, android.view.Menu.NONE, "Config").setIcon(R.drawable.ic_project_config)
 
             setOnItemSelectedListener { item ->
                 val pageId = item.itemId
@@ -1708,7 +1709,7 @@ class MainActivity : AppCompatActivity() {
             Triple(ID_PROJECT_WORKSPACE, R.drawable.ic_home, "WORKSPACE"),
             Triple(ID_PROJECT_DIR_TREE, R.drawable.ic_folder, "DIRECTORY"),
             Triple(ID_PROJECT_GIT_DIFF, R.drawable.ic_git, "DIFF"),
-            Triple(ID_PROJECT_SETTINGS, R.drawable.ic_settings, "SETTINGS")
+            Triple(ID_PROJECT_SETTINGS, R.drawable.ic_project_config, "CONFIG")
         )
 
         projectNavTabViews.clear()
@@ -1800,7 +1801,8 @@ class MainActivity : AppCompatActivity() {
         }
 
         val batIcon = ImageView(this).apply {
-            setImageResource(R.drawable.ic_battery)
+            tag = "${batTag}_ICON"
+            setImageResource(if (isBatteryCharging()) R.drawable.ic_battery_charging else R.drawable.ic_battery_discharging)
             setColorFilter(Color.WHITE)
             layoutParams = LinearLayout.LayoutParams(dp(16), dp(16)).apply {
                 rightMargin = dp(4)
@@ -4850,8 +4852,156 @@ class MainActivity : AppCompatActivity() {
 
             addView(iconContainer)
             addView(infoCol)
-            addView(badgeBox)
             addView(actionIcon)
+
+            setOnTouchListener { v, event ->
+                when (event.action) {
+                    MotionEvent.ACTION_DOWN -> {
+                        v.translationX = dp(4).toFloat()
+                        v.translationY = dp(4).toFloat()
+                        v.background = cyberBrutalistBg(
+                            fillColor = NC.SURFACE_LOW,
+                            strokeColor = Color.parseColor("#3c4a3f"),
+                            shadowColor = NC.SHADOW_DARK,
+                            offsetDp = 2,
+                            cornerRadiusDp = 0,
+                            rightFaceColor = Color.parseColor("#3c4a3f")
+                        )
+                    }
+                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                        v.translationX = 0f
+                        v.translationY = 0f
+                        v.background = cyberBrutalistBg(
+                            fillColor = NC.SURFACE_LOW,
+                            strokeColor = Color.parseColor("#3c4a3f"),
+                            shadowColor = NC.SHADOW_DARK,
+                            offsetDp = 6,
+                            cornerRadiusDp = 0,
+                            rightFaceColor = Color.parseColor("#3c4a3f")
+                        )
+                    }
+                }
+                false
+            }
+        }
+    }
+
+    private fun projectGridCard(name: String, path: String, time: String, iconStr: String = ""): View {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            background = cyberBrutalistBg(
+                fillColor = NC.SURFACE_LOW,
+                strokeColor = Color.parseColor("#3c4a3f"),
+                shadowColor = NC.SHADOW_DARK,
+                offsetDp = 6,
+                cornerRadiusDp = 0,
+                rightFaceColor = Color.parseColor("#3c4a3f")
+            )
+            setPadding(dp(16), dp(24), dp(16), dp(20))
+
+            val iconContainer = FrameLayout(this@MainActivity).apply {
+                layoutParams = LinearLayout.LayoutParams(dp(56), dp(56)).apply {
+                    bottomMargin = dp(16)
+                    gravity = Gravity.CENTER_HORIZONTAL
+                }
+                background = GradientDrawable().apply {
+                    shape = GradientDrawable.RECTANGLE
+                    setColor(NC.SURFACE_LOWEST)
+                    setStroke(dp(1), Color.parseColor("#3360F99E"))
+                    cornerRadius = 0f
+                }
+            }
+
+            if (iconStr.isEmpty()) {
+                val iv = ImageView(this@MainActivity).apply {
+                    setImageResource(R.drawable.ic_folder_special)
+                    setColorFilter(NC.PRIMARY)
+                    layoutParams = FrameLayout.LayoutParams(dp(30), dp(30), Gravity.CENTER)
+                }
+                iconContainer.addView(iv)
+            } else if (iconStr.length <= 4 && !iconStr.startsWith("/") && !iconStr.startsWith("http") && !iconStr.startsWith("content")) {
+                val tv = TextView(this@MainActivity).apply {
+                    text = iconStr
+                    textSize = 24f
+                    gravity = Gravity.CENTER
+                    layoutParams = FrameLayout.LayoutParams(MATCH, MATCH)
+                }
+                iconContainer.addView(tv)
+            } else {
+                val iv = ImageView(this@MainActivity).apply {
+                    scaleType = ImageView.ScaleType.CENTER_CROP
+                    layoutParams = FrameLayout.LayoutParams(MATCH, MATCH)
+                }
+                iconContainer.addView(iv)
+                executor.execute {
+                    try {
+                        val bitmap = when {
+                            iconStr.startsWith("content://") -> {
+                                contentResolver.openInputStream(android.net.Uri.parse(iconStr))?.use {
+                                    android.graphics.BitmapFactory.decodeStream(it)
+                                }
+                            }
+                            iconStr.startsWith("http://") || iconStr.startsWith("https://") -> {
+                                java.net.URL(iconStr).openStream().use {
+                                    android.graphics.BitmapFactory.decodeStream(it)
+                                }
+                            }
+                            else -> {
+                                android.graphics.BitmapFactory.decodeFile(iconStr)
+                            }
+                        }
+                        mainHandler.post {
+                            if (bitmap != null) {
+                                iv.setImageBitmap(bitmap)
+                            } else {
+                                iconContainer.removeAllViews()
+                                val defaultIv = ImageView(this@MainActivity).apply {
+                                    setImageResource(R.drawable.ic_folder_special)
+                                    setColorFilter(NC.PRIMARY)
+                                    layoutParams = FrameLayout.LayoutParams(dp(30), dp(30), Gravity.CENTER)
+                                }
+                                iconContainer.addView(defaultIv)
+                            }
+                        }
+                    } catch (e: Exception) {
+                        mainHandler.post {
+                            iconContainer.removeAllViews()
+                            val defaultIv = ImageView(this@MainActivity).apply {
+                                setImageResource(R.drawable.ic_folder_special)
+                                setColorFilter(NC.PRIMARY)
+                                layoutParams = FrameLayout.LayoutParams(dp(30), dp(30), Gravity.CENTER)
+                            }
+                            iconContainer.addView(defaultIv)
+                        }
+                    }
+                }
+            }
+
+            val titleTv = TextView(this@MainActivity).apply {
+                text = name.uppercase()
+                textSize = 15f
+                setTextColor(Color.WHITE)
+                typeface = Typeface.DEFAULT_BOLD
+                gravity = Gravity.CENTER
+                maxLines = 2
+                ellipsize = android.text.TextUtils.TruncateAt.END
+                layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(6) }
+            }
+
+            val timeTv = TextView(this@MainActivity).apply {
+                text = if (time.startsWith("UPDATED:", ignoreCase = true)) time.uppercase() else "UPDATED: ${time.uppercase()}"
+                textSize = 11f
+                setTextColor(Color.parseColor("#869587"))
+                typeface = Typeface.MONOSPACE
+                gravity = Gravity.CENTER
+                maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.END
+            }
+
+            addView(iconContainer)
+            addView(titleTv)
+            addView(timeTv)
 
             setOnTouchListener { v, event ->
                 when (event.action) {
@@ -4898,6 +5048,21 @@ class MainActivity : AppCompatActivity() {
         setOnClickListener { onClick() }
     }
 
+    private fun isBatteryCharging(): Boolean {
+        return try {
+            val bm = getSystemService(Context.BATTERY_SERVICE) as? android.os.BatteryManager
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && bm != null) {
+                bm.isCharging
+            } else {
+                val intent = registerReceiver(null, android.content.IntentFilter(android.content.Intent.ACTION_BATTERY_CHANGED))
+                val status = intent?.getIntExtra(android.os.BatteryManager.EXTRA_STATUS, -1) ?: -1
+                status == android.os.BatteryManager.BATTERY_STATUS_CHARGING || status == android.os.BatteryManager.BATTERY_STATUS_FULL
+            }
+        } catch (e: Exception) {
+            false
+        }
+    }
+
     private fun readBatteryUsage(): Int {
         return try {
             val bm = getSystemService(Context.BATTERY_SERVICE) as? android.os.BatteryManager
@@ -4923,6 +5088,8 @@ class MainActivity : AppCompatActivity() {
                 val memPercent = readMemPercent()
                 val diskUsage = readDiskUsage()
                 val batUsage = readBatteryUsage()
+                val isCharging = isBatteryCharging()
+                val batDrawableRes = if (isCharging) R.drawable.ic_battery_charging else R.drawable.ic_battery_discharging
                 mainHandler.post {
                     cpuTv?.text = "$cpuUsage%"
                     memTv?.text = memUsage
@@ -4931,25 +5098,31 @@ class MainActivity : AppCompatActivity() {
                         val headerCpu = unifiedHeader.findViewWithTag<TextView>("HEADER_CPU")
                         val headerRam = unifiedHeader.findViewWithTag<TextView>("HEADER_RAM")
                         val headerBat = unifiedHeader.findViewWithTag<TextView>("HEADER_BAT")
+                        val headerBatIcon = unifiedHeader.findViewWithTag<ImageView>("HEADER_BAT_ICON")
                         headerCpu?.text = "C: $cpuUsage%"
                         headerRam?.text = "R: $memUsage"
                         headerBat?.text = "$batUsage%"
+                        headerBatIcon?.setImageResource(batDrawableRes)
                     }
                     if (::terminalWorkspaceLayout.isInitialized) {
                         val termCpu = terminalWorkspaceLayout.findViewWithTag<TextView>("TERM_HEADER_CPU")
                         val termRam = terminalWorkspaceLayout.findViewWithTag<TextView>("TERM_HEADER_RAM")
                         val termBat = terminalWorkspaceLayout.findViewWithTag<TextView>("TERM_HEADER_BAT")
+                        val termBatIcon = terminalWorkspaceLayout.findViewWithTag<ImageView>("TERM_HEADER_BAT_ICON")
                         termCpu?.text = "C: $cpuUsage%"
                         termRam?.text = "R: $memUsage"
                         termBat?.text = "$batUsage%"
+                        termBatIcon?.setImageResource(batDrawableRes)
                     }
                     if (::projectWorkspaceLayout.isInitialized) {
                         val projCpu = projectWorkspaceLayout.findViewWithTag<TextView>("PROJ_HEADER_CPU")
                         val projRam = projectWorkspaceLayout.findViewWithTag<TextView>("PROJ_HEADER_RAM")
                         val projBat = projectWorkspaceLayout.findViewWithTag<TextView>("PROJ_HEADER_BAT")
+                        val projBatIcon = projectWorkspaceLayout.findViewWithTag<ImageView>("PROJ_HEADER_BAT_ICON")
                         projCpu?.text = "C: $cpuUsage%"
                         projRam?.text = "R: $memUsage"
                         projBat?.text = "$batUsage%"
+                        projBatIcon?.setImageResource(batDrawableRes)
                     }
                     val memStats = readMemDetails()
                     if (::homeLayout.isInitialized) {
@@ -4991,6 +5164,8 @@ class MainActivity : AppCompatActivity() {
                     val memPercent = readMemPercent()
                     val diskUsage = readDiskUsage()
                     val batUsage = readBatteryUsage()
+                    val isCharging = isBatteryCharging()
+                    val batDrawableRes = if (isCharging) R.drawable.ic_battery_charging else R.drawable.ic_battery_discharging
                     mainHandler.post {
                         cpuTv?.text = "$cpuUsage%"
                         memTv?.text = memUsage
@@ -4999,9 +5174,31 @@ class MainActivity : AppCompatActivity() {
                             val headerCpu = unifiedHeader.findViewWithTag<TextView>("HEADER_CPU")
                             val headerRam = unifiedHeader.findViewWithTag<TextView>("HEADER_RAM")
                             val headerBat = unifiedHeader.findViewWithTag<TextView>("HEADER_BAT")
+                            val headerBatIcon = unifiedHeader.findViewWithTag<ImageView>("HEADER_BAT_ICON")
                             headerCpu?.text = "C: $cpuUsage%"
                             headerRam?.text = "R: $memUsage"
                             headerBat?.text = "$batUsage%"
+                            headerBatIcon?.setImageResource(batDrawableRes)
+                        }
+                        if (::terminalWorkspaceLayout.isInitialized) {
+                            val termCpu = terminalWorkspaceLayout.findViewWithTag<TextView>("TERM_HEADER_CPU")
+                            val termRam = terminalWorkspaceLayout.findViewWithTag<TextView>("TERM_HEADER_RAM")
+                            val termBat = terminalWorkspaceLayout.findViewWithTag<TextView>("TERM_HEADER_BAT")
+                            val termBatIcon = terminalWorkspaceLayout.findViewWithTag<ImageView>("TERM_HEADER_BAT_ICON")
+                            termCpu?.text = "C: $cpuUsage%"
+                            termRam?.text = "R: $memUsage"
+                            termBat?.text = "$batUsage%"
+                            termBatIcon?.setImageResource(batDrawableRes)
+                        }
+                        if (::projectWorkspaceLayout.isInitialized) {
+                            val projCpu = projectWorkspaceLayout.findViewWithTag<TextView>("PROJ_HEADER_CPU")
+                            val projRam = projectWorkspaceLayout.findViewWithTag<TextView>("PROJ_HEADER_RAM")
+                            val projBat = projectWorkspaceLayout.findViewWithTag<TextView>("PROJ_HEADER_BAT")
+                            val projBatIcon = projectWorkspaceLayout.findViewWithTag<ImageView>("PROJ_HEADER_BAT_ICON")
+                            projCpu?.text = "C: $cpuUsage%"
+                            projRam?.text = "R: $memUsage"
+                            projBat?.text = "$batUsage%"
+                            projBatIcon?.setImageResource(batDrawableRes)
                         }
                         val memStats = readMemDetails()
                         if (::homeLayout.isInitialized) {
@@ -5949,20 +6146,60 @@ class MainActivity : AppCompatActivity() {
 
             projectsListLayout.addView(emptyCard)
         } else {
-            for (p in list) {
-                val card = projectCard(p.name, p.path, "Tap to open", p.icon)
-                card.setOnClickListener {
-                    markProjectOpened(p.path)
-                    activeProjectName = p.name
-                    activeProjectPath = p.path
-                    Toast.makeText(this, "Project opened: ${p.name}", Toast.LENGTH_SHORT).show()
-                    if (pageStack.isEmpty() || pageStack.peek() != ID_PROJECT_WORKSPACE) {
-                        pageStack.push(ID_PROJECT_WORKSPACE)
+            for (i in list.indices step 2) {
+                val row = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply {
+                        bottomMargin = dp(16)
                     }
-                    navigateToPage(ID_PROJECT_WORKSPACE)
                 }
-                projectsListLayout.addView(card)
-                projectsListLayout.addView(spacer(12))
+
+                val p1 = list[i]
+                val card1 = projectGridCard(p1.name, p1.path, "Tap to open", p1.icon).apply {
+                    layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f).apply {
+                        rightMargin = dp(8)
+                    }
+                    setOnClickListener {
+                        markProjectOpened(p1.path)
+                        activeProjectName = p1.name
+                        activeProjectPath = p1.path
+                        Toast.makeText(this@MainActivity, "Project opened: ${p1.name}", Toast.LENGTH_SHORT).show()
+                        if (pageStack.isEmpty() || pageStack.peek() != ID_PROJECT_WORKSPACE) {
+                            pageStack.push(ID_PROJECT_WORKSPACE)
+                        }
+                        navigateToPage(ID_PROJECT_WORKSPACE)
+                    }
+                }
+                row.addView(card1)
+
+                if (i + 1 < list.size) {
+                    val p2 = list[i + 1]
+                    val card2 = projectGridCard(p2.name, p2.path, "Tap to open", p2.icon).apply {
+                        layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f).apply {
+                            leftMargin = dp(8)
+                        }
+                        setOnClickListener {
+                            markProjectOpened(p2.path)
+                            activeProjectName = p2.name
+                            activeProjectPath = p2.path
+                            Toast.makeText(this@MainActivity, "Project opened: ${p2.name}", Toast.LENGTH_SHORT).show()
+                            if (pageStack.isEmpty() || pageStack.peek() != ID_PROJECT_WORKSPACE) {
+                                pageStack.push(ID_PROJECT_WORKSPACE)
+                            }
+                            navigateToPage(ID_PROJECT_WORKSPACE)
+                        }
+                    }
+                    row.addView(card2)
+                } else {
+                    val dummySpacer = View(this).apply {
+                        layoutParams = LinearLayout.LayoutParams(0, MATCH, 1f).apply {
+                            leftMargin = dp(8)
+                        }
+                    }
+                    row.addView(dummySpacer)
+                }
+
+                projectsListLayout.addView(row)
             }
         }
     }
@@ -6029,7 +6266,7 @@ class MainActivity : AppCompatActivity() {
                     setPadding(0, dp(8), 0, dp(16))
                 }
 
-                val refreshBtn = primaryButton("⚡ REFRESH DIRECTORY") {
+                val refreshBtn = primaryButton("REFRESH DIRECTORY") {
                     refreshWorkspaceDirTree()
                 }
 
@@ -6086,7 +6323,7 @@ class MainActivity : AppCompatActivity() {
                 setPadding(0, dp(8), 0, dp(16))
             }
 
-            val createDirBtn = primaryButton("📁 CREATE DIRECTORY") {
+            val createDirBtn = primaryButton("CREATE DIRECTORY") {
                 try {
                     projectHostDir.mkdirs()
                     refreshWorkspaceDirTree()
@@ -6332,12 +6569,13 @@ class MainActivity : AppCompatActivity() {
                             setPadding(dp(16), dp(24), dp(16), dp(24))
                             layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(8) }
                         }
-                        val noChangesIcon = TextView(this@MainActivity).apply {
-                            text = "✓"
-                            textSize = 28f
-                            setTextColor(NC.PRIMARY)
-                            gravity = Gravity.CENTER
-                            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
+                        val noChangesIcon = ImageView(this@MainActivity).apply {
+                            setImageResource(R.drawable.ic_check_circle)
+                            setColorFilter(NC.PRIMARY)
+                            layoutParams = LinearLayout.LayoutParams(dp(36), dp(36)).apply {
+                                gravity = Gravity.CENTER_HORIZONTAL
+                                bottomMargin = dp(8)
+                            }
                         }
                         val noChanges = TextView(this@MainActivity).apply {
                             text = "NO CHANGES DETECTED"
