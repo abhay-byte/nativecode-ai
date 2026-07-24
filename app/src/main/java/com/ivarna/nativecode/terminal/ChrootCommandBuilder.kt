@@ -49,6 +49,30 @@ object ChrootCommandBuilder {
         return arrayOf("/system/bin/sh", "-c", cmd) to envMap
     }
 
+    /** Creates a SIGWINCH forwarding wrapper so inner zsh inside chroot receives resize signals.
+     *  Termux TerminalSession sends SIGWINCH to mShellPid (direct child). In chroot mode that child
+     *  is /system/bin/sh which ignores SIGWINCH. This wrapper catches SIGWINCH and forwards it to
+     *  the entire process group (kill -WINCH 0), reaching the inner zsh. */
+    fun ensureTermWrapper(): Boolean {
+        val scriptPath = "/data/local/tmp/chroot_term_wrapper.sh"
+        if (File(scriptPath).exists() && File(scriptPath).length() > 0) return true
+        val script = """#!/system/bin/sh
+# Run command in foreground (same process group) so SIGWINCH reaches all children.
+trap 'kill -WINCH 0 2>/dev/null' WINCH
+"${'$'}@"
+""".trimIndent()
+        return try {
+            val f = File(scriptPath)
+            f.writeText(script)
+            val chmodProc = Runtime.getRuntime().exec(arrayOf("/system/bin/su", "-c",
+                "chmod 755 $scriptPath"))
+            chmodProc.waitFor(5, TimeUnit.SECONDS)
+            f.exists() && f.length() > 0
+        } catch (e: Exception) {
+            false
+        }
+    }
+
     /** Creates the wrapper script inside chroot that sets up PATH, TERM, TMPDIR etc. for AI tools.
      *  Must write to the shared tmp bind-mount target so the script is visible inside chroot /tmp. */
     fun ensureLauncherScript(ctx: Context): Boolean {

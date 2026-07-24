@@ -127,6 +127,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var fileViewerScrollView: ScrollView
     private lateinit var fileViewerContainer: LinearLayout
     private var dirSearchQuery: String = ""
+    private lateinit var diffViewerRootContainer: LinearLayout
+    private lateinit var diffViewerTopBar: LinearLayout
     private lateinit var diffViewerScrollView: ScrollView
     private lateinit var diffViewerContainer: LinearLayout
     private lateinit var scriptsScrollView: ScrollView
@@ -375,6 +377,8 @@ class MainActivity : AppCompatActivity() {
         scriptFontSize = termFontSize
         showExtraKeys = prefs.getBoolean("pref_show_extra_keys", true)
         LinuxCommandBuilder.currentMethod = prefs.getString("linux_method", "proot") ?: "proot"
+        activeProjectName = prefs.getString("active_project_name", activeProjectName) ?: activeProjectName
+        activeProjectPath = prefs.getString("active_project_path", activeProjectPath) ?: activeProjectPath
 
         buildRootLayout()
         setContentView(drawerLayout)
@@ -467,6 +471,14 @@ class MainActivity : AppCompatActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         handleIntent(intent)
+    }
+
+    override fun onPause() {
+        super.onPause()
+        getSharedPreferences("nativecode_prefs", MODE_PRIVATE).edit()
+            .putString("active_project_name", activeProjectName)
+            .putString("active_project_path", activeProjectPath)
+            .apply()
     }
 
     private fun handleIntent(intent: Intent?) {
@@ -634,7 +646,9 @@ class MainActivity : AppCompatActivity() {
         if (::fileViewerRootContainer.isInitialized) {
             fileViewerRootContainer.visibility = View.GONE
         }
-        diffViewerScrollView.visibility = View.GONE
+        if (::diffViewerRootContainer.isInitialized) {
+            diffViewerRootContainer.visibility = View.GONE
+        }
         if (::scriptsScrollView.isInitialized) {
             scriptsScrollView.visibility = View.GONE
         }
@@ -851,7 +865,7 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        if ((::fileViewerRootContainer.isInitialized && fileViewerRootContainer.visibility == View.VISIBLE) || diffViewerScrollView.visibility == View.VISIBLE) {
+        if ((::fileViewerRootContainer.isInitialized && fileViewerRootContainer.visibility == View.VISIBLE) || (::diffViewerRootContainer.isInitialized && diffViewerRootContainer.visibility == View.VISIBLE)) {
             val prevPage = if (::fileViewerRootContainer.isInitialized && fileViewerRootContainer.visibility == View.VISIBLE) fileViewerBackPage else diffViewerBackPage
             navigateToPage(prevPage)
             return
@@ -1377,7 +1391,7 @@ class MainActivity : AppCompatActivity() {
         contentFrame.addView(gitOperationsScrollView)
         contentFrame.addView(settingsHubScrollView)
         contentFrame.addView(fileViewerRootContainer)
-        contentFrame.addView(diffViewerScrollView)
+        contentFrame.addView(diffViewerRootContainer)
         contentFrame.addView(scriptsScrollView)
         contentFrame.addView(scriptInstallLayout)
         contentFrame.addView(projectCreateScrollView)
@@ -1555,7 +1569,16 @@ class MainActivity : AppCompatActivity() {
         if (!::sessionClient.isInitialized) {
             initTerminalView()
         }
-        val sessionExec = if (LinuxCommandBuilder.currentMethod == "chroot") "/system/bin/sh" else shell
+        val isChroot = LinuxCommandBuilder.currentMethod == "chroot"
+        val sessionExec = if (isChroot) {
+            if (ChrootCommandBuilder.ensureTermWrapper()) {
+                "/data/local/tmp/chroot_term_wrapper.sh"
+            } else {
+                "/system/bin/sh"
+            }
+        } else {
+            shell
+        }
         val session = TerminalSession(sessionExec, cwd, args, env, 10000, sessionClient)
         sessionsList.add(session)
         terminalSessionTypes.add(type)
@@ -2935,6 +2958,12 @@ class MainActivity : AppCompatActivity() {
         }
         registerForContextMenu(terminalView)
         terminalViewContainer.addView(terminalView)
+        terminalViewContainer.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+            if (::terminalView.isInitialized) {
+                terminalView.requestLayout()
+                terminalView.invalidate()
+            }
+        }
         terminalWorkspaceLayout.addView(terminalViewContainer)
 
         // Full special-keys toolbar (replaces old dummy bar + attach bar)
@@ -3619,15 +3648,26 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun buildDiffViewerLayout() {
-        diffViewerScrollView = ScrollView(this).apply {
+        diffViewerRootContainer = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
             layoutParams = FrameLayout.LayoutParams(MATCH, MATCH)
             visibility = View.GONE
+            setBackgroundColor(NC.BG)
+        }
+        diffViewerTopBar = createProjectSubpageTopBar()
+        diffViewerScrollView = ScrollView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(MATCH, 0, 1f)
+            setBackgroundColor(NC.BG)
+            clipToPadding = false
+            setPadding(0, 0, 0, dp(100))
         }
         diffViewerContainer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(16))
         }
         diffViewerScrollView.addView(diffViewerContainer)
+        diffViewerRootContainer.addView(diffViewerTopBar)
+        diffViewerRootContainer.addView(diffViewerScrollView)
     }
 
     // ── Helper Sub-page Actions ──────────────────────────────────────────────
@@ -3651,7 +3691,9 @@ class MainActivity : AppCompatActivity() {
         terminalWorkspaceLayout.visibility = View.GONE
         gitOperationsScrollView.visibility = View.GONE
         settingsHubScrollView.visibility = View.GONE
-        diffViewerScrollView.visibility = View.GONE
+        if (::diffViewerRootContainer.isInitialized) {
+            diffViewerRootContainer.visibility = View.GONE
+        }
 
         if (::projectGitDiffContainer.isInitialized) projectGitDiffContainer.visibility = View.GONE
         if (::projectWorkspaceContainer.isInitialized) projectWorkspaceContainer.visibility = View.GONE
@@ -3659,11 +3701,13 @@ class MainActivity : AppCompatActivity() {
         if (::projectDirTreeContainer.isInitialized) projectDirTreeContainer.visibility = View.GONE
 
         fileViewerRootContainer.visibility = View.VISIBLE
+        fileViewerScrollView.visibility = View.VISIBLE
 
         renderFileViewerContent(name, backPage)
     }
 
     private fun renderFileViewerContent(pathStr: String, backPage: Int) {
+        fileViewerScrollView.scrollTo(0, 0)
         fileViewerContainer.removeAllViews()
 
         var targetFile = File(pathStr)
@@ -4545,23 +4589,29 @@ class MainActivity : AppCompatActivity() {
             unifiedHeader.visibility = View.GONE
             projectBottomNavigation.visibility = View.VISIBLE
             bottomNavigation.visibility = View.GONE
+            diffViewerTopBar.visibility = View.VISIBLE
+            updateProjectSubpageTopBar(diffViewerTopBar)
         } else {
             unifiedHeader.visibility = View.VISIBLE
             projectBottomNavigation.visibility = View.GONE
             bottomNavigation.visibility = View.VISIBLE
+            diffViewerTopBar.visibility = View.GONE
         }
         homeScrollView.visibility = View.GONE
         fileExplorerScrollView.visibility = View.GONE
         terminalWorkspaceLayout.visibility = View.GONE
         gitOperationsScrollView.visibility = View.GONE
         settingsHubScrollView.visibility = View.GONE
-        fileViewerScrollView.visibility = View.GONE
+        if (::fileViewerRootContainer.isInitialized) {
+            fileViewerRootContainer.visibility = View.GONE
+        }
 
         if (::projectGitDiffContainer.isInitialized) projectGitDiffContainer.visibility = View.GONE
         if (::projectWorkspaceContainer.isInitialized) projectWorkspaceContainer.visibility = View.GONE
         if (::projectSettingsContainer.isInitialized) projectSettingsContainer.visibility = View.GONE
         if (::projectDirTreeContainer.isInitialized) projectDirTreeContainer.visibility = View.GONE
 
+        diffViewerRootContainer.visibility = View.VISIBLE
         diffViewerScrollView.visibility = View.VISIBLE
         loadDiffForFile(name)
     }
@@ -4574,6 +4624,7 @@ class MainActivity : AppCompatActivity() {
     private data class ParsedDiffRow(val type: Int, val old: String, val new_: String, val code: String)
 
     private fun loadDiffForFile(name: String) {
+        diffViewerScrollView.scrollTo(0, 0)
         diffViewerContainer.removeAllViews()
         val loadingTv = TextView(this).apply {
             text = "Loading diff for $name..."
@@ -5742,8 +5793,30 @@ class MainActivity : AppCompatActivity() {
 
     private fun lineNumCell(num: String) = TextView(this).apply { text = num; textSize = 11f; setTextColor(NC.OUTLINE); typeface = Typeface.MONOSPACE; gravity = Gravity.END; setPadding(dp(6), 0, dp(6), 0); layoutParams = LinearLayout.LayoutParams(dp(36), WRAP) }
     private fun textBadge(text: String, bg: Int, fg: Int) = TextView(this).apply { this.text = text; textSize = 10f; setTextColor(fg); typeface = Typeface.MONOSPACE; background = roundedBg(bg, fg, dp(4)); setPadding(dp(6), dp(2), dp(6), dp(2)) }
-    private fun primaryBtn(t: String) = TextView(this).apply { text = t; textSize = 13f; setTextColor(Color.WHITE); typeface = Typeface.DEFAULT_BOLD; gravity = Gravity.CENTER; background = roundedBg(NC.PRIMARY_CON, NC.PRIMARY_CON, dp(20)); setPadding(dp(20), dp(10), dp(20), dp(10)) }
-    private fun outlineBtn(t: String) = TextView(this).apply { text = t; textSize = 13f; setTextColor(NC.ON_SURFACE); gravity = Gravity.CENTER; background = roundedBg(NC.SURFACE, NC.BORDER, dp(20)); setPadding(dp(20), dp(10), dp(20), dp(10)) }
+    private fun primaryBtn(t: String) = TextView(this).apply {
+        text = t; textSize = 13f; setTextColor(Color.parseColor("#0A0A0A")); typeface = Typeface.MONOSPACE; gravity = Gravity.CENTER
+        background = cyberBrutalistBg(
+            fillColor = Color.parseColor("#3DDC84"),
+            strokeColor = Color.parseColor("#3DDC84"),
+            shadowColor = Color.parseColor("#393939"),
+            offsetDp = 6,
+            cornerRadiusDp = 0,
+            rightFaceColor = Color.parseColor("#3C4A3F")
+        )
+        setPadding(dp(20), dp(10), dp(20), dp(10))
+    }
+    private fun outlineBtn(t: String) = TextView(this).apply {
+        text = t; textSize = 13f; setTextColor(Color.parseColor("#FAFAFA")); typeface = Typeface.MONOSPACE; gravity = Gravity.CENTER
+        background = cyberBrutalistBg(
+            fillColor = Color.parseColor("#1E1E1E"),
+            strokeColor = Color.parseColor("#3DDC84"),
+            shadowColor = Color.parseColor("#393939"),
+            offsetDp = 6,
+            cornerRadiusDp = 0,
+            rightFaceColor = Color.parseColor("#3C4A3F")
+        )
+        setPadding(dp(20), dp(10), dp(20), dp(10))
+    }
     private fun spacer(dp_: Int) = View(this).apply { layoutParams = LinearLayout.LayoutParams(MATCH, dp(dp_)) }
     private fun dp(v: Int) = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v.toFloat(), resources.displayMetrics).toInt()
     private fun roundedBg(fill: Int, stroke: Int, r: Int) = GradientDrawable().apply { shape = GradientDrawable.RECTANGLE; setColor(fill); setStroke(dp(1), stroke); cornerRadius = r.toFloat() }
@@ -8482,7 +8555,16 @@ class MainActivity : AppCompatActivity() {
             override fun logStackTrace(tag: String, e: java.lang.Exception) { Log.e(tag, "Stacktrace", e) }
         }
 
-        val sessionExec = if (LinuxCommandBuilder.currentMethod == "chroot") "/system/bin/sh" else shell
+        val isChroot = LinuxCommandBuilder.currentMethod == "chroot"
+        val sessionExec = if (isChroot) {
+            if (ChrootCommandBuilder.ensureTermWrapper()) {
+                "/data/local/tmp/chroot_term_wrapper.sh"
+            } else {
+                "/system/bin/sh"
+            }
+        } else {
+            shell
+        }
         val session = TerminalSession(sessionExec, cwd, args, env, 10000, sessionClient)
         workspaceSessions.add(session)
         workspaceTabNames.add(type)
@@ -8920,6 +9002,12 @@ class MainActivity : AppCompatActivity() {
         }
         workspaceTerminalView.setTerminalViewClient(workspaceViewClient)
         termViewContainer.addView(workspaceTerminalView)
+        termViewContainer.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+            if (::workspaceTerminalView.isInitialized) {
+                workspaceTerminalView.requestLayout()
+                workspaceTerminalView.invalidate()
+            }
+        }
         workspaceTerminalContainer.addView(termViewContainer)
 
         workspaceKeyboardToolbar = buildSpecialKeysToolbar(
@@ -9496,6 +9584,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun openProjectDirTree() {
         projectDirTreeLayout.removeAllViews()
+        projectDirTreeScrollView.scrollTo(0, 0)
         updateProjectSubpageTopBar(projectDirTreeTopBar)
 
         // Directory page header

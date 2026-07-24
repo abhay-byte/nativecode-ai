@@ -18,12 +18,11 @@ object ProjectPathResolver {
         } else {
             "${ctx.filesDir}/usr/var/lib/proot-distro/containers/debian/rootfs"
         }
-        val resolved = if (projectPath.startsWith("/")) {
-            rootfs + projectPath
+        return if (projectPath.startsWith("/")) {
+            File(rootfs, projectPath.removePrefix("/"))
         } else {
-            "$rootfs/home/flux/$projectPath"
+            File(rootfs, "home/flux/$projectPath")
         }
-        return File(resolved)
     }
 
     /** Inverse: given an Android host [file], returns the Debian-internal path.
