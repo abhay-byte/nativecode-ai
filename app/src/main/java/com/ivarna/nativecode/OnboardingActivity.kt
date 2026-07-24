@@ -48,6 +48,10 @@ class OnboardingActivity : AppCompatActivity() {
     private var isCliToolsSetupStarted = false
     private var enableDebianCustomization = true
 
+    // ── Linux isolation method selected on page 3 ─────────────────────────────
+    // "proot" (default, rootless) or "chroot" (requires KernelSU/Magisk root)
+    private var selectedIsolationMethod = "proot"
+
     // page 4 (Debian Base) views
     private lateinit var baseStatusText: TextView
     private lateinit var baseProgressBar: ProgressBar
@@ -109,7 +113,8 @@ class OnboardingActivity : AppCompatActivity() {
         setContentView(rootLayout)
 
         deployScripts()
-        showPage(0)
+        val startPage = intent.getIntExtra("target_page", 0)
+        showPage(startPage)
     }
 
     private fun showPage(index: Int) {
@@ -551,6 +556,34 @@ class OnboardingActivity : AppCompatActivity() {
         val spacer = View(this).apply { layoutParams = LinearLayout.LayoutParams(MATCH, 0, 1f) }
         root.addView(spacer)
 
+        // Helper to update selection state of the two method cards
+        fun updateIsolationCardSelections(selectedMethod: String,
+                prootCardRef: LinearLayout, chrootCardRef: LinearLayout) {
+            if (selectedMethod == "proot") {
+                prootCardRef.background = cyberBrutalistBg(
+                    fillColor = NC.SURFACE_CONTAINER, strokeColor = NC.PRIMARY,
+                    shadowColor = NC.SURFACE_BRIGHT, offsetDp = 6,
+                    cornerRadiusDp = 0, rightFaceColor = NC.OUTLINE_VAR)
+                prootCardRef.alpha = 1f
+                chrootCardRef.background = cyberBrutalistBg(
+                    fillColor = NC.SURFACE_LOW, strokeColor = NC.BORDER,
+                    shadowColor = NC.SURFACE_BRIGHT, offsetDp = 6,
+                    cornerRadiusDp = 0, rightFaceColor = NC.OUTLINE_VAR)
+                chrootCardRef.alpha = 0.65f
+            } else {
+                chrootCardRef.background = cyberBrutalistBg(
+                    fillColor = NC.SURFACE_CONTAINER, strokeColor = NC.SECONDARY,
+                    shadowColor = NC.SURFACE_BRIGHT, offsetDp = 6,
+                    cornerRadiusDp = 0, rightFaceColor = NC.OUTLINE_VAR)
+                chrootCardRef.alpha = 1f
+                prootCardRef.background = cyberBrutalistBg(
+                    fillColor = NC.SURFACE_LOW, strokeColor = NC.BORDER,
+                    shadowColor = NC.SURFACE_BRIGHT, offsetDp = 6,
+                    cornerRadiusDp = 0, rightFaceColor = NC.OUTLINE_VAR)
+                prootCardRef.alpha = 0.65f
+            }
+        }
+
         // Option A: PROOT (RECOMMENDED)
         val prootCard = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -564,6 +597,8 @@ class OnboardingActivity : AppCompatActivity() {
             )
             setPadding(dp(20), dp(18), dp(20), dp(18))
             layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(16) }
+            isClickable = true
+            isFocusable = true
         }
         val prootTop = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -596,7 +631,7 @@ class OnboardingActivity : AppCompatActivity() {
         prootCard.addView(prootDesc)
         root.addView(prootCard)
 
-        // Option B: CHROOT (Coming soon)
+        // Option B: CHROOT (Root Required via KernelSU/Magisk)
         val chrootCard = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             background = cyberBrutalistBg(
@@ -610,6 +645,8 @@ class OnboardingActivity : AppCompatActivity() {
             setPadding(dp(20), dp(18), dp(20), dp(18))
             alpha = 0.65f
             layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
+            isClickable = true
+            isFocusable = true
         }
         val chrootTop = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -626,14 +663,14 @@ class OnboardingActivity : AppCompatActivity() {
             setTextColor(NC.ON_SURFACE)
             typeface = Typeface.DEFAULT_BOLD
         }
-        val chrootBadge = textBadge("COMING SOON", NC.SURFACE_HIGHEST, NC.SECONDARY)
+        val chrootBadge = textBadge("ROOT REQUIRED", NC.SURFACE_HIGHEST, NC.SECONDARY)
         chrootTop.addView(chrootIcon); chrootTop.addView(chrootTitle)
         chrootTop.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(0, 1, 1f) })
         chrootTop.addView(chrootBadge)
         chrootCard.addView(chrootTop)
 
         val chrootDesc = TextView(this).apply {
-            text = "Full system performance. Requires root access on your Android device. Direct host hardware mappings and raw speed."
+            text = "Kernel-level isolation via Linux chroot(2). Requires KernelSU or Magisk root. Maximum hardware compatibility, native glibc performance."
             textSize = 13f
             setTextColor(NC.ON_SURF_VAR)
             setLineSpacing(dp(2).toFloat(), 1.25f)
@@ -641,6 +678,16 @@ class OnboardingActivity : AppCompatActivity() {
         }
         chrootCard.addView(chrootDesc)
         root.addView(chrootCard)
+
+        // Wire up click listeners for card selection
+        prootCard.setOnClickListener {
+            selectedIsolationMethod = "proot"
+            updateIsolationCardSelections("proot", prootCard, chrootCard)
+        }
+        chrootCard.setOnClickListener {
+            selectedIsolationMethod = "chroot"
+            updateIsolationCardSelections("chroot", prootCard, chrootCard)
+        }
 
         // Customization Script Toggle Card (Cyber-Brutalist Design)
         val customToggleCard = LinearLayout(this).apply {
@@ -817,8 +864,81 @@ class OnboardingActivity : AppCompatActivity() {
     }
 
     private fun runDebianBaseSetup() {
+        // ── CHROOT path (KernelSU / Magisk root required) ────────────────────
+        if (selectedIsolationMethod == "chroot") {
+            updateBaseStatus("[CHROOT] Checking root access...")
+            executor.execute {
+                val rootOk = RootShell.isRootAvailable()
+                if (!rootOk) {
+                    updateBaseStatus("[CHROOT] ERROR: Root not available. Grant superuser to NativeCode in KernelSU/Magisk manager, then retry.")
+                    mainHandler.post {
+                        if (::baseProgressBar.isInitialized) {
+                            baseProgressBar.isIndeterminate = false
+                            baseProgressBar.progress = 0
+                        }
+                    }
+                    return@execute
+                }
+                updateBaseStatus("[CHROOT] Root confirmed. Running setup_debian13_chroot.sh...")
+                RootShell.executeScriptAsset(
+                    context = this,
+                    assetName = "scripts/chroot/setup_debian13_chroot.sh",
+                    onLine = { line -> updateBaseStatus(line) },
+                    onDone = { code ->
+                        if (code == 0) {
+                            // Step E: Provision Debian packages (runs inside chroot as root)
+                            updateBaseStatus("[CHROOT] E. Provisioning Debian packages...")
+                            copyAndRunInChroot(
+                                assetName = "scripts/setup_debian_family.sh",
+                                scriptName = "setup_debian_family.sh",
+                                cmd = "bash /tmp/setup_debian_family.sh"
+                            ) { codeE ->
+                                if (codeE != 0) {
+                                    updateBaseStatus("[CHROOT] Debian family setup failed (exit $codeE).")
+                                    return@copyAndRunInChroot
+                                }
+                                // Step F: Hardware acceleration
+                                updateBaseStatus("[CHROOT] F. Configuring Hardware Acceleration...")
+                                copyAndRunInChroot(
+                                    assetName = "scripts/setup_hw_accel_debian.sh",
+                                    scriptName = "setup_hw_accel_debian.sh",
+                                    cmd = "env FLUX_GPU=virgl bash /tmp/setup_hw_accel_debian.sh"
+                                ) { codeF ->
+                                    if (codeF != 0) {
+                                        updateBaseStatus("[CHROOT] HW accel setup failed (exit $codeF). Continuing...")
+                                    }
+                                    // Step G: Customization (optional)
+                                    if (enableDebianCustomization) {
+                                        updateBaseStatus("[CHROOT] G. Customizing Guest Environment...")
+                                        copyAndRunInChroot(
+                                            assetName = "scripts/setup_customization_debian.sh",
+                                            scriptName = "setup_customization_debian.sh",
+                                            cmd = "env FLUX_THEME=dark bash /tmp/setup_customization_debian.sh"
+                                        ) { codeG ->
+                                            if (codeG != 0) {
+                                                updateBaseStatus("[CHROOT] Customization failed (exit $codeG). Continuing...")
+                                            }
+                                            finishChrootBaseSetup()
+                                        }
+                                    } else {
+                                        updateBaseStatus("[CHROOT] G. Skipping Guest Customization (Toggle Off)...")
+                                        finishChrootBaseSetup()
+                                    }
+                                }
+                            }
+                        } else {
+                            updateBaseStatus("[CHROOT] Setup failed with exit code $code. Check logs above.")
+                        }
+                    }
+                )
+            }
+            return
+        }
+
+        // ── PROOT path (default, rootless) ────────────────────────────────────
         executor.execute {
             try {
+                // Persist linux_method = proot on completion
                 updateBaseStatus("A. Preparing Directories...")
                 val usrDir = File(filesDir, "usr")
                 val tmpDir = File(usrDir, "tmp")
@@ -907,6 +1027,9 @@ class OnboardingActivity : AppCompatActivity() {
                     updateBaseStatus("G. Skipping Guest Customization (Toggle Off)...")
                 }
 
+                // Persist linux_method = proot
+                getSharedPreferences("nativecode_prefs", MODE_PRIVATE)
+                    .edit().putString("linux_method", "proot").apply()
                 updateBaseStatus("Debian Base Setup Successful!")
                 mainHandler.post {
                     if (::baseProgressBar.isInitialized) {
@@ -1160,8 +1283,57 @@ class OnboardingActivity : AppCompatActivity() {
                 updateCliStatus("Deploying CLI Tools setup script...")
                 val usrDir = File(filesDir, "usr")
                 val cliScript = File(File(usrDir, "tmp"), "setup_cli_tools.sh")
+                cliScript.parentFile?.mkdirs()
                 assets.open("scripts/setup_cli_tools.sh").use { input -> FileOutputStream(cliScript).use { input.copyTo(it) } }
                 cliScript.setExecutable(true)
+
+                if (selectedIsolationMethod == "chroot") {
+                    updateCliStatus("[CHROOT] Running CLI tools setup inside Debian 13 Chroot...")
+                    // Stage in app-private dir (app has write access), then cp as root into chroot/tmp
+                    val stageDir = File(filesDir, "staged_scripts").also { it.mkdirs() }
+                    val staged = File(stageDir, "setup_cli_tools.sh")
+                    assets.open("scripts/setup_cli_tools.sh").use { input ->
+                        FileOutputStream(staged).use { input.copyTo(it) }
+                    }
+                    staged.setReadable(true, false)
+                    val chrootTmpPath = "/data/local/tmp/chrootDebian13/tmp"
+                    val copyCode = RootShell.executeSync(
+                        "mkdir -p $chrootTmpPath && cp ${staged.absolutePath} $chrootTmpPath/setup_cli_tools.sh && chmod +x $chrootTmpPath/setup_cli_tools.sh"
+                    )
+                    if (copyCode != 0) {
+                        updateCliStatus("[CHROOT] Error copying setup_cli_tools.sh into chroot (exit $copyCode).")
+                        mainHandler.post {
+                            if (::cliProgressBar.isInitialized) { cliProgressBar.isIndeterminate = false; cliProgressBar.progress = 0 }
+                            if (::cliNextBtn.isInitialized) { cliNextBtn.isEnabled = true; cliNextBtn.alpha = 1f }
+                        }
+                        return@execute
+                    }
+
+
+                    RootShell.executeInChroot(
+                        cmd = "bash /tmp/setup_cli_tools.sh",
+                        user = "root",
+                        onLine = { line -> updateCliStatus(line) },
+                        onDone = { code ->
+                            if (code == 0) {
+                                updateCliStatus("[CHROOT] AI CLI Tools Provisioned Successfully!")
+                            } else {
+                                updateCliStatus("[CHROOT] CLI Tools Setup completed with exit code $code")
+                            }
+                            mainHandler.post {
+                                if (::cliProgressBar.isInitialized) {
+                                    cliProgressBar.isIndeterminate = false
+                                    cliProgressBar.progress = 100
+                                }
+                                if (::cliNextBtn.isInitialized) {
+                                    cliNextBtn.isEnabled = true
+                                    cliNextBtn.alpha = 1f
+                                }
+                            }
+                        }
+                    )
+                    return@execute
+                }
 
                 updateCliStatus("Running installation inside Debian (NVM, Node v26, opencode-ai, @openai/codex)...")
                 val runCode = runShellCommand(arrayOf(
@@ -1367,15 +1539,95 @@ class OnboardingActivity : AppCompatActivity() {
 
     // ── Helper execution scripts ──────────────────────────────────────────────
 
+    /** Persist linux_method=chroot, unlock Next button after all chroot setup steps finish. */
+    private fun finishChrootBaseSetup() {
+        getSharedPreferences("nativecode_prefs", MODE_PRIVATE)
+            .edit().putString("linux_method", "chroot").apply()
+        updateBaseStatus("[CHROOT] Setup complete! linux_method=chroot saved.")
+        mainHandler.post {
+            if (::baseProgressBar.isInitialized) {
+                baseProgressBar.isIndeterminate = false
+                baseProgressBar.progress = 100
+            }
+            if (::baseNextBtn.isInitialized) {
+                baseNextBtn.isEnabled = true
+                baseNextBtn.alpha = 1f
+            }
+        }
+    }
+
+    /**
+     * Copy an asset script into the chroot /tmp, make it executable, then run it
+     * inside the chroot as root. [onDone] is called on the main thread with the exit code.
+     */
+    private fun copyAndRunInChroot(
+        assetName: String,
+        scriptName: String,
+        cmd: String,
+        onDone: (Int) -> Unit
+    ) {
+        executor.execute {
+            // 1. Write asset into app-private staging dir (app has write access here)
+            val stageDir = File(filesDir, "staged_scripts").also { it.mkdirs() }
+            val staged = File(stageDir, scriptName)
+            try {
+                assets.open(assetName).use { input ->
+                    java.io.FileOutputStream(staged).use { input.copyTo(it) }
+                }
+                staged.setReadable(true, false)
+            } catch (e: Exception) {
+                Log.e("Onboarding", "copyAndRunInChroot stage failed: ${e.message}")
+                updateBaseStatus("[CHROOT] Error staging $scriptName: ${e.message}")
+                mainHandler.post { onDone(-1) }
+                return@execute
+            }
+
+            // 2. As root: mkdir chroot/tmp, cp staged script in, chmod +x, then run
+            val chrootTmpPath = "/data/local/tmp/chrootDebian13/tmp"
+            val copyCmd = "mkdir -p $chrootTmpPath && cp ${staged.absolutePath} $chrootTmpPath/$scriptName && chmod +x $chrootTmpPath/$scriptName"
+            val copyCode = RootShell.executeSync(copyCmd)
+            if (copyCode != 0) {
+                updateBaseStatus("[CHROOT] Error copying $scriptName into chroot (exit $copyCode).")
+                mainHandler.post { onDone(-1) }
+                return@execute
+            }
+
+            // 3. Run inside chroot
+            RootShell.executeInChroot(
+                cmd = cmd,
+                user = "root",
+                onLine = { line -> updateBaseStatus(line) },
+                onDone = onDone
+            )
+        }
+    }
+
     private fun deployScripts() {
         try {
             val homeDir = File(filesDir, "home").also { it.mkdirs() }
-            val scripts = arrayOf("setup_termux.sh", "termux_tweaks.sh", "flux_install.sh", "start_gui.sh", "stop_gui.sh", "setup_cli_tools.sh")
+            val scripts = arrayOf(
+                "setup_termux.sh",
+                "termux_tweaks.sh",
+                "flux_install.sh",
+                "start_gui.sh",
+                "stop_gui.sh",
+                "setup_cli_tools.sh",
+                "setup_debian13_chroot.sh",
+                "uninstall_debian13_chroot.sh"
+            )
             for (script in scripts) {
-                val assetPath = if (script.contains("tweaks")) "scripts/termux_tweaks.sh" else "scripts/$script"
+                val assetPath = when {
+                    script.contains("tweaks") -> "scripts/termux_tweaks.sh"
+                    script.contains("chroot") -> "scripts/chroot/$script"
+                    else -> "scripts/$script"
+                }
                 val out = File(homeDir, script)
-                assets.open(assetPath).use { input -> FileOutputStream(out).use { input.copyTo(it) } }
-                out.setExecutable(true)
+                try {
+                    assets.open(assetPath).use { input -> FileOutputStream(out).use { input.copyTo(it) } }
+                    out.setExecutable(true)
+                } catch (e: Exception) {
+                    Log.w("Onboarding", "Script $assetPath not found in assets", e)
+                }
             }
             // Deploy font.ttf
             val termuxDir = File(homeDir, ".termux").also { it.mkdirs() }

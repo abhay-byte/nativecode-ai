@@ -17,7 +17,7 @@ handle_error() {
     echo "---------------------------------------------------"
     echo "Please check the error message above for details."
     echo "---------------------------------------------------"
-    read -p "Press Enter to acknowledge error and exit..."
+    [ -t 0 ] && read -t 5 -p "Press Enter to acknowledge error and exit..." || true
     exit 1
 }
 
@@ -71,14 +71,18 @@ if [ -n "$FLUX_THEME" ]; then
     else
         THEME_CHOICE="1"
     fi
-else
+elif [ -t 0 ]; then
     echo "------------------------------------------------"
     echo "Select Theme Preference:"
     echo "1) Dark (Default)"
     echo "2) Light"
-    read -p "Enter choice [1-2]: " THEME_CHOICE
+    read -t 5 -p "Enter choice [1-2]: " THEME_CHOICE || THEME_CHOICE="1"
     echo "------------------------------------------------"
+else
+    echo "FluxLinux: Non-interactive mode. Auto-selecting Dark Theme."
+    THEME_CHOICE="1"
 fi
+
 
 if [ "$THEME_CHOICE" == "2" ]; then
     echo "FluxLinux: Light Mode Selected."
@@ -777,6 +781,9 @@ ZSHRC="$USER_HOME/.zshrc"
 # - ZSH_DISABLE_COMPFIX (no compaudit, faster init)
 echo "FluxLinux: Writing optimized .zshrc..."
 cat > "$ZSHRC" << 'ZSHEOF'
+# Defensive TERM fallback for chroot / bare PTY environments
+export TERM="${TERM:-xterm-256color}"
+
 # PATH setup - local bin, npm global modules
 export PATH="$HOME/.local/bin:/opt/nodejs/bin:$PATH"
 
@@ -787,8 +794,11 @@ export LC_ALL=en_US.UTF-8
 # Fix XDG_RUNTIME_DIR (not set in PRoot/chroot — no systemd-logind)
 export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/tmp}"
 
-# Background visuals - don't block shell startup
-{ fastfetch --config termux; pokemon-colorscripts --no-title -r 1,2,3 } &!
+# Background visuals - don't block shell startup (guard against missing TERM)
+# Skip when FLUX_QUIET_SHELL is set (AI tool launches need clean terminal)
+if [ -z "$FLUX_QUIET_SHELL" ] && [ -n "$TERM" ] && [ -t 1 ]; then
+    { fastfetch --config termux 2>/dev/null; pokemon-colorscripts --no-title -r 1,2,3 2>/dev/null } &!
+fi
 
 # oh-my-zsh optimizations
 export ZSH="$HOME/.oh-my-zsh"
@@ -812,7 +822,17 @@ curl -fsSL https://raw.githubusercontent.com/abhay-byte/Linux_Setup/dev/config/t
 # Fastfetch and pokemon are already included in the optimized .zshrc above (backgrounded)
 
 # Set zsh as default shell for flux user
-chsh -s /bin/zsh "$CUSTOM_USER" 2>/dev/null
+if grep -q "^/bin/zsh" /etc/shells 2>/dev/null; then
+    chsh -s /bin/zsh "$CUSTOM_USER" 2>/dev/null || true
+    # Verify chsh worked; fallback to direct /etc/passwd edit if not
+    CURRENT_SHELL=$(grep "^${CUSTOM_USER}:" /etc/passwd | cut -d: -f7)
+    if [ "$CURRENT_SHELL" != "/bin/zsh" ]; then
+        echo "FluxLinux: chsh failed, patching /etc/passwd directly..."
+        sed -i "s|^${CUSTOM_USER}:[^:]*:[^:]*:[^:]*:[^:]*:[^:]*:|${CUSTOM_USER}:x:1000:100::/home/${CUSTOM_USER}:/bin/zsh|" /etc/passwd 2>/dev/null || true
+    fi
+else
+    echo "FluxLinux: WARN /bin/zsh not in /etc/shells, keeping current shell"
+fi
 
 # Fix ownership
 chown -R "$CUSTOM_USER:$CUSTOM_GROUP" "$USER_HOME/.oh-my-zsh" "$USER_HOME/.zshrc" "$USER_HOME/.local" 2>/dev/null

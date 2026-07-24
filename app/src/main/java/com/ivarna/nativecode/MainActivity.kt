@@ -344,6 +344,14 @@ class MainActivity : AppCompatActivity() {
     // History tracking for back button support
     private val pageStack = java.util.Stack<Int>()
 
+    // ── Linux isolation method ────────────────────────────────────────────────────
+    // "proot" = default (rootless) | "chroot" = kernel chroot via KernelSU/Magisk root
+    // Persisted in nativecode_prefs key "linux_method"
+    private var currentLinuxMethod = "proot"
+
+    // Chroot Debian 13 path
+    private val CHROOT_PATH = "/data/local/tmp/chrootDebian13"
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
@@ -357,20 +365,21 @@ class MainActivity : AppCompatActivity() {
         window.statusBarColor = NC.BG
         window.navigationBarColor = NC.BG
 
+        val prefs = getSharedPreferences("nativecode_prefs", MODE_PRIVATE)
         val setupCompleteFile = File(filesDir, "setup_complete")
-        if (!setupCompleteFile.exists()) {
+        val isSetupComplete = setupCompleteFile.exists() || prefs.getBoolean("onboarding_completed", false)
+        if (!isSetupComplete) {
             val intent = Intent(this, OnboardingActivity::class.java)
             intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
             startActivity(intent)
             finish()
             return
         }
-
-        val prefs = getSharedPreferences("nativecode_prefs", MODE_PRIVATE)
         termFontSize = prefs.getInt("pref_terminal_zoom", 40)
         workspaceFontSize = termFontSize
         scriptFontSize = termFontSize
         showExtraKeys = prefs.getBoolean("pref_show_extra_keys", true)
+        currentLinuxMethod = prefs.getString("linux_method", "proot") ?: "proot"
 
         buildRootLayout()
         setContentView(drawerLayout)
@@ -448,7 +457,13 @@ class MainActivity : AppCompatActivity() {
         setupProjectNavRailListener()
 
         deployScripts()
-        showHome()
+        val targetPage = intent.getIntExtra("target_page", ID_HOME)
+        if (targetPage != ID_HOME) {
+            pageStack.push(targetPage)
+            navigateToPage(targetPage)
+        } else {
+            showHome()
+        }
         onSetupComplete()
         handleIntent(intent)
     }
@@ -472,6 +487,11 @@ class MainActivity : AppCompatActivity() {
             val targetPage = it.getIntExtra("EXTRA_TARGET_PAGE", -1)
             if (targetPage != -1) {
                 navigateToPage(targetPage)
+            }
+            val createTerm = it.getStringExtra("CREATE_TERM")
+            if (createTerm != null) {
+                createNewTerminalSession(createTerm)
+                navigateToPage(ID_TERMINAL)
             }
         }
     }
@@ -1491,6 +1511,136 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    // ─────────────────────────────────────────────────────────────────────────────
+    // buildLinuxCommand — unified proot/chroot command builder
+    // Returns Pair<Array<String> args, HashMap<String,String> envMap>
+    // ─────────────────────────────────────────────────────────────────────────────
+    private fun buildLinuxCommand(
+        shellCmd: String,
+        user: String = "flux",
+        useSharedTmp: Boolean = true
+    ): Pair<Array<String>, HashMap<String, String>> {
+        val envMap = HashMap(System.getenv())
+        return when (currentLinuxMethod) {
+            "chroot" -> {
+                val runScript = "/data/local/tmp/run_debian13_root.sh"
+                // Mounts with full stdout+stderr suppression (busybox outputs to stdout on some errors)
+                val mountCmds = listOf(
+                    "busybox mount -o remount,dev,suid /data >/dev/null 2>&1 || true",
+                    "busybox mount --bind /dev $CHROOT_PATH/dev >/dev/null 2>&1 || true",
+                    "busybox mount --bind /sys $CHROOT_PATH/sys >/dev/null 2>&1 || true",
+                    "busybox mount -t proc proc $CHROOT_PATH/proc >/dev/null 2>&1 || true",
+                    "busybox mount -t devpts devpts $CHROOT_PATH/dev/pts >/dev/null 2>&1 || true",
+                    "mkdir -p $CHROOT_PATH/dev/shm && busybox mount -t tmpfs -o size=512M tmpfs $CHROOT_PATH/dev/shm >/dev/null 2>&1 || true",
+                    "mkdir -p $CHROOT_PATH/tmp && busybox mount --bind /data/data/com.ivarna.nativecode/files/usr/tmp $CHROOT_PATH/tmp >/dev/null 2>&1 || true"
+                ).joinToString("; ")
+
+                val isInteractive = shellCmd == "exec zsh" || shellCmd == "/bin/bash --login" || shellCmd.isBlank()
+
+                val cmd = if (isInteractive) {
+                    // Direct chroot into su - user for clean PTY line discipline without double echo
+                    "/system/bin/su -c \"$mountCmds; exec busybox chroot $CHROOT_PATH /bin/su - $user\""
+                } else if (user == "root" && File(runScript).exists()) {
+                    "/system/bin/su -c \"$runScript $shellCmd\""
+                } else {
+                    // Tool / non-interactive command inside chroot as user
+                    val escapedCmd = shellCmd.replace("\"", "\\\"")
+                    "/system/bin/su -c \"$mountCmds; exec busybox chroot $CHROOT_PATH /bin/su - $user -c \\\"$escapedCmd\\\"\""
+                }
+                envMap["PATH"] = "/system/bin:/system/xbin:/sbin:" + (envMap["PATH"] ?: "")
+                envMap["TERM"] = "xterm-256color"
+                envMap["HOME"] = "/home/flux"
+                envMap["LANG"] = "en_US.UTF-8"
+                envMap["LC_ALL"] = "en_US.UTF-8"
+                envMap["XDG_RUNTIME_DIR"] = "/tmp"
+                envMap["TMPDIR"] = "/tmp"
+                arrayOf("/system/bin/sh", "-c", cmd) to envMap
+            }
+
+            else -> { // proot (default)
+                val nld = applicationInfo.nativeLibraryDir
+                val shell = File(nld, "libbash.so").absolutePath
+                val sharedTmpFlag = if (useSharedTmp) "--shared-tmp" else ""
+                // Restore original behaviour: plain login for interactive shell, explicit cmd for tools
+                val args = if (shellCmd == "exec zsh" || shellCmd == "/bin/bash --login" || shellCmd.isBlank()) {
+                    arrayOf(shell, "-c",
+                        "exec python /data/data/com.ivarna.nativecode/files/usr/bin/proot-distro login debian $sharedTmpFlag --user $user")
+                } else {
+                    arrayOf(shell, "-c",
+                        "exec python /data/data/com.ivarna.nativecode/files/usr/bin/proot-distro login debian $sharedTmpFlag --user $user -- zsh -c \\\"$shellCmd\\\"")
+                }
+                envMap["PATH"] = "$nld:/data/data/com.ivarna.nativecode/files/usr/bin:/system/bin"
+                envMap["PD_PROOT_BIN"] = File(nld, "libproot.so").absolutePath
+                envMap["PROOT_LOADER"] = File(nld, "libloader.so").absolutePath
+                envMap["HOME"] = "/data/data/com.ivarna.nativecode/files/home"
+                envMap["TERM"] = "xterm-256color"
+                envMap["PREFIX"] = "/data/data/com.ivarna.nativecode/files/usr"
+                envMap["LD_LIBRARY_PATH"] = "/data/data/com.ivarna.nativecode/files/usr/lib"
+                setLdPreloadEnv(envMap)
+                envMap["TERMUX_APP__PACKAGE_NAME"] = "com.ivarna.nativecode"
+                envMap["TERMUX__PREFIX"] = "/data/data/com.ivarna.nativecode/files/usr"
+                envMap["TERMUX__HOME"] = "/data/data/com.ivarna.nativecode/files/home"
+                envMap["SSL_CERT_FILE"] = "/data/data/com.ivarna.nativecode/files/usr/etc/tls/cert.pem"
+                envMap["CURL_CA_BUNDLE"] = "/data/data/com.ivarna.nativecode/files/usr/etc/tls/cert.pem"
+                args to envMap
+            }
+        }
+
+    }
+
+    /** Creates the wrapper script inside chroot that sets up PATH, TERM, TMPDIR etc. for AI tools.
+     *  Must write to the shared tmp bind-mount target so the script is visible inside chroot /tmp. */
+    private fun ensureChrootLauncherScript(): Boolean {
+        val scriptPath = "$filesDir/usr/tmp/launch_tool.sh"
+        if (File(scriptPath).exists() && File(scriptPath).length() > 0) return true
+        val script = """#!/bin/zsh
+export PATH=/home/flux/.local/bin:/opt/nodejs/bin:/usr/local/bin:/usr/bin:/bin:/sbin:/usr/local/sbin
+export HOME=/home/flux
+export TERM=xterm-256color
+export LANG=en_US.UTF-8
+export LC_ALL=en_US.UTF-8
+export XDG_RUNTIME_DIR=/tmp
+export TMPDIR=/tmp
+export ZSH=${'$'}HOME/.oh-my-zsh
+ZSH_THEME=agnosterzak
+DISABLE_UPDATE_PROMPT=true
+DISABLE_AUTO_UPDATE=true
+ZSH_DISABLE_COMPFIX=true
+plugins=(git zsh-autosuggestions zsh-syntax-highlighting)
+source ${'$'}ZSH/oh-my-zsh.sh
+exec "${'$'}@"
+""".trimIndent()
+        return try {
+            val f = File(scriptPath)
+            f.writeText(script)
+            val chmodProc = Runtime.getRuntime().exec(arrayOf("/system/bin/su", "-c",
+                "chmod 755 $scriptPath"))
+            chmodProc.waitFor(5, java.util.concurrent.TimeUnit.SECONDS)
+            f.exists() && f.length() > 0
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    /** Returns the guest home directory for the currently active linux method. */
+    private fun guestHomeDir(): File {
+        return if (currentLinuxMethod == "chroot") {
+            File("$CHROOT_PATH/home/flux")
+        } else {
+            File(filesDir, "usr/var/lib/proot-distro/containers/debian/rootfs/home/flux")
+        }
+    }
+
+    /** Returns the human-readable linux method label. */
+    private fun linuxMethodLabel(): String {
+        return if (currentLinuxMethod == "chroot") "Chroot (Debian Trixie)" else "PRoot (Debian Trixie)"
+    }
+
+    /** Returns true if chroot is installed (marker file exists). */
+    private fun isChrootInstalled(): Boolean {
+        return File("$CHROOT_PATH/.flux_configured").exists()
+    }
+
     private fun setLdPreloadEnv(envMap: MutableMap<String, String>) {
         ensureBootstrapExtracted()
         val termuxExec = File(filesDir, "usr/lib/libtermux-exec.so")
@@ -1510,7 +1660,7 @@ class MainActivity : AppCompatActivity() {
         val nld     = applicationInfo.nativeLibraryDir
         val shell   = File(nld, "libbash.so").absolutePath
         val cwd     = File(filesDir, "home").absolutePath
-        val envInit = "export PATH=/home/flux/.local/bin:/home/flux/bin:/home/flux/.cargo/bin:\\\$PATH && export NVM_DIR=/home/flux/.nvm && [ -s /home/flux/.nvm/nvm.sh ] && . /home/flux/.nvm/nvm.sh"
+        val envInit = "export PATH=/home/flux/.local/bin:/home/flux/bin:/home/flux/.cargo/bin:/home/flux/.nvm/versions/node/v26.*/bin:/usr/local/bin:/usr/bin:/bin:\\\$PATH && export NVM_DIR=/home/flux/.nvm && [ -s /home/flux/.nvm/nvm.sh ] && . /home/flux/.nvm/nvm.sh"
         val workDir = "/home/flux"
 
         val toolCmd = when (type) {
@@ -1524,59 +1674,66 @@ class MainActivity : AppCompatActivity() {
             else          -> "exec zsh"
         }
 
-        val args = if (type == "shell") {
-            arrayOf(shell, "-c", "exec python /data/data/com.ivarna.nativecode/files/usr/bin/proot-distro login debian --shared-tmp --user flux")
+        val isChrootTool = currentLinuxMethod == "chroot" && type != "shell"
+        val shellCmd = if (type == "shell") {
+            "exec zsh"
+        } else if (isChrootTool) {
+            // For chroot tools, use the wrapper script that sets PATH, TMPDIR, etc.
+            val toolName = when (type) {
+                "opencode"    -> "opencode"
+                "codex"       -> "codex"
+                "agy"         -> "agy"
+                "claude-code" -> "claude"
+                "qwen-code"   -> "qwen"
+                "grok"        -> "grok"
+                "kiro"        -> "kiro-cli"
+                else          -> "zsh"
+            }
+            ensureChrootLauncherScript()
+            "/tmp/launch_tool.sh $toolName"
         } else {
-            arrayOf(shell, "-c", "exec python /data/data/com.ivarna.nativecode/files/usr/bin/proot-distro login debian --shared-tmp --user flux -- zsh -c \"$toolCmd\"")
+            toolCmd
         }
-
-        val envMap  = HashMap(System.getenv())
-        envMap["PATH"]                       = "$nld:/data/data/com.ivarna.nativecode/files/usr/bin:/system/bin"
-        envMap["PD_PROOT_BIN"]               = File(nld, "libproot.so").absolutePath
-        envMap["PROOT_LOADER"]               = File(nld, "libloader.so").absolutePath
-        envMap["HOME"]                       = "/data/data/com.ivarna.nativecode/files/home"
-        envMap["TERM"]                       = "xterm-256color"
-        envMap["PREFIX"]                     = "/data/data/com.ivarna.nativecode/files/usr"
-        envMap["LD_LIBRARY_PATH"]            = "/data/data/com.ivarna.nativecode/files/usr/lib"
-        setLdPreloadEnv(envMap)
-        envMap["TERMUX_APP__PACKAGE_NAME"]   = "com.ivarna.nativecode"
-        envMap["TERMUX__PREFIX"]             = "/data/data/com.ivarna.nativecode/files/usr"
-        envMap["TERMUX__HOME"]               = "/data/data/com.ivarna.nativecode/files/home"
-        envMap["SSL_CERT_FILE"]              = "/data/data/com.ivarna.nativecode/files/usr/etc/tls/cert.pem"
-        envMap["CURL_CA_BUNDLE"]             = "/data/data/com.ivarna.nativecode/files/usr/etc/tls/cert.pem"
+        val (args, envMap) = buildLinuxCommand(shellCmd)
         val env = envMap.map { "${it.key}=${it.value}" }.toTypedArray()
-
-        if (::sessionClient.isInitialized) {
-            val session = TerminalSession(shell, cwd, args, env, 10000, sessionClient)
-            sessionsList.add(session)
-            terminalSessionTypes.add(type)
-            switchTerminalSession(sessionsList.size - 1)
-            updateAppTerminalService()
+        if (!::sessionClient.isInitialized) {
+            initTerminalView()
         }
+        val sessionExec = if (currentLinuxMethod == "chroot") "/system/bin/sh" else shell
+        val session = TerminalSession(sessionExec, cwd, args, env, 10000, sessionClient)
+        sessionsList.add(session)
+        terminalSessionTypes.add(type)
+        switchTerminalSession(sessionsList.size - 1)
+        updateAppTerminalService()
     }
+
 
     private fun switchTerminalSession(index: Int) {
         if (index < 0 || index >= sessionsList.size) return
         activeSessionIndex = index
         val session = sessionsList[index]
         terminalSession = session
-        terminalView.attachSession(session)
-        terminalView.onScreenUpdated()
-        terminalView.requestFocus()
 
-        if (::terminalToolSelectorScrollView.isInitialized) {
-            terminalToolSelectorScrollView.visibility = View.GONE
+        mainHandler.post {
+            if (::terminalToolSelectorScrollView.isInitialized) {
+                terminalToolSelectorScrollView.visibility = View.GONE
+            }
+            if (::terminalViewContainer.isInitialized) {
+                terminalViewContainer.visibility = View.VISIBLE
+            }
+            if (::terminalKeyboardToolbar.isInitialized) {
+                terminalKeyboardToolbar.visibility = if (showExtraKeys) View.VISIBLE else View.GONE
+            }
+            if (::toggleExtraKeysBtn.isInitialized) {
+                toggleExtraKeysBtn.visibility = View.VISIBLE
+            }
+            terminalView.attachSession(session)
+            terminalView.onScreenUpdated()
+            terminalView.isFocusable = true
+            terminalView.isFocusableInTouchMode = true
+            terminalView.requestFocus()
+            updateSidebarTerminalsList()
         }
-        if (::terminalViewContainer.isInitialized) {
-            terminalViewContainer.visibility = View.VISIBLE
-        }
-        if (::terminalKeyboardToolbar.isInitialized) {
-            terminalKeyboardToolbar.visibility = if (showExtraKeys) View.VISIBLE else View.GONE
-        }
-        if (::toggleExtraKeysBtn.isInitialized) {
-            toggleExtraKeysBtn.visibility = View.VISIBLE
-        }
-        updateSidebarTerminalsList()
     }
 
     private fun closeTerminalSession(index: Int) {
@@ -1739,33 +1896,6 @@ class MainActivity : AppCompatActivity() {
                     setMargins(dp(4), dp(4), dp(4), dp(4))
                 }
                 setOnClickListener { createNewTerminalSession(tool.type) }
-                setOnTouchListener { v, event ->
-                    when (event.action) {
-                        MotionEvent.ACTION_DOWN -> {
-                            v.translationX = dp(2).toFloat()
-                            v.translationY = dp(2).toFloat()
-                            v.background = cyberBrutalistBg(
-                                fillColor = NC.SURFACE_CONTAINER,
-                                strokeColor = NC.PRIMARY,
-                                shadowColor = NC.SHADOW_DARK,
-                                offsetDp = 2,
-                                cornerRadiusDp = 0
-                            )
-                        }
-                        MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                            v.translationX = 0f
-                            v.translationY = 0f
-                            v.background = cyberBrutalistBg(
-                                fillColor = NC.SURFACE_LOW,
-                                strokeColor = NC.OUTLINE_VAR,
-                                shadowColor = NC.SHADOW_DARK,
-                                offsetDp = 4,
-                                cornerRadiusDp = 0
-                            )
-                        }
-                    }
-                    false
-                }
             }
 
             val iconSize = dp(64)
@@ -2561,7 +2691,7 @@ class MainActivity : AppCompatActivity() {
         try {
             val ext = contentResolver.getType(uri)?.substringAfterLast('/')?.substringBefore(';') ?: "jpg"
             val fname = "attach_${System.currentTimeMillis()}.$ext"
-            val guestHomeDir = File(filesDir, "usr/var/lib/proot-distro/containers/debian/rootfs/home/flux")
+            val guestHomeDir = guestHomeDir()
             val targetDir = if (guestHomeDir.exists() && guestHomeDir.isDirectory) guestHomeDir else File(filesDir, "home").also { it.mkdirs() }
             val destFile = File(targetDir, fname)
             contentResolver.openInputStream(uri)?.use { inp ->
@@ -3281,12 +3411,12 @@ class MainActivity : AppCompatActivity() {
         )
 
         for ((name, desc) in hostScripts) {
-            scriptsLayout.addView(buildScriptCard(name, desc, false))
+            scriptsLayout.addView(buildScriptCard(name, desc, listOf("RUN ON HOST" to "host")))
         }
 
         scriptsLayout.addView(spacer(16))
 
-        // --- Guest Scripts Section ---
+        // --- Guest (Debian) Scripts Section ---
         val guestHeader = TextView(this).apply {
             text = "Guest (Debian Container) Scripts"
             textSize = 14f
@@ -3296,6 +3426,15 @@ class MainActivity : AppCompatActivity() {
         }
         scriptsLayout.addView(guestHeader)
 
+        val guestSubHeader = TextView(this).apply {
+            text = "These scripts configure Debian environment and run on both PRoot and Chroot."
+            textSize = 11f
+            setTextColor(NC.ON_SURF_VAR)
+            typeface = Typeface.MONOSPACE
+            setPadding(0, 0, 0, dp(8))
+        }
+        scriptsLayout.addView(guestSubHeader)
+
         val guestScripts = arrayOf(
             "setup_debian_family.sh" to "Create users and VNC startup configurations in guest.",
             "setup_customization_debian.sh" to "Apply dark themes and custom packages inside Debian guest.",
@@ -3304,20 +3443,42 @@ class MainActivity : AppCompatActivity() {
         )
 
         for ((name, desc) in guestScripts) {
-            scriptsLayout.addView(buildScriptCard(name, desc, true))
+            scriptsLayout.addView(buildScriptCard(name, desc, listOf("RUN IN PROOT" to "proot", "RUN IN CHROOT" to "chroot_guest")))
+        }
+
+        scriptsLayout.addView(spacer(16))
+
+        // --- Chroot Host Scripts Section ---
+        val chrootHeader = TextView(this).apply {
+            text = "Chroot (KernelSU / Magisk Root) Scripts"
+            textSize = 14f
+            setTextColor(NC.SECONDARY)
+            typeface = Typeface.DEFAULT_BOLD
+            setPadding(0, dp(8), 0, dp(8))
+        }
+        scriptsLayout.addView(chrootHeader)
+
+        val chrootScripts = arrayOf(
+            "setup_debian13_chroot.sh" to "Install Debian 13 (Trixie) Chroot environment (Requires Root).",
+            "uninstall_debian13_chroot.sh" to "Uninstall Debian 13 Chroot environment and unmount all filesystems."
+        )
+
+        for ((name, desc) in chrootScripts) {
+            scriptsLayout.addView(buildScriptCard(name, desc, listOf("RUN CHROOT SCRIPT (ROOT)" to "chroot_host")))
         }
     }
 
-    private fun buildScriptCard(name: String, desc: String, runInDebian: Boolean): View {
+    private fun buildScriptCard(
+        name: String,
+        desc: String,
+        actions: List<Pair<String, String>>
+    ): View {
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             background = roundedBg(NC.SURFACE, NC.BORDER, dp(12))
             setPadding(dp(16))
             layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply {
                 bottomMargin = dp(12)
-            }
-            setOnClickListener {
-                runScriptInTerminal(name, runInDebian)
             }
 
             val title = TextView(this@MainActivity).apply {
@@ -3331,9 +3492,39 @@ class MainActivity : AppCompatActivity() {
                 text = desc
                 textSize = 12f
                 setTextColor(NC.ON_SURF_VAR)
+                setPadding(0, 0, 0, dp(10))
             }
             addView(title)
             addView(descTv)
+
+            val actionRow = LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.HORIZONTAL
+            }
+            for ((label, mode) in actions) {
+                val btn = TextView(this@MainActivity).apply {
+                    text = label
+                    textSize = 11f
+                    setTextColor(Color.WHITE)
+                    typeface = Typeface.DEFAULT_BOLD
+                    gravity = Gravity.CENTER
+                    background = cyberBrutalistBg(
+                        fillColor = if (mode.contains("chroot")) NC.SURFACE_CONTAINER else NC.PRIMARY,
+                        strokeColor = NC.OUTLINE_VAR,
+                        shadowColor = NC.SHADOW_DARK,
+                        offsetDp = 3,
+                        cornerRadiusDp = 4
+                    )
+                    setPadding(dp(12), dp(6), dp(12), dp(6))
+                    layoutParams = LinearLayout.LayoutParams(WRAP, WRAP).apply {
+                        rightMargin = dp(10)
+                    }
+                    setOnClickListener {
+                        runScriptInTerminal(name, mode)
+                    }
+                }
+                actionRow.addView(btn)
+            }
+            addView(actionRow)
         }
     }
 
@@ -3366,37 +3557,24 @@ class MainActivity : AppCompatActivity() {
             setTextColor(NC.ON_SURFACE)
             typeface = Typeface.DEFAULT_BOLD
         }
+
         topBar.addView(scriptInstallBackBtn)
         topBar.addView(titleTv)
         scriptInstallLayout.addView(topBar)
 
         scriptInstallViewContainer = FrameLayout(this).apply {
-            setBackgroundColor(Color.BLACK)
             layoutParams = LinearLayout.LayoutParams(MATCH, 0, 1f)
         }
 
         scriptInstallTerminalView = TerminalView(this, null).apply {
-            isFocusable = false
-            isFocusableInTouchMode = false
-            setOnTouchListener { _, _ -> true }
-            try {
-                val fontFile = File(filesDir, "home/.termux/font.ttf")
-                val tf = if (fontFile.exists()) {
-                    Typeface.createFromFile(fontFile)
-                } else {
-                    Typeface.createFromAsset(assets, "fonts/font.ttf")
-                }
-                setTypeface(tf)
-            } catch (e: Exception) {
-                Log.e("Terminal", "Failed to set custom typeface on script view", e)
-            }
+            layoutParams = FrameLayout.LayoutParams(MATCH, MATCH)
         }
 
         scriptInstallViewContainer.addView(scriptInstallTerminalView)
         scriptInstallLayout.addView(scriptInstallViewContainer)
     }
 
-    private fun runScriptInTerminal(scriptName: String, runInDebian: Boolean) {
+    private fun runScriptInTerminal(scriptName: String, runMode: String = "proot") {
         scriptInstallTerminalView.setTextSize(scriptFontSize)
 
         // Ensure all scripts are deployed to files/home
@@ -3408,7 +3586,11 @@ class MainActivity : AppCompatActivity() {
         val scriptFile = File(cwd, scriptName)
         if (!scriptFile.exists()) {
             try {
-                val assetPath = if (scriptName.contains("tweaks")) "scripts/termux_tweaks.sh" else "scripts/$scriptName"
+                val assetPath = when {
+                    scriptName.contains("tweaks") -> "scripts/termux_tweaks.sh"
+                    scriptName.contains("chroot") -> "scripts/chroot/$scriptName"
+                    else -> "scripts/$scriptName"
+                }
                 assets.open(assetPath).use { input -> FileOutputStream(scriptFile).use { input.copyTo(it) } }
                 scriptFile.setExecutable(true)
             } catch (e: Exception) {
@@ -3416,29 +3598,54 @@ class MainActivity : AppCompatActivity() {
             }
         }
         val scriptPath = scriptFile.absolutePath
-        val args = if (runInDebian) {
-            arrayOf(
-                shell,
-                "-c",
-                "exec python /data/data/com.ivarna.nativecode/files/usr/bin/proot-distro login debian --shared-tmp -- bash /data/data/com.ivarna.nativecode/files/home/$scriptName"
-            )
-        } else {
-            arrayOf(shell, scriptPath)
+        val args: Array<String>
+        val envMap: HashMap<String, String>
+
+        when (runMode) {
+            "chroot", "chroot_host" -> {
+                // Host-level chroot script (setup or uninstall) executed via explicit /system/bin/su
+                args = arrayOf("/system/bin/sh", "-c", "/system/bin/su -c \"sh $scriptPath\"")
+                envMap = HashMap(System.getenv()).apply {
+                    put("PATH", "/system/bin:/system/xbin:/sbin:$nld:/data/data/com.ivarna.nativecode/files/usr/bin")
+                    put("HOME", "/data/data/com.ivarna.nativecode/files/home")
+                    put("TERM", "xterm-256color")
+                }
+            }
+            "chroot_guest" -> {
+                // Guest script executed inside Debian Chroot container
+                val stageCmd = "mkdir -p /data/local/tmp/chrootDebian13/tmp && cp $scriptPath /data/local/tmp/chrootDebian13/tmp/$scriptName && chmod +x /data/local/tmp/chrootDebian13/tmp/$scriptName"
+                val runCmd = if (File("/data/local/tmp/run_debian13_root.sh").exists()) {
+                    "/data/local/tmp/run_debian13_root.sh bash /tmp/$scriptName"
+                } else {
+                    "busybox mount -o remount,dev,suid /data 2>/dev/null; busybox mount --bind /dev /data/local/tmp/chrootDebian13/dev 2>/dev/null; busybox mount --bind /sys /data/local/tmp/chrootDebian13/sys 2>/dev/null; busybox mount -t proc proc /data/local/tmp/chrootDebian13/proc 2>/dev/null; busybox mount -t devpts devpts /data/local/tmp/chrootDebian13/dev/pts 2>/dev/null; busybox chroot /data/local/tmp/chrootDebian13 /bin/su - root -c \"bash /tmp/$scriptName\""
+                }
+                args = arrayOf("/system/bin/sh", "-c", "/system/bin/su -c \"$stageCmd && $runCmd\"")
+                envMap = HashMap(System.getenv()).apply {
+                    put("PATH", "/system/bin:/system/xbin:/sbin:$nld:/data/data/com.ivarna.nativecode/files/usr/bin")
+                    put("HOME", "/data/data/com.ivarna.nativecode/files/home")
+                    put("TERM", "xterm-256color")
+                }
+            }
+            "proot" -> {
+                // Guest script executed inside Debian PRoot container
+                val scriptCmd = "bash /data/data/com.ivarna.nativecode/files/home/$scriptName"
+                val (a, e) = buildLinuxCommand(scriptCmd, user = "root")
+                args = a; envMap = e
+            }
+            else -> { // "host"
+                args = arrayOf(shell, scriptPath)
+                envMap = HashMap(System.getenv()).apply {
+                    put("PATH", "$nld:/data/data/com.ivarna.nativecode/files/usr/bin:/system/bin")
+                    put("HOME", "/data/data/com.ivarna.nativecode/files/home")
+                    put("TERM", "xterm-256color")
+                    put("PREFIX", "/data/data/com.ivarna.nativecode/files/usr")
+                    put("LD_LIBRARY_PATH", "/data/data/com.ivarna.nativecode/files/usr/lib")
+                    put("TERMUX_APP__PACKAGE_NAME", "com.ivarna.nativecode")
+                    put("TERMUX__PREFIX", "/data/data/com.ivarna.nativecode/files/usr")
+                    put("TERMUX__HOME", "/data/data/com.ivarna.nativecode/files/home")
+                }
+            }
         }
-        val envMap  = HashMap(System.getenv())
-        envMap["PATH"]                       = "$nld:/data/data/com.ivarna.nativecode/files/usr/bin:/system/bin"
-        envMap["PD_PROOT_BIN"]               = File(nld, "libproot.so").absolutePath
-        envMap["PROOT_LOADER"]               = File(nld, "libloader.so").absolutePath
-        envMap["HOME"]                       = "/data/data/com.ivarna.nativecode/files/home"
-        envMap["TERM"]                       = "xterm-256color"
-        envMap["PREFIX"]                     = "/data/data/com.ivarna.nativecode/files/usr"
-        envMap["LD_LIBRARY_PATH"]            = "/data/data/com.ivarna.nativecode/files/usr/lib"
-        setLdPreloadEnv(envMap)
-        envMap["TERMUX_APP__PACKAGE_NAME"]   = "com.ivarna.nativecode"
-        envMap["TERMUX__PREFIX"]             = "/data/data/com.ivarna.nativecode/files/usr"
-        envMap["TERMUX__HOME"]               = "/data/data/com.ivarna.nativecode/files/home"
-        envMap["SSL_CERT_FILE"]              = "/data/data/com.ivarna.nativecode/files/usr/etc/tls/cert.pem"
-        envMap["CURL_CA_BUNDLE"]             = "/data/data/com.ivarna.nativecode/files/usr/etc/tls/cert.pem"
         val env = envMap.map { "${it.key}=${it.value}" }.toTypedArray()
 
         val scriptViewClient = object : TerminalViewClient {
@@ -4521,22 +4728,11 @@ class MainActivity : AppCompatActivity() {
         diffViewerContainer.addView(loadingTv)
 
         executor.execute {
-            val nld = applicationInfo.nativeLibraryDir
-            val bash = File(nld, "libbash.so").absolutePath
             val gitCmd = "cd $activeProjectPath && git diff HEAD -- \"$name\""
-            val pb = ProcessBuilder(bash, "-c", "exec python /data/data/com.ivarna.nativecode/files/usr/bin/proot-distro login debian --shared-tmp --user flux -- zsh -c \"$gitCmd\"")
+            val (lcArgs, lcEnv) = buildLinuxCommand(gitCmd)
+            val pb = ProcessBuilder(*lcArgs)
             val env = pb.environment()
-            env["PATH"] = "$nld:/data/data/com.ivarna.nativecode/files/usr/bin:/system/bin"
-            env["PD_PROOT_BIN"] = File(nld, "libproot.so").absolutePath
-            env["PROOT_LOADER"] = File(nld, "libloader.so").absolutePath
-            env["LD_LIBRARY_PATH"] = "/data/data/com.ivarna.nativecode/files/usr/lib"
-            val termuxExec = File(filesDir, "usr/lib/libtermux-exec.so")
-            if (termuxExec.exists()) env["LD_PRELOAD"] = termuxExec.absolutePath
-            env["HOME"] = "/data/data/com.ivarna.nativecode/files/home"
-            env["PREFIX"] = "/data/data/com.ivarna.nativecode/files/usr"
-            env["TERMUX__PREFIX"] = "/data/data/com.ivarna.nativecode/files/usr"
-            env["TERMUX__HOME"] = "/data/data/com.ivarna.nativecode/files/home"
-            env["TERMUX_APP__PACKAGE_NAME"] = "com.ivarna.nativecode"
+            env.putAll(lcEnv)
             env["GIT_PAGER"] = "cat"
             env["GIT_TERMINAL_PROMPT"] = "0"
             env["TERM"] = "dumb"
@@ -4561,9 +4757,10 @@ class MainActivity : AppCompatActivity() {
 
                 if (filteredLines.isEmpty()) {
                     val untrackedCmd = "cd $activeProjectPath && [ -f \"$name\" ] && git diff --no-index /dev/null \"$name\""
-                    val pbUntracked = ProcessBuilder(bash, "-c", "exec python /data/data/com.ivarna.nativecode/files/usr/bin/proot-distro login debian --shared-tmp --user flux -- zsh -c \"$untrackedCmd\"")
+                    val (utArgs, utEnv) = buildLinuxCommand(untrackedCmd)
+                    val pbUntracked = ProcessBuilder(*utArgs)
                     val envUntracked = pbUntracked.environment()
-                    envUntracked.putAll(env)
+                    envUntracked.putAll(utEnv)
                     pbUntracked.redirectErrorStream(true)
                     val procUntracked = pbUntracked.start()
                     val linesUntracked = ArrayList<String>()
@@ -4811,22 +5008,11 @@ class MainActivity : AppCompatActivity() {
             .setMessage("Are you sure you want to discard changes in $fileName?")
             .setPositiveButton("Discard") { _, _ ->
                 executor.execute {
-                    val nld = applicationInfo.nativeLibraryDir
-                    val bash = File(nld, "libbash.so").absolutePath
                     val discardCmd = "cd $activeProjectPath && (git checkout -- \"$fileName\" || rm -rf \"$fileName\")"
-                    val pb = ProcessBuilder(bash, "-c", "exec python /data/data/com.ivarna.nativecode/files/usr/bin/proot-distro login debian --shared-tmp --user flux -- zsh -c \"$discardCmd\"")
+                    val (lcArgs, lcEnv) = buildLinuxCommand(discardCmd)
+                    val pb = ProcessBuilder(*lcArgs)
                     val env = pb.environment()
-                    env["PATH"] = "$nld:/data/data/com.ivarna.nativecode/files/usr/bin:/system/bin"
-                    env["PD_PROOT_BIN"] = File(nld, "libproot.so").absolutePath
-                    env["PROOT_LOADER"] = File(nld, "libloader.so").absolutePath
-                    env["LD_LIBRARY_PATH"] = "/data/data/com.ivarna.nativecode/files/usr/lib"
-                    val termuxExec = File(filesDir, "usr/lib/libtermux-exec.so")
-                    if (termuxExec.exists()) env["LD_PRELOAD"] = termuxExec.absolutePath
-                    env["HOME"] = "/data/data/com.ivarna.nativecode/files/home"
-                    env["PREFIX"] = "/data/data/com.ivarna.nativecode/files/usr"
-                    env["TERMUX__PREFIX"] = "/data/data/com.ivarna.nativecode/files/usr"
-                    env["TERMUX__HOME"] = "/data/data/com.ivarna.nativecode/files/home"
-                    env["TERMUX_APP__PACKAGE_NAME"] = "com.ivarna.nativecode"
+                    env.putAll(lcEnv)
                     env["GIT_PAGER"] = "cat"
                     env["GIT_TERMINAL_PROMPT"] = "0"
                     env["TERM"] = "dumb"
@@ -4872,22 +5058,11 @@ class MainActivity : AppCompatActivity() {
                     return@setPositiveButton
                 }
                 executor.execute {
-                    val nld = applicationInfo.nativeLibraryDir
-                    val bash = File(nld, "libbash.so").absolutePath
                     val commitCmd = "cd $activeProjectPath && git add \"$fileName\" && git commit -m \"$msg\""
-                    val pb = ProcessBuilder(bash, "-c", "exec python /data/data/com.ivarna.nativecode/files/usr/bin/proot-distro login debian --shared-tmp --user flux -- zsh -c \"$commitCmd\"")
+                    val (lcArgs, lcEnv) = buildLinuxCommand(commitCmd)
+                    val pb = ProcessBuilder(*lcArgs)
                     val env = pb.environment()
-                    env["PATH"] = "$nld:/data/data/com.ivarna.nativecode/files/usr/bin:/system/bin"
-                    env["PD_PROOT_BIN"] = File(nld, "libproot.so").absolutePath
-                    env["PROOT_LOADER"] = File(nld, "libloader.so").absolutePath
-                    env["LD_LIBRARY_PATH"] = "/data/data/com.ivarna.nativecode/files/usr/lib"
-                    val termuxExec = File(filesDir, "usr/lib/libtermux-exec.so")
-                    if (termuxExec.exists()) env["LD_PRELOAD"] = termuxExec.absolutePath
-                    env["HOME"] = "/data/data/com.ivarna.nativecode/files/home"
-                    env["PREFIX"] = "/data/data/com.ivarna.nativecode/files/usr"
-                    env["TERMUX__PREFIX"] = "/data/data/com.ivarna.nativecode/files/usr"
-                    env["TERMUX__HOME"] = "/data/data/com.ivarna.nativecode/files/home"
-                    env["TERMUX_APP__PACKAGE_NAME"] = "com.ivarna.nativecode"
+                    env.putAll(lcEnv)
                     env["GIT_PAGER"] = "cat"
                     env["GIT_TERMINAL_PROMPT"] = "0"
                     env["TERM"] = "dumb"
@@ -4951,7 +5126,7 @@ class MainActivity : AppCompatActivity() {
 
         val infoRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         val dnsIcon = ImageView(this).apply { setImageResource(R.drawable.ic_dns_thick); setColorFilter(NC.PRIMARY); layoutParams = LinearLayout.LayoutParams(dp(18), dp(18)).apply { rightMargin = dp(6) } }
-        homeContainerLabel = TextView(this).apply { text = "PRoot (Debian Trixie)"; textSize = 13f; setTextColor(NC.ON_SURF_VAR); typeface = Typeface.MONOSPACE }
+        homeContainerLabel = TextView(this).apply { text = linuxMethodLabel(); textSize = 13f; setTextColor(NC.ON_SURF_VAR); typeface = Typeface.MONOSPACE }
         infoRow.addView(dnsIcon); infoRow.addView(homeContainerLabel); card.addView(infoRow)
 
         pulseView(homeStatusDot)
@@ -5500,10 +5675,141 @@ class MainActivity : AppCompatActivity() {
 
     private fun buildEnvironmentCard(): LinearLayout {
         val card = glassCard()
-        card.addView(sectionHeader(R.drawable.ic_laptop_thick, "Environment", NC.PRIMARY))
-        card.addView(infoRow("Container Method", "PRoot"))
-        card.addView(spacer(8))
-        card.addView(infoRow("OS Version", "Debian Trixie"))
+        card.addView(sectionHeader(R.drawable.ic_laptop_thick, "Linux Isolation Mode", NC.PRIMARY))
+
+        val descTv = TextView(this).apply {
+            text = "Select execution engine for Linux sessions and CLI tools:"
+            textSize = 12f
+            setTextColor(NC.ON_SURF_VAR)
+            setPadding(0, 0, 0, dp(12))
+        }
+        card.addView(descTv)
+
+        val modeContainer = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
+        }
+
+        val prootCard = LinearLayout(this)
+        val chrootCard = LinearLayout(this)
+
+        fun updateCardStyles() {
+            val isProot = currentLinuxMethod == "proot"
+            prootCard.apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                background = cyberBrutalistBg(
+                    fillColor = if (isProot) NC.SURFACE_CONTAINER else NC.SURFACE_LOWEST,
+                    strokeColor = if (isProot) NC.PRIMARY else NC.OUTLINE_VAR,
+                    shadowColor = NC.SHADOW_DARK,
+                    offsetDp = 4,
+                    cornerRadiusDp = 0
+                )
+                setPadding(dp(12), dp(12), dp(12), dp(12))
+                layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(10) }
+                isClickable = true
+                isFocusable = true
+            }
+
+            chrootCard.apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                background = cyberBrutalistBg(
+                    fillColor = if (!isProot) NC.SURFACE_CONTAINER else NC.SURFACE_LOWEST,
+                    strokeColor = if (!isProot) NC.SECONDARY else NC.OUTLINE_VAR,
+                    shadowColor = NC.SHADOW_DARK,
+                    offsetDp = 4,
+                    cornerRadiusDp = 0
+                )
+                setPadding(dp(12), dp(12), dp(12), dp(12))
+                layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
+                isClickable = true
+                isFocusable = true
+            }
+        }
+
+        // Build PRoot Option Row
+        val prootLeft = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
+        }
+        val prootTitle = TextView(this).apply {
+            text = "PROOT (Rootless)"
+            textSize = 14f
+            setTextColor(NC.ON_SURFACE)
+            typeface = Typeface.DEFAULT_BOLD
+        }
+        val prootSub = TextView(this).apply {
+            text = "User-space isolation. No root required."
+            textSize = 11f
+            setTextColor(NC.ON_SURF_VAR)
+        }
+        prootLeft.addView(prootTitle)
+        prootLeft.addView(prootSub)
+        prootCard.addView(prootLeft)
+
+        // Build Chroot Option Row
+        val chrootLeft = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
+        }
+        val chrootTitle = TextView(this).apply {
+            text = "CHROOT (KernelSU / Root)"
+            textSize = 14f
+            setTextColor(NC.ON_SURFACE)
+            typeface = Typeface.DEFAULT_BOLD
+        }
+        val chrootSub = TextView(this).apply {
+            text = if (isChrootInstalled()) "Installed & Ready. Kernel-level speed." else "Requires Root & Debian 13 Chroot Setup"
+            textSize = 11f
+            setTextColor(if (isChrootInstalled()) NC.PRIMARY else NC.SECONDARY)
+        }
+        chrootLeft.addView(chrootTitle)
+        chrootLeft.addView(chrootSub)
+        chrootCard.addView(chrootLeft)
+
+        updateCardStyles()
+
+        prootCard.setOnClickListener {
+            currentLinuxMethod = "proot"
+            getSharedPreferences("nativecode_prefs", MODE_PRIVATE)
+                .edit().putString("linux_method", "proot").apply()
+            updateCardStyles()
+            if (::homeContainerLabel.isInitialized) homeContainerLabel.text = linuxMethodLabel()
+            Toast.makeText(this, "Switched to PRoot Mode", Toast.LENGTH_SHORT).show()
+        }
+
+        chrootCard.setOnClickListener {
+            executor.execute {
+                val rootAvailable = RootShell.isRootAvailable()
+                mainHandler.post {
+                    if (!rootAvailable) {
+                        Toast.makeText(this, "Root access (su) not detected via KernelSU/Magisk", Toast.LENGTH_LONG).show()
+                    } else if (!isChrootInstalled()) {
+                        Toast.makeText(this, "Root detected! Please run Chroot setup in Onboarding to finish installation.", Toast.LENGTH_LONG).show()
+                        currentLinuxMethod = "chroot"
+                        getSharedPreferences("nativecode_prefs", MODE_PRIVATE)
+                            .edit().putString("linux_method", "chroot").apply()
+                        updateCardStyles()
+                        if (::homeContainerLabel.isInitialized) homeContainerLabel.text = linuxMethodLabel()
+                    } else {
+                        currentLinuxMethod = "chroot"
+                        getSharedPreferences("nativecode_prefs", MODE_PRIVATE)
+                            .edit().putString("linux_method", "chroot").apply()
+                        updateCardStyles()
+                        if (::homeContainerLabel.isInitialized) homeContainerLabel.text = linuxMethodLabel()
+                        Toast.makeText(this, "Switched to Chroot Mode", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+        }
+
+        modeContainer.addView(prootCard)
+        modeContainer.addView(chrootCard)
+        card.addView(modeContainer)
+
+        card.addView(spacer(12))
+        card.addView(infoRow("OS Version", "Debian 13 (Trixie)"))
         return card
     }
 
@@ -5614,13 +5920,23 @@ class MainActivity : AppCompatActivity() {
                 "setup_debian_family.sh",
                 "setup_customization_debian.sh",
                 "setup_hw_accel_debian.sh",
-                "setup_cli_tools.sh"
+                "setup_cli_tools.sh",
+                "setup_debian13_chroot.sh",
+                "uninstall_debian13_chroot.sh"
             )
             for (script in scripts) {
-                val assetPath = if (script.contains("tweaks")) "scripts/termux_tweaks.sh" else "scripts/$script"
+                val assetPath = when {
+                    script.contains("tweaks") -> "scripts/termux_tweaks.sh"
+                    script.contains("chroot") -> "scripts/chroot/$script"
+                    else -> "scripts/$script"
+                }
                 val out = File(homeDir, script)
-                assets.open(assetPath).use { input -> FileOutputStream(out).use { input.copyTo(it) } }
-                out.setExecutable(true)
+                try {
+                    assets.open(assetPath).use { input -> FileOutputStream(out).use { input.copyTo(it) } }
+                    out.setExecutable(true)
+                } catch (e: Exception) {
+                    Log.w("Setup", "Script $assetPath not found in assets", e)
+                }
             }
             // Deploy font.ttf
             val termuxDir = File(homeDir, ".termux").also { it.mkdirs() }
@@ -7220,16 +7536,10 @@ class MainActivity : AppCompatActivity() {
                 }
 
                 executor.execute {
-                    val nld = applicationInfo.nativeLibraryDir
-                    val bash = File(nld, "libbash.so").absolutePath
                     val gitCmd = "mkdir -p ~/repos && cd ~/repos && git clone --progress " + gitUrl + " 2>&1"
-                    val args = arrayOf(
-                        bash,
-                        "-c",
-                        "exec python /data/data/com.ivarna.nativecode/files/usr/bin/proot-distro login debian --shared-tmp --user flux -- bash -c \"$gitCmd\""
-                    )
+                    val (lcArgs, _) = buildLinuxCommand(gitCmd)
                     runShellCommandStreamed(
-                        args,
+                        lcArgs,
                         onLine = { line -> appendLog(line) },
                         onDone = { exitCode ->
                             mainHandler.removeCallbacks(pulseRunnable)
@@ -7268,23 +7578,10 @@ class MainActivity : AppCompatActivity() {
         activeProjectPath = path
 
         // Ensure the project directory exists in Debian
-        val nld = applicationInfo.nativeLibraryDir
-        val shell = File(nld, "libbash.so").absolutePath
-        val mkdirArgs = arrayOf(shell, "-c",
-            "exec python /data/data/com.ivarna.nativecode/files/usr/bin/proot-distro login debian --shared-tmp --user flux -- zsh -c \"mkdir -p $path\""
-        )
-        val envMap = HashMap(System.getenv())
-        envMap["PATH"] = "$nld:/data/data/com.ivarna.nativecode/files/usr/bin:/system/bin"
-        envMap["PD_PROOT_BIN"] = File(nld, "libproot.so").absolutePath
-        envMap["PROOT_LOADER"] = File(nld, "libloader.so").absolutePath
-        envMap["HOME"] = "/data/data/com.ivarna.nativecode/files/home"
-        envMap["PREFIX"] = "/data/data/com.ivarna.nativecode/files/usr"
-        envMap["LD_LIBRARY_PATH"] = "/data/data/com.ivarna.nativecode/files/usr/lib"
-        setLdPreloadEnv(envMap)
-        val env = envMap.map { "${it.key}=${it.value}" }.toTypedArray()
+        val (mkdirArgs, mkdirEnv) = buildLinuxCommand("mkdir -p $path")
         try {
             val pb = ProcessBuilder(*mkdirArgs)
-            pb.environment().putAll(envMap.map { it.key to it.value }.toMap())
+            pb.environment().putAll(mkdirEnv)
             pb.start() // fire-and-forget; directory will be ready before user launches a tool
         } catch (e: Exception) {
             // non-fatal: directory may already exist or will be created on first tool launch
@@ -7488,7 +7785,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun getProjectHostFile(): File {
-        val rootfs = "/data/data/com.ivarna.nativecode/files/usr/var/lib/proot-distro/containers/debian/rootfs"
+        val rootfs = if (currentLinuxMethod == "chroot") {
+            CHROOT_PATH
+        } else {
+            "/data/data/com.ivarna.nativecode/files/usr/var/lib/proot-distro/containers/debian/rootfs"
+        }
         val resolvedPath = if (activeProjectPath.startsWith("/")) {
             rootfs + activeProjectPath
         } else {
@@ -7975,22 +8276,11 @@ class MainActivity : AppCompatActivity() {
         workspaceGitDiffLayout.addView(loadingTv)
         
         executor.execute {
-            val nld = applicationInfo.nativeLibraryDir
-            val bash = File(nld, "libbash.so").absolutePath
             val gitCmd = "cd $activeProjectPath && git status --porcelain"
-            val pb = ProcessBuilder(bash, "-c", "exec python /data/data/com.ivarna.nativecode/files/usr/bin/proot-distro login debian --shared-tmp --user flux -- zsh -c \"$gitCmd\"")
+            val (lcArgs, lcEnv) = buildLinuxCommand(gitCmd)
+            val pb = ProcessBuilder(*lcArgs)
             val env = pb.environment()
-            env["PATH"] = "$nld:/data/data/com.ivarna.nativecode/files/usr/bin:/system/bin"
-            env["PD_PROOT_BIN"] = File(nld, "libproot.so").absolutePath
-            env["PROOT_LOADER"] = File(nld, "libloader.so").absolutePath
-            env["LD_LIBRARY_PATH"] = "/data/data/com.ivarna.nativecode/files/usr/lib"
-            val termuxExec = File(filesDir, "usr/lib/libtermux-exec.so")
-            if (termuxExec.exists()) env["LD_PRELOAD"] = termuxExec.absolutePath
-            env["HOME"] = "/data/data/com.ivarna.nativecode/files/home"
-            env["PREFIX"] = "/data/data/com.ivarna.nativecode/files/usr"
-            env["TERMUX__PREFIX"] = "/data/data/com.ivarna.nativecode/files/usr"
-            env["TERMUX__HOME"] = "/data/data/com.ivarna.nativecode/files/home"
-            env["TERMUX_APP__PACKAGE_NAME"] = "com.ivarna.nativecode"
+            env.putAll(lcEnv)
             env["GIT_PAGER"] = "cat"
             env["GIT_TERMINAL_PROMPT"] = "0"
             env["TERM"] = "dumb"
@@ -8236,7 +8526,7 @@ class MainActivity : AppCompatActivity() {
         val shell = File(nld, "libbash.so").absolutePath
         val cwd = File(filesDir, "home").absolutePath
         
-        val envInit = "export PATH=/home/flux/.local/bin:/home/flux/bin:/home/flux/.cargo/bin:\\\$PATH && export NVM_DIR=/home/flux/.nvm && [ -s /home/flux/.nvm/nvm.sh ] && . /home/flux/.nvm/nvm.sh"
+        val envInit = "export PATH=/home/flux/.local/bin:/home/flux/bin:/home/flux/.cargo/bin:/home/flux/.nvm/versions/node/v26.*/bin:/usr/local/bin:/usr/bin:/bin:\\\$PATH && export NVM_DIR=/home/flux/.nvm && [ -s /home/flux/.nvm/nvm.sh ] && . /home/flux/.nvm/nvm.sh"
         val toolCmd = when (type) {
             "opencode"    -> "$envInit && mkdir -p $activeProjectPath && cd $activeProjectPath && exec opencode"
             "codex"       -> "$envInit && mkdir -p $activeProjectPath && cd $activeProjectPath && exec codex"
@@ -8248,19 +8538,24 @@ class MainActivity : AppCompatActivity() {
             else          -> "mkdir -p $activeProjectPath && cd $activeProjectPath && exec zsh"
         }
 
-        val args = arrayOf(shell, "-c", "exec python /data/data/com.ivarna.nativecode/files/usr/bin/proot-distro login debian --shared-tmp --user flux -- zsh -c \"$toolCmd\"")
-        val envMap = HashMap(System.getenv())
-        envMap["PATH"] = "$nld:/data/data/com.ivarna.nativecode/files/usr/bin:/system/bin"
-        envMap["PD_PROOT_BIN"] = File(nld, "libproot.so").absolutePath
-        envMap["PROOT_LOADER"] = File(nld, "libloader.so").absolutePath
-        envMap["HOME"] = "/data/data/com.ivarna.nativecode/files/home"
-        envMap["TERM"] = "xterm-256color"
-        envMap["PREFIX"] = "/data/data/com.ivarna.nativecode/files/usr"
-        envMap["LD_LIBRARY_PATH"] = "/data/data/com.ivarna.nativecode/files/usr/lib"
-        setLdPreloadEnv(envMap)
-        envMap["TERMUX_APP__PACKAGE_NAME"] = "com.ivarna.nativecode"
-        envMap["TERMUX__PREFIX"] = "/data/data/com.ivarna.nativecode/files/usr"
-        envMap["TERMUX__HOME"] = "/data/data/com.ivarna.nativecode/files/home"
+        val isChrootTool = currentLinuxMethod == "chroot" && type != "shell"
+        val shellCmd = if (isChrootTool) {
+            val toolName = when (type) {
+                "opencode"    -> "opencode"
+                "codex"       -> "codex"
+                "agy"         -> "agy"
+                "claude-code" -> "claude"
+                "qwen-code"   -> "qwen"
+                "grok"        -> "grok"
+                "kiro"        -> "kiro-cli"
+                else          -> "zsh"
+            }
+            ensureChrootLauncherScript()
+            "/tmp/launch_tool.sh $toolName"
+        } else {
+            toolCmd
+        }
+        val (args, envMap) = buildLinuxCommand(shellCmd)
         val env = envMap.map { "${it.key}=${it.value}" }.toTypedArray()
 
         val sessionClient = object : TerminalSessionClient {
@@ -8299,11 +8594,11 @@ class MainActivity : AppCompatActivity() {
             override fun logStackTrace(tag: String, e: java.lang.Exception) { Log.e(tag, "Stacktrace", e) }
         }
 
-        val session = TerminalSession(shell, cwd, args, env, 10000, sessionClient)
+        val sessionExec = if (currentLinuxMethod == "chroot") "/system/bin/sh" else shell
+        val session = TerminalSession(sessionExec, cwd, args, env, 10000, sessionClient)
         workspaceSessions.add(session)
         workspaceTabNames.add(type)
         activeWorkspaceTabIndex = workspaceSessions.size - 1
-        
         saveActiveProjectSessions()
         rebuildWorkspaceTabs()
         switchWorkspaceTab(activeWorkspaceTabIndex)

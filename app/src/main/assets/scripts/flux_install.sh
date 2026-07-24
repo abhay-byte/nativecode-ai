@@ -33,14 +33,16 @@ else
     # Check if distro is already installed by looking for its rootfs
     DISTRO_ROOTFS="/data/data/com.ivarna.nativecode/files/usr/var/lib/proot-distro/containers/$DISTRO/rootfs"
     
-    if [ -d "$DISTRO_ROOTFS" ]; then
-        echo "FluxLinux: $DISTRO already installed. Skipping base installation."
+    if [ -d "$DISTRO_ROOTFS" ] && [ -e "$DISTRO_ROOTFS/bin/sh" ]; then
+        echo "FluxLinux: $DISTRO already installed with valid rootfs. Skipping base installation."
         EXIT_CODE=0
     else
         echo "FluxLinux: Installing $DISTRO base system..."
+        rm -rf "/data/data/com.ivarna.nativecode/files/usr/var/lib/proot-distro/containers/$DISTRO"
         python /data/data/com.ivarna.nativecode/files/usr/bin/proot-distro install $DISTRO
         EXIT_CODE=$?
     fi
+
 fi
 
 if [ $EXIT_CODE -eq 0 ]; then
