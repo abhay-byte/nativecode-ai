@@ -1,0 +1,23 @@
+package com.ivarna.nativecode.terminal
+
+import android.content.Context
+
+/** Entry point for building terminal commands.
+ *  Delegates to ProotCommandBuilder or ChrootCommandBuilder based on method. */
+object LinuxCommandBuilder {
+
+    /** Current isolation method: "proot" (default) or "chroot". */
+    var currentMethod = "proot"
+
+    fun build(
+        ctx: Context,
+        shellCmd: String,
+        user: String = "flux",
+        useSharedTmp: Boolean = true
+    ): Pair<Array<String>, HashMap<String, String>> {
+        return when (currentMethod) {
+            "chroot" -> ChrootCommandBuilder.build(ctx, shellCmd, user)
+            else -> ProotCommandBuilder.build(ctx, shellCmd, user, useSharedTmp)
+        }
+    }
+}

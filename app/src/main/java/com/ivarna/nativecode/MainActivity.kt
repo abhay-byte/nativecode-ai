@@ -50,6 +50,7 @@ import android.net.Uri
 import android.view.KeyEvent
 import androidx.activity.result.contract.ActivityResultContracts
 import java.io.File
+import com.ivarna.nativecode.terminal.*
 import java.io.FileOutputStream
 import java.util.concurrent.Executors
 
@@ -345,12 +346,6 @@ class MainActivity : AppCompatActivity() {
     private val pageStack = java.util.Stack<Int>()
 
     // ── Linux isolation method ────────────────────────────────────────────────────
-    // "proot" = default (rootless) | "chroot" = kernel chroot via KernelSU/Magisk root
-    // Persisted in nativecode_prefs key "linux_method"
-    private var currentLinuxMethod = "proot"
-
-    // Chroot Debian 13 path
-    private val CHROOT_PATH = "/data/local/tmp/chrootDebian13"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -379,7 +374,7 @@ class MainActivity : AppCompatActivity() {
         workspaceFontSize = termFontSize
         scriptFontSize = termFontSize
         showExtraKeys = prefs.getBoolean("pref_show_extra_keys", true)
-        currentLinuxMethod = prefs.getString("linux_method", "proot") ?: "proot"
+        LinuxCommandBuilder.currentMethod = prefs.getString("linux_method", "proot") ?: "proot"
 
         buildRootLayout()
         setContentView(drawerLayout)
@@ -1511,145 +1506,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // ─────────────────────────────────────────────────────────────────────────────
-    // buildLinuxCommand — unified proot/chroot command builder
-    // Returns Pair<Array<String> args, HashMap<String,String> envMap>
-    // ─────────────────────────────────────────────────────────────────────────────
-    private fun buildLinuxCommand(
-        shellCmd: String,
-        user: String = "flux",
-        useSharedTmp: Boolean = true
-    ): Pair<Array<String>, HashMap<String, String>> {
-        val envMap = HashMap(System.getenv())
-        return when (currentLinuxMethod) {
-            "chroot" -> {
-                val runScript = "/data/local/tmp/run_debian13_root.sh"
-                // Mounts with full stdout+stderr suppression (busybox outputs to stdout on some errors)
-                val mountCmds = listOf(
-                    "busybox mount -o remount,dev,suid /data >/dev/null 2>&1 || true",
-                    "busybox mount --bind /dev $CHROOT_PATH/dev >/dev/null 2>&1 || true",
-                    "busybox mount --bind /sys $CHROOT_PATH/sys >/dev/null 2>&1 || true",
-                    "busybox mount -t proc proc $CHROOT_PATH/proc >/dev/null 2>&1 || true",
-                    "busybox mount -t devpts devpts $CHROOT_PATH/dev/pts >/dev/null 2>&1 || true",
-                    "mkdir -p $CHROOT_PATH/dev/shm && busybox mount -t tmpfs -o size=512M tmpfs $CHROOT_PATH/dev/shm >/dev/null 2>&1 || true",
-                    "mkdir -p $CHROOT_PATH/tmp && busybox mount --bind /data/data/com.ivarna.nativecode/files/usr/tmp $CHROOT_PATH/tmp >/dev/null 2>&1 || true"
-                ).joinToString("; ")
-
-                val isInteractive = shellCmd == "exec zsh" || shellCmd == "/bin/bash --login" || shellCmd.isBlank()
-
-                val cmd = if (isInteractive) {
-                    // Direct chroot into su - user for clean PTY line discipline without double echo
-                    "/system/bin/su -c \"$mountCmds; exec busybox chroot $CHROOT_PATH /bin/su - $user\""
-                } else if (user == "root" && File(runScript).exists()) {
-                    "/system/bin/su -c \"$runScript $shellCmd\""
-                } else {
-                    // Tool / non-interactive command inside chroot as user
-                    val escapedCmd = shellCmd.replace("\"", "\\\"")
-                    "/system/bin/su -c \"$mountCmds; exec busybox chroot $CHROOT_PATH /bin/su - $user -c \\\"$escapedCmd\\\"\""
-                }
-                envMap["PATH"] = "/system/bin:/system/xbin:/sbin:" + (envMap["PATH"] ?: "")
-                envMap["TERM"] = "xterm-256color"
-                envMap["HOME"] = "/home/flux"
-                envMap["LANG"] = "en_US.UTF-8"
-                envMap["LC_ALL"] = "en_US.UTF-8"
-                envMap["XDG_RUNTIME_DIR"] = "/tmp"
-                envMap["TMPDIR"] = "/tmp"
-                arrayOf("/system/bin/sh", "-c", cmd) to envMap
-            }
-
-            else -> { // proot (default)
-                val nld = applicationInfo.nativeLibraryDir
-                val shell = File(nld, "libbash.so").absolutePath
-                val sharedTmpFlag = if (useSharedTmp) "--shared-tmp" else ""
-                // Restore original behaviour: plain login for interactive shell, explicit cmd for tools
-                val args = if (shellCmd == "exec zsh" || shellCmd == "/bin/bash --login" || shellCmd.isBlank()) {
-                    arrayOf(shell, "-c",
-                        "exec python /data/data/com.ivarna.nativecode/files/usr/bin/proot-distro login debian $sharedTmpFlag --user $user")
-                } else {
-                    arrayOf(shell, "-c",
-                        "exec python /data/data/com.ivarna.nativecode/files/usr/bin/proot-distro login debian $sharedTmpFlag --user $user -- zsh -c \\\"$shellCmd\\\"")
-                }
-                envMap["PATH"] = "$nld:/data/data/com.ivarna.nativecode/files/usr/bin:/system/bin"
-                envMap["PD_PROOT_BIN"] = File(nld, "libproot.so").absolutePath
-                envMap["PROOT_LOADER"] = File(nld, "libloader.so").absolutePath
-                envMap["HOME"] = "/data/data/com.ivarna.nativecode/files/home"
-                envMap["TERM"] = "xterm-256color"
-                envMap["PREFIX"] = "/data/data/com.ivarna.nativecode/files/usr"
-                envMap["LD_LIBRARY_PATH"] = "/data/data/com.ivarna.nativecode/files/usr/lib"
-                setLdPreloadEnv(envMap)
-                envMap["TERMUX_APP__PACKAGE_NAME"] = "com.ivarna.nativecode"
-                envMap["TERMUX__PREFIX"] = "/data/data/com.ivarna.nativecode/files/usr"
-                envMap["TERMUX__HOME"] = "/data/data/com.ivarna.nativecode/files/home"
-                envMap["SSL_CERT_FILE"] = "/data/data/com.ivarna.nativecode/files/usr/etc/tls/cert.pem"
-                envMap["CURL_CA_BUNDLE"] = "/data/data/com.ivarna.nativecode/files/usr/etc/tls/cert.pem"
-                args to envMap
-            }
-        }
-
-    }
-
-    /** Creates the wrapper script inside chroot that sets up PATH, TERM, TMPDIR etc. for AI tools.
-     *  Must write to the shared tmp bind-mount target so the script is visible inside chroot /tmp. */
-    private fun ensureChrootLauncherScript(): Boolean {
-        val scriptPath = "$filesDir/usr/tmp/launch_tool.sh"
-        if (File(scriptPath).exists() && File(scriptPath).length() > 0) return true
-        val script = """#!/bin/zsh
-export PATH=/home/flux/.local/bin:/opt/nodejs/bin:/usr/local/bin:/usr/bin:/bin:/sbin:/usr/local/sbin
-export HOME=/home/flux
-export TERM=xterm-256color
-export LANG=en_US.UTF-8
-export LC_ALL=en_US.UTF-8
-export XDG_RUNTIME_DIR=/tmp
-export TMPDIR=/tmp
-export ZSH=${'$'}HOME/.oh-my-zsh
-ZSH_THEME=agnosterzak
-DISABLE_UPDATE_PROMPT=true
-DISABLE_AUTO_UPDATE=true
-ZSH_DISABLE_COMPFIX=true
-plugins=(git zsh-autosuggestions zsh-syntax-highlighting)
-source ${'$'}ZSH/oh-my-zsh.sh
-exec "${'$'}@"
-""".trimIndent()
-        return try {
-            val f = File(scriptPath)
-            f.writeText(script)
-            val chmodProc = Runtime.getRuntime().exec(arrayOf("/system/bin/su", "-c",
-                "chmod 755 $scriptPath"))
-            chmodProc.waitFor(5, java.util.concurrent.TimeUnit.SECONDS)
-            f.exists() && f.length() > 0
-        } catch (e: Exception) {
-            false
-        }
-    }
-
-    /** Returns the guest home directory for the currently active linux method. */
-    private fun guestHomeDir(): File {
-        return if (currentLinuxMethod == "chroot") {
-            File("$CHROOT_PATH/home/flux")
-        } else {
-            File(filesDir, "usr/var/lib/proot-distro/containers/debian/rootfs/home/flux")
-        }
-    }
-
-    /** Returns the human-readable linux method label. */
-    private fun linuxMethodLabel(): String {
-        return if (currentLinuxMethod == "chroot") "Chroot (Debian Trixie)" else "PRoot (Debian Trixie)"
-    }
-
-    /** Returns true if chroot is installed (marker file exists). */
-    private fun isChrootInstalled(): Boolean {
-        return File("$CHROOT_PATH/.flux_configured").exists()
-    }
-
-    private fun setLdPreloadEnv(envMap: MutableMap<String, String>) {
-        ensureBootstrapExtracted()
-        val termuxExec = File(filesDir, "usr/lib/libtermux-exec.so")
-        if (termuxExec.exists()) {
-            envMap["LD_PRELOAD"] = termuxExec.absolutePath
-        } else {
-            envMap.remove("LD_PRELOAD")
-        }
-    }
 
     private fun createNewTerminalSession(type: String = "shell") {
         if (sessionsList.size >= 10) {
@@ -1674,7 +1530,7 @@ exec "${'$'}@"
             else          -> "exec zsh"
         }
 
-        val isChrootTool = currentLinuxMethod == "chroot" && type != "shell"
+        val isChrootTool = LinuxCommandBuilder.currentMethod == "chroot" && type != "shell"
         val shellCmd = if (type == "shell") {
             "exec zsh"
         } else if (isChrootTool) {
@@ -1689,17 +1545,17 @@ exec "${'$'}@"
                 "kiro"        -> "kiro-cli"
                 else          -> "zsh"
             }
-            ensureChrootLauncherScript()
+            ChrootCommandBuilder.ensureLauncherScript(this)
             "/tmp/launch_tool.sh $toolName"
         } else {
             toolCmd
         }
-        val (args, envMap) = buildLinuxCommand(shellCmd)
+        val (args, envMap) = LinuxCommandBuilder.build(this, shellCmd)
         val env = envMap.map { "${it.key}=${it.value}" }.toTypedArray()
         if (!::sessionClient.isInitialized) {
             initTerminalView()
         }
-        val sessionExec = if (currentLinuxMethod == "chroot") "/system/bin/sh" else shell
+        val sessionExec = if (LinuxCommandBuilder.currentMethod == "chroot") "/system/bin/sh" else shell
         val session = TerminalSession(sessionExec, cwd, args, env, 10000, sessionClient)
         sessionsList.add(session)
         terminalSessionTypes.add(type)
@@ -2691,7 +2547,7 @@ exec "${'$'}@"
         try {
             val ext = contentResolver.getType(uri)?.substringAfterLast('/')?.substringBefore(';') ?: "jpg"
             val fname = "attach_${System.currentTimeMillis()}.$ext"
-            val guestHomeDir = guestHomeDir()
+            val guestHomeDir = ProjectPathResolver.guestHomeDir(this)
             val targetDir = if (guestHomeDir.exists() && guestHomeDir.isDirectory) guestHomeDir else File(filesDir, "home").also { it.mkdirs() }
             val destFile = File(targetDir, fname)
             contentResolver.openInputStream(uri)?.use { inp ->
@@ -3629,7 +3485,7 @@ exec "${'$'}@"
             "proot" -> {
                 // Guest script executed inside Debian PRoot container
                 val scriptCmd = "bash /data/data/com.ivarna.nativecode/files/home/$scriptName"
-                val (a, e) = buildLinuxCommand(scriptCmd, user = "root")
+                val (a, e) = LinuxCommandBuilder.build(this, scriptCmd, user = "root")
                 args = a; envMap = e
             }
             else -> { // "host"
@@ -3812,7 +3668,7 @@ exec "${'$'}@"
 
         var targetFile = File(pathStr)
         if (!targetFile.exists() && !targetFile.isAbsolute) {
-            targetFile = File(getProjectHostFile(), pathStr)
+            targetFile = File(ProjectPathResolver.resolve(this, activeProjectPath), pathStr)
         }
 
         val headerCard = LinearLayout(this).apply {
@@ -3830,8 +3686,8 @@ exec "${'$'}@"
             typeface = Typeface.DEFAULT_BOLD
             layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
         }
-        val relativePathStr = if (targetFile.absolutePath.contains(getProjectHostFile().absolutePath)) {
-            targetFile.absolutePath.removePrefix(getProjectHostFile().absolutePath).trimStart('/')
+        val relativePathStr = if (targetFile.absolutePath.contains(ProjectPathResolver.resolve(this, activeProjectPath).absolutePath)) {
+            targetFile.absolutePath.removePrefix(ProjectPathResolver.resolve(this, activeProjectPath).absolutePath).trimStart('/')
         } else {
             targetFile.name
         }
@@ -4729,7 +4585,7 @@ exec "${'$'}@"
 
         executor.execute {
             val gitCmd = "cd $activeProjectPath && git diff HEAD -- \"$name\""
-            val (lcArgs, lcEnv) = buildLinuxCommand(gitCmd)
+            val (lcArgs, lcEnv) = LinuxCommandBuilder.build(this, gitCmd)
             val pb = ProcessBuilder(*lcArgs)
             val env = pb.environment()
             env.putAll(lcEnv)
@@ -4757,7 +4613,7 @@ exec "${'$'}@"
 
                 if (filteredLines.isEmpty()) {
                     val untrackedCmd = "cd $activeProjectPath && [ -f \"$name\" ] && git diff --no-index /dev/null \"$name\""
-                    val (utArgs, utEnv) = buildLinuxCommand(untrackedCmd)
+                    val (utArgs, utEnv) = LinuxCommandBuilder.build(this, untrackedCmd)
                     val pbUntracked = ProcessBuilder(*utArgs)
                     val envUntracked = pbUntracked.environment()
                     envUntracked.putAll(utEnv)
@@ -5009,7 +4865,7 @@ exec "${'$'}@"
             .setPositiveButton("Discard") { _, _ ->
                 executor.execute {
                     val discardCmd = "cd $activeProjectPath && (git checkout -- \"$fileName\" || rm -rf \"$fileName\")"
-                    val (lcArgs, lcEnv) = buildLinuxCommand(discardCmd)
+                    val (lcArgs, lcEnv) = LinuxCommandBuilder.build(this, discardCmd)
                     val pb = ProcessBuilder(*lcArgs)
                     val env = pb.environment()
                     env.putAll(lcEnv)
@@ -5059,7 +4915,7 @@ exec "${'$'}@"
                 }
                 executor.execute {
                     val commitCmd = "cd $activeProjectPath && git add \"$fileName\" && git commit -m \"$msg\""
-                    val (lcArgs, lcEnv) = buildLinuxCommand(commitCmd)
+                    val (lcArgs, lcEnv) = LinuxCommandBuilder.build(this, commitCmd)
                     val pb = ProcessBuilder(*lcArgs)
                     val env = pb.environment()
                     env.putAll(lcEnv)
@@ -5126,7 +4982,7 @@ exec "${'$'}@"
 
         val infoRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         val dnsIcon = ImageView(this).apply { setImageResource(R.drawable.ic_dns_thick); setColorFilter(NC.PRIMARY); layoutParams = LinearLayout.LayoutParams(dp(18), dp(18)).apply { rightMargin = dp(6) } }
-        homeContainerLabel = TextView(this).apply { text = linuxMethodLabel(); textSize = 13f; setTextColor(NC.ON_SURF_VAR); typeface = Typeface.MONOSPACE }
+        homeContainerLabel = TextView(this).apply { text = ProjectPathResolver.methodLabel(); textSize = 13f; setTextColor(NC.ON_SURF_VAR); typeface = Typeface.MONOSPACE }
         infoRow.addView(dnsIcon); infoRow.addView(homeContainerLabel); card.addView(infoRow)
 
         pulseView(homeStatusDot)
@@ -5694,7 +5550,7 @@ exec "${'$'}@"
         val chrootCard = LinearLayout(this)
 
         fun updateCardStyles() {
-            val isProot = currentLinuxMethod == "proot"
+            val isProot = LinuxCommandBuilder.currentMethod == "proot"
             prootCard.apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
@@ -5760,9 +5616,9 @@ exec "${'$'}@"
             typeface = Typeface.DEFAULT_BOLD
         }
         val chrootSub = TextView(this).apply {
-            text = if (isChrootInstalled()) "Installed & Ready. Kernel-level speed." else "Requires Root & Debian 13 Chroot Setup"
+            text = if (ProjectPathResolver.isChrootInstalled()) "Installed & Ready. Kernel-level speed." else "Requires Root & Debian 13 Chroot Setup"
             textSize = 11f
-            setTextColor(if (isChrootInstalled()) NC.PRIMARY else NC.SECONDARY)
+            setTextColor(if (ProjectPathResolver.isChrootInstalled()) NC.PRIMARY else NC.SECONDARY)
         }
         chrootLeft.addView(chrootTitle)
         chrootLeft.addView(chrootSub)
@@ -5771,11 +5627,11 @@ exec "${'$'}@"
         updateCardStyles()
 
         prootCard.setOnClickListener {
-            currentLinuxMethod = "proot"
+            LinuxCommandBuilder.currentMethod = "proot"
             getSharedPreferences("nativecode_prefs", MODE_PRIVATE)
                 .edit().putString("linux_method", "proot").apply()
             updateCardStyles()
-            if (::homeContainerLabel.isInitialized) homeContainerLabel.text = linuxMethodLabel()
+            if (::homeContainerLabel.isInitialized) homeContainerLabel.text = ProjectPathResolver.methodLabel()
             Toast.makeText(this, "Switched to PRoot Mode", Toast.LENGTH_SHORT).show()
         }
 
@@ -5785,19 +5641,19 @@ exec "${'$'}@"
                 mainHandler.post {
                     if (!rootAvailable) {
                         Toast.makeText(this, "Root access (su) not detected via KernelSU/Magisk", Toast.LENGTH_LONG).show()
-                    } else if (!isChrootInstalled()) {
+                    } else if (!ProjectPathResolver.isChrootInstalled()) {
                         Toast.makeText(this, "Root detected! Please run Chroot setup in Onboarding to finish installation.", Toast.LENGTH_LONG).show()
-                        currentLinuxMethod = "chroot"
+                        LinuxCommandBuilder.currentMethod = "chroot"
                         getSharedPreferences("nativecode_prefs", MODE_PRIVATE)
                             .edit().putString("linux_method", "chroot").apply()
                         updateCardStyles()
-                        if (::homeContainerLabel.isInitialized) homeContainerLabel.text = linuxMethodLabel()
+                        if (::homeContainerLabel.isInitialized) homeContainerLabel.text = ProjectPathResolver.methodLabel()
                     } else {
-                        currentLinuxMethod = "chroot"
+                        LinuxCommandBuilder.currentMethod = "chroot"
                         getSharedPreferences("nativecode_prefs", MODE_PRIVATE)
                             .edit().putString("linux_method", "chroot").apply()
                         updateCardStyles()
-                        if (::homeContainerLabel.isInitialized) homeContainerLabel.text = linuxMethodLabel()
+                        if (::homeContainerLabel.isInitialized) homeContainerLabel.text = ProjectPathResolver.methodLabel()
                         Toast.makeText(this, "Switched to Chroot Mode", Toast.LENGTH_SHORT).show()
                     }
                 }
@@ -5947,78 +5803,7 @@ exec "${'$'}@"
         }
     }
 
-    private fun runShellCommand(cmd: Array<String>): Int {
-        val adjusted = if (cmd.isNotEmpty() && cmd[0].startsWith("/data/data/"))
-            arrayOf("/system/bin/linker64") + cmd else cmd
-        val pb  = ProcessBuilder(*adjusted)
-        val env = pb.environment()
-        val nld = applicationInfo.nativeLibraryDir
-        env["PATH"]                       = "$nld:/data/data/com.ivarna.nativecode/files/usr/bin:/system/bin"
-        env["PD_PROOT_BIN"]               = File(nld, "libproot.so").absolutePath
-        env["PROOT_LOADER"]               = File(nld, "libloader.so").absolutePath
-        env["LD_LIBRARY_PATH"]            = "/data/data/com.ivarna.nativecode/files/usr/lib:/data/data/com.ivarna.nativecode/files/usr/opt/virglrenderer-android/lib"
-        val termuxExec = File(filesDir, "usr/lib/libtermux-exec.so")
-        if (termuxExec.exists()) env["LD_PRELOAD"] = termuxExec.absolutePath
-        env["PREFIX"]                     = "/data/data/com.ivarna.nativecode/files/usr"
-        env["HOME"]                       = "/data/data/com.ivarna.nativecode/files/home"
-        env["TMPDIR"]                     = "/data/data/com.ivarna.nativecode/files/usr/tmp"
-        env["PROOT_TMP_DIR"]              = "/data/data/com.ivarna.nativecode/files/usr/tmp"
-        env["TERMUX_APP__PACKAGE_NAME"]   = "com.ivarna.nativecode"
-        env["TERMUX_X11_APK_PATH"]        = applicationInfo.sourceDir
-        env["TERMUX_X11_OVERRIDE_PACKAGE"]= "com.ivarna.nativecode"
-        env["TERMUX__PREFIX"]             = "/data/data/com.ivarna.nativecode/files/usr"
-        env["TERMUX__HOME"]               = "/data/data/com.ivarna.nativecode/files/home"
-        env["SSL_CERT_FILE"]              = "/data/data/com.ivarna.nativecode/files/usr/etc/tls/cert.pem"
-        env["CURL_CA_BUNDLE"]             = "/data/data/com.ivarna.nativecode/files/usr/etc/tls/cert.pem"
-        pb.redirectErrorStream(true)
-        val proc = pb.start()
-        val stream = proc.inputStream
-        val buf = ByteArray(1024)
-        while (stream.read(buf) != -1) { /* Just consume output */ }
-        return proc.waitFor()
-    }
-
     /** Run a command and stream each output line to [onLine] on the main thread. */
-    private fun runShellCommandStreamed(
-        cmd: Array<String>,
-        onLine: (line: String) -> Unit,
-        onDone: (exitCode: Int) -> Unit
-    ) {
-        val adjusted = if (cmd.isNotEmpty() && cmd[0].startsWith("/data/data/"))
-            arrayOf("/system/bin/linker64") + cmd else cmd
-        val pb  = ProcessBuilder(*adjusted)
-        val env = pb.environment()
-        val nld = applicationInfo.nativeLibraryDir
-        env["PATH"]                        = "$nld:/data/data/com.ivarna.nativecode/files/usr/bin:/system/bin"
-        env["PD_PROOT_BIN"]                = File(nld, "libproot.so").absolutePath
-        env["PROOT_LOADER"]                = File(nld, "libloader.so").absolutePath
-        env["LD_LIBRARY_PATH"]             = "/data/data/com.ivarna.nativecode/files/usr/lib:/data/data/com.ivarna.nativecode/files/usr/opt/virglrenderer-android/lib"
-        val termuxExec = File(filesDir, "usr/lib/libtermux-exec.so")
-        if (termuxExec.exists()) env["LD_PRELOAD"] = termuxExec.absolutePath
-        env["PREFIX"]                      = "/data/data/com.ivarna.nativecode/files/usr"
-        env["HOME"]                        = "/data/data/com.ivarna.nativecode/files/home"
-        env["TMPDIR"]                      = "/data/data/com.ivarna.nativecode/files/usr/tmp"
-        env["PROOT_TMP_DIR"]               = "/data/data/com.ivarna.nativecode/files/usr/tmp"
-        env["TERMUX_APP__PACKAGE_NAME"]    = "com.ivarna.nativecode"
-        env["TERMUX_X11_APK_PATH"]         = applicationInfo.sourceDir
-        env["TERMUX_X11_OVERRIDE_PACKAGE"] = "com.ivarna.nativecode"
-        env["TERMUX__PREFIX"]              = "/data/data/com.ivarna.nativecode/files/usr"
-        env["TERMUX__HOME"]                = "/data/data/com.ivarna.nativecode/files/home"
-        env["SSL_CERT_FILE"]               = "/data/data/com.ivarna.nativecode/files/usr/etc/tls/cert.pem"
-        env["CURL_CA_BUNDLE"]              = "/data/data/com.ivarna.nativecode/files/usr/etc/tls/cert.pem"
-        env["GIT_TERMINAL_PROMPT"]         = "0"
-        pb.redirectErrorStream(true)
-        val proc = pb.start()
-        val reader = proc.inputStream.bufferedReader(Charsets.UTF_8)
-        var line: String?
-        while (reader.readLine().also { line = it } != null) {
-            val l = line ?: continue
-            mainHandler.post { onLine(l) }
-        }
-        val exit = proc.waitFor()
-        mainHandler.post { onDone(exit) }
-    }
-
     private fun startGui() {
         val serviceIntent = Intent(this, BackgroundService::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(serviceIntent)
@@ -6027,7 +5812,7 @@ exec "${'$'}@"
         executor.execute {
             val nld  = applicationInfo.nativeLibraryDir
             val bash = File(nld, "libbash.so").absolutePath
-            runShellCommand(arrayOf(bash, "/data/data/com.ivarna.nativecode/files/home/start_gui.sh", "debian"))
+            ShellCommandRunner.run(this, arrayOf(bash, "/data/data/com.ivarna.nativecode/files/home/start_gui.sh", "debian"))
         }
 
         mainHandler.postDelayed({
@@ -6046,7 +5831,7 @@ exec "${'$'}@"
         executor.execute {
             val nld  = applicationInfo.nativeLibraryDir
             val bash = File(nld, "libbash.so").absolutePath
-            runShellCommand(arrayOf(bash, "/data/data/com.ivarna.nativecode/files/home/stop_gui.sh", "debian"))
+            ShellCommandRunner.run(this, arrayOf(bash, "/data/data/com.ivarna.nativecode/files/home/stop_gui.sh", "debian"))
         }
     }
 
@@ -6485,7 +6270,7 @@ exec "${'$'}@"
         }
     }
 
-    private fun projectGridCard(name: String, path: String, time: String, iconStr: String = ""): View {
+    private fun projectGridCard(name: String, path: String, time: String, iconStr: String = "", method: String = "proot"): View {
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
@@ -6598,9 +6383,28 @@ exec "${'$'}@"
                 ellipsize = android.text.TextUtils.TruncateAt.END
             }
 
+            val methodTag = TextView(this@MainActivity).apply {
+                text = if (method == "chroot") "CHROOT" else "PROOT"
+                textSize = 10f
+                setTextColor(if (method == "chroot") NC.TERTIARY else NC.PRIMARY)
+                typeface = Typeface.MONOSPACE
+                gravity = Gravity.CENTER
+                background = GradientDrawable().apply {
+                    shape = GradientDrawable.RECTANGLE
+                    setColor(NC.SURFACE_LOWEST)
+                    setStroke(dp(1), if (method == "chroot") NC.TERTIARY else Color.parseColor("#3360F99E"))
+                }
+                setPadding(dp(6), dp(2), dp(6), dp(2))
+                layoutParams = LinearLayout.LayoutParams(WRAP, WRAP).apply {
+                    topMargin = dp(8)
+                    gravity = Gravity.CENTER_HORIZONTAL
+                }
+            }
+
             addView(iconContainer)
             addView(titleTv)
             addView(timeTv)
+            addView(methodTag)
 
             setOnTouchListener { v, event ->
                 when (event.action) {
@@ -6978,7 +6782,7 @@ exec "${'$'}@"
 
     // ── Project Management & Storage ──────────────────────────────────────────
 
-    data class Project(val name: String, val icon: String, val path: String, val lastOpened: Long = 0L)
+    data class Project(val name: String, val icon: String, val path: String, val lastOpened: Long = 0L, val linuxMethod: String = "proot")
 
     private fun getProjects(): List<Project> {
         val prefs = getSharedPreferences("nativecode_prefs", MODE_PRIVATE)
@@ -6992,7 +6796,8 @@ exec "${'$'}@"
                     obj.getString("name"),
                     obj.getString("icon"),
                     obj.getString("path"),
-                    obj.optLong("lastOpened", 0L)
+                    obj.optLong("lastOpened", 0L),
+                    obj.optString("linuxMethod", "proot")
                 ))
             }
         } catch (e: Exception) {
@@ -7014,6 +6819,7 @@ exec "${'$'}@"
             obj.put("icon", p.icon)
             obj.put("path", p.path)
             obj.put("lastOpened", p.lastOpened)
+            obj.put("linuxMethod", p.linuxMethod)
             arr.put(obj)
         }
         prefs.edit().putString("projects_json", arr.toString()).apply()
@@ -7342,11 +7148,103 @@ exec "${'$'}@"
         githubCard.addView(projectGithubInput)
         projectCreateLayout.addView(githubCard)
 
+        // --- Card 4: Linux Isolation Mode ---
+        var selectedMethod = LinuxCommandBuilder.currentMethod
+        val methodCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = cyberBrutalistBg(
+                fillColor = NC.SURFACE_LOW,
+                strokeColor = Color.parseColor("#3c4a3f"),
+                shadowColor = NC.SHADOW_DARK,
+                offsetDp = 4,
+                cornerRadiusDp = 0,
+                rightFaceColor = Color.parseColor("#3c4a3f")
+            )
+            setPadding(dp(16), dp(16), dp(16), dp(16))
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(20) }
+        }
+        methodCard.addView(TextView(this).apply {
+            text = "LINUX ISOLATION MODE"
+            setTextColor(NC.PRIMARY)
+            textSize = 12f
+            typeface = Typeface.MONOSPACE
+            paint.isFakeBoldText = true
+            setPadding(0, 0, 0, dp(8))
+        })
+
+        val prootChip = TextView(this).apply {
+            text = "  PRoot  "
+            textSize = 12f
+            typeface = Typeface.MONOSPACE
+            setPadding(dp(12), dp(8), dp(12), dp(8))
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = dp(4).toFloat()
+                setColor(if (selectedMethod == "proot") NC.PRIMARY else NC.SURFACE_LOWEST)
+                setStroke(dp(1), if (selectedMethod == "proot") NC.PRIMARY else NC.OUTLINE)
+            }
+            setTextColor(if (selectedMethod == "proot") Color.BLACK else NC.ON_SURFACE)
+            isClickable = true
+        }
+        val chrootChip = TextView(this).apply {
+            text = "  Chroot  "
+            textSize = 12f
+            typeface = Typeface.MONOSPACE
+            setPadding(dp(12), dp(8), dp(12), dp(8))
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = dp(4).toFloat()
+                setColor(if (selectedMethod == "chroot") NC.PRIMARY else NC.SURFACE_LOWEST)
+                setStroke(dp(1), if (selectedMethod == "chroot") NC.PRIMARY else NC.OUTLINE)
+            }
+            setTextColor(if (selectedMethod == "chroot") Color.BLACK else NC.ON_SURFACE)
+            isClickable = true
+            alpha = if (ProjectPathResolver.isChrootInstalled()) 1f else 0.4f
+            isEnabled = ProjectPathResolver.isChrootInstalled()
+        }
+
+        fun updateMethodChips() {
+            (prootChip.background as GradientDrawable).apply {
+                setColor(if (selectedMethod == "proot") NC.PRIMARY else NC.SURFACE_LOWEST)
+                setStroke(dp(1), if (selectedMethod == "proot") NC.PRIMARY else NC.OUTLINE)
+            }
+            prootChip.setTextColor(if (selectedMethod == "proot") Color.BLACK else NC.ON_SURFACE)
+            (chrootChip.background as GradientDrawable).apply {
+                setColor(if (selectedMethod == "chroot") NC.PRIMARY else NC.SURFACE_LOWEST)
+                setStroke(dp(1), if (selectedMethod == "chroot") NC.PRIMARY else NC.OUTLINE)
+            }
+            chrootChip.setTextColor(if (selectedMethod == "chroot") Color.BLACK else NC.ON_SURFACE)
+        }
+
+        prootChip.setOnClickListener {
+            selectedMethod = "proot"
+            updateMethodChips()
+        }
+        chrootChip.setOnClickListener {
+            if (ProjectPathResolver.isChrootInstalled()) {
+                selectedMethod = "chroot"
+                updateMethodChips()
+            } else {
+                Toast.makeText(this, "Chroot not installed. Install via Settings > System Scripts.", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        val chipRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(0, dp(4), 0, 0)
+        }
+        chipRow.addView(prootChip)
+        chipRow.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(dp(12), 0) })
+        chipRow.addView(chrootChip)
+        methodCard.addView(chipRow)
+        projectCreateLayout.addView(methodCard)
+
         // --- Primary Button ---
         projectCreateBtn = primaryButton("CREATE / IMPORT PROJECT") {
             val name = projectNameInput.text.toString().trim()
             val gitUrl = projectGithubInput.text.toString().trim()
             val icon = projectIconInput.text.toString().trim()
+            val method = selectedMethod
 
             if (name.isEmpty()) {
                 Toast.makeText(this, "Please enter a project name", Toast.LENGTH_SHORT).show()
@@ -7536,11 +7434,10 @@ exec "${'$'}@"
                 }
 
                 executor.execute {
-                    val gitCmd = "mkdir -p ~/repos && cd ~/repos && git clone --progress " + gitUrl + " 2>&1"
-                    val (lcArgs, _) = buildLinuxCommand(gitCmd)
-                    runShellCommandStreamed(
-                        lcArgs,
-                        onLine = { line -> appendLog(line) },
+                    ProjectManager.cloneRepo(
+                        this@MainActivity,
+                        gitUrl,
+                        onProgress = { line -> appendLog(line) },
                         onDone = { exitCode ->
                             mainHandler.removeCallbacks(pulseRunnable)
                             mainHandler.removeCallbacks(animRunnable)
@@ -7548,7 +7445,7 @@ exec "${'$'}@"
                             projectCreateBtn.isEnabled = true
                             projectCreateBtn.alpha = 1f
                             if (exitCode == 0) {
-                                addAndOpenProject(name, icon, path)
+                                addAndOpenProject(name, icon, path, method)
                             } else {
                                 Toast.makeText(this@MainActivity, "Clone failed. Check URL or network.", Toast.LENGTH_LONG).show()
                                 navigateToPage(ID_PROJECT_CREATE)
@@ -7557,16 +7454,16 @@ exec "${'$'}@"
                     )
                 }
             } else {
-                addAndOpenProject(name, icon, path)
+                addAndOpenProject(name, icon, path, method)
             }
         }
         projectCreateLayout.addView(projectCreateBtn)
     }
 
-    private fun addAndOpenProject(name: String, icon: String, path: String) {
+    private fun addAndOpenProject(name: String, icon: String, path: String, method: String = "proot") {
         val projects = getProjects().toMutableList()
         val existingIndex = projects.indexOfFirst { it.path == path }
-        val newProj = Project(name, icon, path)
+        val newProj = Project(name, icon, path, linuxMethod = method)
         if (existingIndex >= 0) {
             projects[existingIndex] = newProj
         } else {
@@ -7577,15 +7474,13 @@ exec "${'$'}@"
         activeProjectName = name
         activeProjectPath = path
 
+        // Auto-switch global mode to project's mode
+        LinuxCommandBuilder.currentMethod = method
+        getSharedPreferences("nativecode_prefs", MODE_PRIVATE)
+            .edit().putString("linux_method", method).apply()
+
         // Ensure the project directory exists in Debian
-        val (mkdirArgs, mkdirEnv) = buildLinuxCommand("mkdir -p $path")
-        try {
-            val pb = ProcessBuilder(*mkdirArgs)
-            pb.environment().putAll(mkdirEnv)
-            pb.start() // fire-and-forget; directory will be ready before user launches a tool
-        } catch (e: Exception) {
-            // non-fatal: directory may already exist or will be created on first tool launch
-        }
+        ProjectManager.ensureDir(this, path)
 
         Toast.makeText(this, "Project opened: $name", Toast.LENGTH_SHORT).show()
 
@@ -7735,7 +7630,7 @@ exec "${'$'}@"
                 }
 
                 val p1 = list[i]
-                val card1 = projectGridCard(p1.name, p1.path, "Tap to open", p1.icon).apply {
+                val card1 = projectGridCard(p1.name, p1.path, "Tap to open", p1.icon, p1.linuxMethod).apply {
                     layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f).apply {
                         rightMargin = dp(8)
                     }
@@ -7743,6 +7638,9 @@ exec "${'$'}@"
                         markProjectOpened(p1.path)
                         activeProjectName = p1.name
                         activeProjectPath = p1.path
+                        LinuxCommandBuilder.currentMethod = p1.linuxMethod
+                        getSharedPreferences("nativecode_prefs", MODE_PRIVATE)
+                            .edit().putString("linux_method", p1.linuxMethod).apply()
                         Toast.makeText(this@MainActivity, "Project opened: ${p1.name}", Toast.LENGTH_SHORT).show()
                         if (pageStack.isEmpty() || pageStack.peek() != ID_PROJECT_WORKSPACE) {
                             pageStack.push(ID_PROJECT_WORKSPACE)
@@ -7754,7 +7652,7 @@ exec "${'$'}@"
 
                 if (i + 1 < list.size) {
                     val p2 = list[i + 1]
-                    val card2 = projectGridCard(p2.name, p2.path, "Tap to open", p2.icon).apply {
+                    val card2 = projectGridCard(p2.name, p2.path, "Tap to open", p2.icon, p2.linuxMethod).apply {
                         layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f).apply {
                             leftMargin = dp(8)
                         }
@@ -7762,6 +7660,9 @@ exec "${'$'}@"
                             markProjectOpened(p2.path)
                             activeProjectName = p2.name
                             activeProjectPath = p2.path
+                            LinuxCommandBuilder.currentMethod = p2.linuxMethod
+                            getSharedPreferences("nativecode_prefs", MODE_PRIVATE)
+                                .edit().putString("linux_method", p2.linuxMethod).apply()
                             Toast.makeText(this@MainActivity, "Project opened: ${p2.name}", Toast.LENGTH_SHORT).show()
                             if (pageStack.isEmpty() || pageStack.peek() != ID_PROJECT_WORKSPACE) {
                                 pageStack.push(ID_PROJECT_WORKSPACE)
@@ -7784,24 +7685,11 @@ exec "${'$'}@"
         }
     }
 
-    private fun getProjectHostFile(): File {
-        val rootfs = if (currentLinuxMethod == "chroot") {
-            CHROOT_PATH
-        } else {
-            "/data/data/com.ivarna.nativecode/files/usr/var/lib/proot-distro/containers/debian/rootfs"
-        }
-        val resolvedPath = if (activeProjectPath.startsWith("/")) {
-            rootfs + activeProjectPath
-        } else {
-            rootfs + "/home/flux/" + activeProjectPath
-        }
-        return File(resolvedPath)
-    }
 
     private fun refreshWorkspaceDirTree() {
         if (!::workspaceDirTreeLayout.isInitialized) return
         workspaceDirTreeLayout.removeAllViews()
-        val projectHostDir = getProjectHostFile()
+        val projectHostDir = ProjectPathResolver.resolve(this, activeProjectPath)
         if (projectHostDir.exists() && projectHostDir.isDirectory) {
             if (dirSearchQuery.isEmpty()) {
                 renderDirectoryTree(projectHostDir, workspaceDirTreeLayout, 0)
@@ -8277,7 +8165,7 @@ exec "${'$'}@"
         
         executor.execute {
             val gitCmd = "cd $activeProjectPath && git status --porcelain"
-            val (lcArgs, lcEnv) = buildLinuxCommand(gitCmd)
+            val (lcArgs, lcEnv) = LinuxCommandBuilder.build(this, gitCmd)
             val pb = ProcessBuilder(*lcArgs)
             val env = pb.environment()
             env.putAll(lcEnv)
@@ -8538,7 +8426,7 @@ exec "${'$'}@"
             else          -> "mkdir -p $activeProjectPath && cd $activeProjectPath && exec zsh"
         }
 
-        val isChrootTool = currentLinuxMethod == "chroot" && type != "shell"
+        val isChrootTool = LinuxCommandBuilder.currentMethod == "chroot" && type != "shell"
         val shellCmd = if (isChrootTool) {
             val toolName = when (type) {
                 "opencode"    -> "opencode"
@@ -8550,12 +8438,12 @@ exec "${'$'}@"
                 "kiro"        -> "kiro-cli"
                 else          -> "zsh"
             }
-            ensureChrootLauncherScript()
-            "/tmp/launch_tool.sh $toolName"
+            ChrootCommandBuilder.ensureLauncherScript(this)
+            "cd $activeProjectPath && /tmp/launch_tool.sh $toolName"
         } else {
             toolCmd
         }
-        val (args, envMap) = buildLinuxCommand(shellCmd)
+        val (args, envMap) = LinuxCommandBuilder.build(this, shellCmd)
         val env = envMap.map { "${it.key}=${it.value}" }.toTypedArray()
 
         val sessionClient = object : TerminalSessionClient {
@@ -8594,7 +8482,7 @@ exec "${'$'}@"
             override fun logStackTrace(tag: String, e: java.lang.Exception) { Log.e(tag, "Stacktrace", e) }
         }
 
-        val sessionExec = if (currentLinuxMethod == "chroot") "/system/bin/sh" else shell
+        val sessionExec = if (LinuxCommandBuilder.currentMethod == "chroot") "/system/bin/sh" else shell
         val session = TerminalSession(sessionExec, cwd, args, env, 10000, sessionClient)
         workspaceSessions.add(session)
         workspaceTabNames.add(type)
@@ -9758,8 +9646,21 @@ exec "${'$'}@"
             setTextColor(NC.ON_SURF_VAR)
             typeface = Typeface.MONOSPACE
         }
+        val methodBadge = TextView(this).apply {
+            text = if (LinuxCommandBuilder.currentMethod == "chroot") "CHROOT" else "PROOT"
+            textSize = 9f
+            setTextColor(if (LinuxCommandBuilder.currentMethod == "chroot") NC.TERTIARY else NC.PRIMARY)
+            typeface = Typeface.MONOSPACE
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                setColor(NC.SURFACE_LOWEST)
+                setStroke(dp(1), if (LinuxCommandBuilder.currentMethod == "chroot") NC.TERTIARY else Color.parseColor("#3360F99E"))
+            }
+            setPadding(dp(6), dp(2), dp(6), dp(2))
+        }
         gitHeaderRow.addView(gitHeaderTitle)
         gitHeaderRow.addView(gitHeaderSub)
+        gitHeaderRow.addView(methodBadge)
         val gitDivider = View(this).apply {
             layoutParams = LinearLayout.LayoutParams(MATCH, dp(1)).apply { topMargin = dp(8) }
             setBackgroundColor(NC.OUTLINE_VAR)
