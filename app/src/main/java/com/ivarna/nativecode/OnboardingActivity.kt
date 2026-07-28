@@ -27,6 +27,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.setPadding
 import android.system.Os
+import com.ivarna.nativecode.terminal.GpuAccelDetector
 import com.ivarna.nativecode.terminal.HostCommandBuilder
 import com.ivarna.nativecode.terminal.TermuxHostPaths
 import java.io.File
@@ -39,7 +40,7 @@ class OnboardingActivity : AppCompatActivity() {
     private lateinit var rootLayout: FrameLayout
     private lateinit var pageContainer: FrameLayout
 
-    // Onboarding page index (0 to 5)
+    // Onboarding page index (0..4): intro → slideshow → isolation → full setup → complete
     private var currentPageIndex = 0
 
     private val executor = Executors.newCachedThreadPool()
@@ -47,28 +48,20 @@ class OnboardingActivity : AppCompatActivity() {
 
     // ── Shared setup status state ──────────────────────────────────────────────
     private var isDebianBaseSetupStarted = false
-    private var isCliToolsSetupStarted = false
     private var enableDebianCustomization = true
 
     // ── Linux isolation method selected on page 3 ─────────────────────────────
     // "proot" (default, rootless) or "chroot" (requires KernelSU/Magisk root)
     private var selectedIsolationMethod = "proot"
 
-    // page 4 (Debian Base) views
+    // page 3 (Full Environment Setup: base + AI CLIs) views
     private lateinit var baseStatusText: TextView
     private lateinit var baseProgressBar: ProgressBar
     private lateinit var baseLogText: TextView
     private lateinit var baseLogScroll: ScrollView
     private lateinit var baseNextBtn: View
 
-    // page 5 (AI CLI Tools) views
-    private lateinit var cliStatusText: TextView
-    private lateinit var cliProgressBar: ProgressBar
-    private lateinit var cliLogText: TextView
-    private lateinit var cliLogScroll: ScrollView
-    private lateinit var cliNextBtn: View
-
-    // page 6 (Complete) views
+    // page 4 (Complete) views
     private lateinit var completeText: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -128,8 +121,7 @@ class OnboardingActivity : AppCompatActivity() {
             1 -> buildSlideshowPage()
             2 -> buildIsolationPage()
             3 -> buildDebianBasePage()
-            4 -> buildCliSetupPage()
-            5 -> buildCompletePage()
+            4, 5 -> buildCompletePage() // 5 = legacy target_page after AI-tools page removed
             else -> buildIntroPage()
         }
 
@@ -759,8 +751,7 @@ class OnboardingActivity : AppCompatActivity() {
         return root
     }
 
-    // ── Page 4: Debian Base Extraction ────────────────────────────────────────
-    // ── Page 4: Debian Base Extraction ────────────────────────────────────────
+    // ── Page 3: Full Environment Setup (base + AI CLIs) ────────────────────────
     private fun buildDebianBasePage(): View {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -768,7 +759,7 @@ class OnboardingActivity : AppCompatActivity() {
             layoutParams = FrameLayout.LayoutParams(MATCH, MATCH)
         }
 
-        root.addView(smallHeader("Base Environment Setup", R.drawable.ic_storage))
+        root.addView(smallHeader("Environment Setup", R.drawable.ic_storage))
 
         // Status Card (Cyber-Brutalist sharp 0px card)
         val card = LinearLayout(this).apply {
@@ -785,7 +776,7 @@ class OnboardingActivity : AppCompatActivity() {
             layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(16) }
         }
         baseStatusText = TextView(this).apply {
-            text = "Initializing base environment extraction..."
+            text = "Initializing full environment setup (base + AI CLIs)..."
             textSize = 13f
             setTextColor(NC.PRIMARY)
             typeface = Typeface.MONOSPACE
@@ -825,7 +816,7 @@ class OnboardingActivity : AppCompatActivity() {
             layoutParams = LinearLayout.LayoutParams(dp(16), dp(16)).apply { rightMargin = dp(8) }
         }
         val consoleTitle = TextView(this).apply {
-            text = "[ EXTRACTION LOG ]"
+            text = "[ SETUP LOG ]"
             textSize = 11f
             setTextColor(NC.PRIMARY)
             typeface = Typeface.MONOSPACE
@@ -850,13 +841,9 @@ class OnboardingActivity : AppCompatActivity() {
         consoleCard.addView(baseLogScroll)
         root.addView(consoleCard)
 
-        // Next Button (initially disabled)
-        baseNextBtn = primaryButton("Next: AI CLI Tools", R.drawable.ic_arrow_right) {
+        // Next Button (initially disabled) — full setup (base + AI CLIs) must finish first
+        baseNextBtn = primaryButton("Next: Complete Setup", R.drawable.ic_arrow_right) {
             showPage(4)
-            if (!isCliToolsSetupStarted) {
-                isCliToolsSetupStarted = true
-                runCliToolsSetup()
-            }
         }
         baseNextBtn.isEnabled = false
         baseNextBtn.alpha = 0.45f
@@ -899,17 +886,25 @@ class OnboardingActivity : AppCompatActivity() {
                                     updateBaseStatus("[CHROOT] Debian family setup failed (exit $codeE).")
                                     return@copyAndRunInChroot
                                 }
-                                // Step F: Hardware acceleration
-                                updateBaseStatus("[CHROOT] F. Configuring Hardware Acceleration...")
+                                // Step F: Hardware acceleration (Adreno→turnip, else virgl)
+                                val gpuDetect = GpuAccelDetector.detect()
+                                updateBaseStatus(
+                                    "[CHROOT] F. Configuring Hardware Acceleration " +
+                                        "(${gpuDetect.mode}, vendor=${gpuDetect.vendorHint})..."
+                                )
+                                getSharedPreferences("nativecode_prefs", MODE_PRIVATE).edit()
+                                    .putString("flux_gpu", gpuDetect.mode)
+                                    .putString("flux_gpu_vendor", gpuDetect.vendorHint)
+                                    .apply()
                                 copyAndRunInChroot(
                                     assetName = "scripts/setup_hw_accel_debian.sh",
                                     scriptName = "setup_hw_accel_debian.sh",
-                                    cmd = "env FLUX_GPU=virgl bash /tmp/setup_hw_accel_debian.sh"
+                                    cmd = "env FLUX_GPU=${gpuDetect.mode} bash /tmp/setup_hw_accel_debian.sh"
                                 ) { codeF ->
                                     if (codeF != 0) {
                                         updateBaseStatus("[CHROOT] HW accel setup failed (exit $codeF). Continuing...")
                                     }
-                                    // Step G: Customization (optional)
+                                    // Step G: Customization (optional) → Step H: AI CLIs → finish
                                     if (enableDebianCustomization) {
                                         updateBaseStatus("[CHROOT] G. Customizing Guest Environment...")
                                         copyAndRunInChroot(
@@ -920,11 +915,11 @@ class OnboardingActivity : AppCompatActivity() {
                                             if (codeG != 0) {
                                                 updateBaseStatus("[CHROOT] Customization failed (exit $codeG). Continuing...")
                                             }
-                                            finishChrootBaseSetup()
+                                            runCliToolsSetupChroot { finishChrootBaseSetup() }
                                         }
                                     } else {
                                         updateBaseStatus("[CHROOT] G. Skipping Guest Customization (Toggle Off)...")
-                                        finishChrootBaseSetup()
+                                        runCliToolsSetupChroot { finishChrootBaseSetup() }
                                     }
                                 }
                             }
@@ -1004,7 +999,6 @@ class OnboardingActivity : AppCompatActivity() {
                 check(
                     runShellCommand(
                         arrayOf(proot, bash, File(homeDir, "setup_termux.sh").absolutePath),
-                        isCliSetup = false,
                         forceHostSetup = true
                     ) == 0
                 ) { "Host setup failed" }
@@ -1012,9 +1006,17 @@ class OnboardingActivity : AppCompatActivity() {
                 updateBaseStatus("E. Provisioning Debian Guest Container...")
                 val debBytes = assets.open("scripts/setup_debian_family.sh").use { it.readBytes() }
                 val debPayload = Base64.encodeToString(debBytes, Base64.NO_WRAP)
-                check(runShellCommand(arrayOf(bash, File(homeDir, "flux_install.sh").absolutePath, "debian", debPayload), isCliSetup = false) == 0) { "Debian guest install failed" }
+                check(runShellCommand(arrayOf(bash, File(homeDir, "flux_install.sh").absolutePath, "debian", debPayload)) == 0) { "Debian guest install failed" }
 
-                updateBaseStatus("F. Configuring Hardware Accel...")
+                val gpuDetect = GpuAccelDetector.detect()
+                updateBaseStatus(
+                    "F. Configuring Hardware Accel " +
+                        "(${gpuDetect.mode}, vendor=${gpuDetect.vendorHint})..."
+                )
+                getSharedPreferences("nativecode_prefs", MODE_PRIVATE).edit()
+                    .putString("flux_gpu", gpuDetect.mode)
+                    .putString("flux_gpu_vendor", gpuDetect.vendorHint)
+                    .apply()
                 val hwScript = File(File(usrDir, "tmp"), "setup_hw_accel_debian.sh")
                 assets.open("scripts/setup_hw_accel_debian.sh").use { input -> FileOutputStream(hwScript).use { input.copyTo(it) } }
                 hwScript.setExecutable(true)
@@ -1022,8 +1024,8 @@ class OnboardingActivity : AppCompatActivity() {
                     TermuxHostPaths.BIN + "/python",
                     TermuxHostPaths.PROOT_DISTRO,
                     "login", "debian", "--shared-tmp", "--",
-                    "env", "FLUX_GPU=virgl", "bash", "/tmp/setup_hw_accel_debian.sh"
-                ), isCliSetup = false) == 0) { "GPU setup failed" }
+                    "env", "FLUX_GPU=${gpuDetect.mode}", "bash", "/tmp/setup_hw_accel_debian.sh"
+                )) == 0) { "GPU setup failed" }
 
                 if (enableDebianCustomization) {
                     updateBaseStatus("G. Customizing Guest Environment...")
@@ -1035,15 +1037,24 @@ class OnboardingActivity : AppCompatActivity() {
                         TermuxHostPaths.PROOT_DISTRO,
                         "login", "debian", "--shared-tmp", "--",
                         "env", "FLUX_THEME=dark", "bash", "/tmp/setup_customization_debian.sh"
-                    ), isCliSetup = false) == 0) { "Customization failed" }
+                    )) == 0) { "Customization failed" }
                 } else {
                     updateBaseStatus("G. Skipping Guest Customization (Toggle Off)...")
+                }
+
+                // Step H: AI CLI tools (was separate onboarding page — now end of main setup)
+                updateBaseStatus("H. Installing AI CLI tools (NVM, Node, opencode, codex, claude, …)...")
+                val cliCode = runCliToolsSetupProot()
+                if (cliCode == 0) {
+                    updateBaseStatus("H. AI CLI tools provisioned successfully.")
+                } else {
+                    updateBaseStatus("H. AI CLI tools finished with exit $cliCode (continuing; re-run setup_cli_tools.sh later if needed).")
                 }
 
                 // Persist linux_method = proot
                 getSharedPreferences("nativecode_prefs", MODE_PRIVATE)
                     .edit().putString("linux_method", "proot").apply()
-                updateBaseStatus("Debian Base Setup Successful!")
+                updateBaseStatus("Full Environment Setup Successful!")
                 mainHandler.post {
                     if (::baseProgressBar.isInitialized) {
                         baseProgressBar.isIndeterminate = false
@@ -1188,212 +1199,52 @@ class OnboardingActivity : AppCompatActivity() {
         }
     }
 
-    // ── Page 5: AI CLI Tools Provisioning ─────────────────────────────────────
-    // ── Page 5: AI CLI Tools Provisioning ─────────────────────────────────────
-    private fun buildCliSetupPage(): View {
-        val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(20), dp(20), dp(20))
-            layoutParams = FrameLayout.LayoutParams(MATCH, MATCH)
+    // ── AI CLI tools (end of main Environment Setup, proot + chroot) ───────────
+
+    /** Deploy + run setup_cli_tools.sh inside proot debian. Logs to base console. */
+    private fun runCliToolsSetupProot(): Int {
+        val usrDir = File(filesDir, "usr")
+        val cliScript = File(File(usrDir, "tmp"), "setup_cli_tools.sh")
+        cliScript.parentFile?.mkdirs()
+        assets.open("scripts/setup_cli_tools.sh").use { input ->
+            FileOutputStream(cliScript).use { input.copyTo(it) }
         }
-
-        root.addView(smallHeader("AI CLI Tools Setup", R.drawable.ic_smart_toy))
-
-        // Status Card (Cyber-Brutalist sharp 0px card)
-        val card = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            background = cyberBrutalistBg(
-                fillColor = NC.SURFACE_CONTAINER,
-                strokeColor = NC.BORDER,
-                shadowColor = NC.SURFACE_BRIGHT,
-                offsetDp = 6,
-                cornerRadiusDp = 0,
-                rightFaceColor = NC.OUTLINE_VAR
+        cliScript.setExecutable(true)
+        updateBaseStatus("Deployed setup_cli_tools.sh — running in debian guest...")
+        return runShellCommand(
+            arrayOf(
+                TermuxHostPaths.BIN + "/python",
+                TermuxHostPaths.PROOT_DISTRO,
+                "login", "debian", "--shared-tmp", "--",
+                "bash", "/tmp/setup_cli_tools.sh"
             )
-            setPadding(dp(18), dp(16), dp(18), dp(16))
-            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(16) }
-        }
-        cliStatusText = TextView(this).apply {
-            text = "Starting package setup..."
-            textSize = 13f
-            setTextColor(NC.PRIMARY)
-            typeface = Typeface.MONOSPACE
-            setPadding(0, 0, 0, dp(12))
-        }
-        cliProgressBar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
-            isIndeterminate = true
-            indeterminateTintList = ColorStateList.valueOf(NC.PRIMARY)
-            layoutParams = LinearLayout.LayoutParams(MATCH, dp(6))
-        }
-        card.addView(cliStatusText)
-        card.addView(cliProgressBar)
-        root.addView(card)
-
-        // Terminal Console View (Cyber-Brutalist sharp 0px card)
-        val consoleCard = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            background = cyberBrutalistBg(
-                fillColor = NC.LOGBG,
-                strokeColor = NC.BORDER,
-                shadowColor = NC.SURFACE_BRIGHT,
-                offsetDp = 6,
-                cornerRadiusDp = 0,
-                rightFaceColor = NC.OUTLINE_VAR
-            )
-            layoutParams = LinearLayout.LayoutParams(MATCH, 0, 1f).apply { bottomMargin = dp(16) }
-        }
-        val consoleHeader = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            background = roundedBg(NC.SURFACE_CONTAINER, NC.BORDER, 0)
-            setPadding(dp(14), dp(10), dp(14), dp(10))
-        }
-        val consoleIcon = ImageView(this).apply {
-            setImageResource(R.drawable.ic_smart_toy)
-            setColorFilter(NC.PRIMARY)
-            layoutParams = LinearLayout.LayoutParams(dp(16), dp(16)).apply { rightMargin = dp(8) }
-        }
-        val consoleTitle = TextView(this).apply {
-            text = "[ INSTALLATION LOG ]"
-            textSize = 11f
-            setTextColor(NC.PRIMARY)
-            typeface = Typeface.MONOSPACE
-            letterSpacing = 0.05f
-        }
-        consoleHeader.addView(consoleIcon)
-        consoleHeader.addView(consoleTitle)
-        consoleCard.addView(consoleHeader)
-
-        cliLogScroll = ScrollView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(MATCH, MATCH)
-        }
-        cliLogText = TextView(this).apply {
-            text = ""
-            textSize = 11f
-            setTextColor(NC.PRIMARY)
-            typeface = Typeface.MONOSPACE
-            setPadding(dp(14), dp(12), dp(14), dp(12))
-            setLineSpacing(dp(2).toFloat(), 1.2f)
-        }
-        cliLogScroll.addView(cliLogText)
-        consoleCard.addView(cliLogScroll)
-        root.addView(consoleCard)
-
-        // Continue Button
-        cliNextBtn = primaryButton("Next: Complete Setup", R.drawable.ic_arrow_right) {
-            showPage(5)
-        }
-        cliNextBtn.isEnabled = false
-        cliNextBtn.alpha = 0.45f
-        root.addView(cliNextBtn)
-
-        return root
+        )
     }
 
-    private fun runCliToolsSetup() {
-        executor.execute {
-            try {
-                updateCliStatus("Deploying CLI Tools setup script...")
-                val usrDir = File(filesDir, "usr")
-                val cliScript = File(File(usrDir, "tmp"), "setup_cli_tools.sh")
-                cliScript.parentFile?.mkdirs()
-                assets.open("scripts/setup_cli_tools.sh").use { input -> FileOutputStream(cliScript).use { input.copyTo(it) } }
-                cliScript.setExecutable(true)
-
-                if (selectedIsolationMethod == "chroot") {
-                    updateCliStatus("[CHROOT] Running CLI tools setup inside Debian 13 Chroot...")
-                    // Stage in app-private dir (app has write access), then cp as root into chroot/tmp
-                    val stageDir = File(filesDir, "staged_scripts").also { it.mkdirs() }
-                    val staged = File(stageDir, "setup_cli_tools.sh")
-                    assets.open("scripts/setup_cli_tools.sh").use { input ->
-                        FileOutputStream(staged).use { input.copyTo(it) }
-                    }
-                    staged.setReadable(true, false)
-                    val chrootTmpPath = "/data/local/tmp/chrootDebian13/tmp"
-                    val copyCode = RootShell.executeSync(
-                        "mkdir -p $chrootTmpPath && cp ${staged.absolutePath} $chrootTmpPath/setup_cli_tools.sh && chmod +x $chrootTmpPath/setup_cli_tools.sh"
-                    )
-                    if (copyCode != 0) {
-                        updateCliStatus("[CHROOT] Error copying setup_cli_tools.sh into chroot (exit $copyCode).")
-                        mainHandler.post {
-                            if (::cliProgressBar.isInitialized) { cliProgressBar.isIndeterminate = false; cliProgressBar.progress = 0 }
-                            if (::cliNextBtn.isInitialized) { cliNextBtn.isEnabled = true; cliNextBtn.alpha = 1f }
-                        }
-                        return@execute
-                    }
-
-
-                    RootShell.executeInChroot(
-                        cmd = "bash /tmp/setup_cli_tools.sh",
-                        user = "root",
-                        onLine = { line -> updateCliStatus(line) },
-                        onDone = { code ->
-                            if (code == 0) {
-                                updateCliStatus("[CHROOT] AI CLI Tools Provisioned Successfully!")
-                            } else {
-                                updateCliStatus("[CHROOT] CLI Tools Setup completed with exit code $code")
-                            }
-                            mainHandler.post {
-                                if (::cliProgressBar.isInitialized) {
-                                    cliProgressBar.isIndeterminate = false
-                                    cliProgressBar.progress = 100
-                                }
-                                if (::cliNextBtn.isInitialized) {
-                                    cliNextBtn.isEnabled = true
-                                    cliNextBtn.alpha = 1f
-                                }
-                            }
-                        }
-                    )
-                    return@execute
-                }
-
-                updateCliStatus("Running installation inside Debian (NVM, Node v26, opencode-ai, @openai/codex)...")
-                val runCode = runShellCommand(arrayOf(
-                    TermuxHostPaths.BIN + "/python",
-                    TermuxHostPaths.PROOT_DISTRO,
-                    "login", "debian", "--shared-tmp", "--",
-                    "bash", "/tmp/setup_cli_tools.sh"
-                ), isCliSetup = true)
-
-                if (runCode == 0) {
-                    updateCliStatus("AI CLI Tools Provisioned Successfully!")
-                } else {
-                    updateCliStatus("CLI Tools Setup completed with code $runCode")
-                }
-                mainHandler.post {
-                    if (::cliProgressBar.isInitialized) {
-                        cliProgressBar.isIndeterminate = false
-                        cliProgressBar.progress = 100
-                    }
-                    if (::cliNextBtn.isInitialized) {
-                        cliNextBtn.isEnabled = true
-                        cliNextBtn.alpha = 1f
-                    }
-                }
-            } catch (e: Exception) {
-                Log.e("Onboarding", "CLI setup error", e)
-                updateCliStatus("Error: ${e.message}")
+    /**
+     * Deploy + run setup_cli_tools.sh inside chroot as root.
+     * Always continues to [onDone] (soft-fail) so onboarding can complete.
+     */
+    private fun runCliToolsSetupChroot(onDone: () -> Unit) {
+        updateBaseStatus("[CHROOT] H. Installing AI CLI tools (NVM, Node, opencode, codex, claude, …)...")
+        copyAndRunInChroot(
+            assetName = "scripts/setup_cli_tools.sh",
+            scriptName = "setup_cli_tools.sh",
+            cmd = "bash /tmp/setup_cli_tools.sh"
+        ) { code ->
+            if (code == 0) {
+                updateBaseStatus("[CHROOT] H. AI CLI tools provisioned successfully.")
+            } else {
+                updateBaseStatus(
+                    "[CHROOT] H. AI CLI tools finished with exit $code " +
+                        "(continuing; re-run setup_cli_tools.sh later if needed)."
+                )
             }
+            onDone()
         }
     }
 
-    private fun updateCliStatus(msg: String) {
-        mainHandler.post {
-            if (::cliStatusText.isInitialized) {
-                cliStatusText.text = msg
-                if (::cliLogText.isInitialized) {
-                    cliLogText.append("\n>>> $msg\n")
-                    if (::cliLogScroll.isInitialized) {
-                        cliLogScroll.post { cliLogScroll.fullScroll(View.FOCUS_DOWN) }
-                    }
-                }
-            }
-        }
-    }
-
-    // ── Page 6: Complete ──────────────────────────────────────────────────────
-    // ── Page 6: Complete ──────────────────────────────────────────────────────
+    // ── Page 4: Complete ──────────────────────────────────────────────────────
     private fun buildCompletePage(): View {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -1556,7 +1407,7 @@ class OnboardingActivity : AppCompatActivity() {
     private fun finishChrootBaseSetup() {
         getSharedPreferences("nativecode_prefs", MODE_PRIVATE)
             .edit().putString("linux_method", "chroot").apply()
-        updateBaseStatus("[CHROOT] Setup complete! linux_method=chroot saved.")
+        updateBaseStatus("[CHROOT] Full environment setup complete! linux_method=chroot saved.")
         mainHandler.post {
             if (::baseProgressBar.isInitialized) {
                 baseProgressBar.isIndeterminate = false
@@ -1672,7 +1523,6 @@ class OnboardingActivity : AppCompatActivity() {
 
     private fun runShellCommand(
         cmd: Array<String>,
-        isCliSetup: Boolean,
         forceHostSetup: Boolean = false
     ): Int {
         val adjusted = if (cmd.isNotEmpty() && cmd[0].startsWith("/data/data/"))
@@ -1687,14 +1537,9 @@ class OnboardingActivity : AppCompatActivity() {
         while (stream.read(buf).also { read = it } != -1) {
             val out = String(buf, 0, read)
             mainHandler.post {
-                if (isCliSetup) {
-                    if (::cliLogText.isInitialized) {
-                        cliLogText.append(out)
-                        cliLogScroll.post { cliLogScroll.fullScroll(View.FOCUS_DOWN) }
-                    }
-                } else {
-                    if (::baseLogText.isInitialized) {
-                        baseLogText.append(out)
+                if (::baseLogText.isInitialized) {
+                    baseLogText.append(out)
+                    if (::baseLogScroll.isInitialized) {
                         baseLogScroll.post { baseLogScroll.fullScroll(View.FOCUS_DOWN) }
                     }
                 }

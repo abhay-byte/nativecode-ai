@@ -139,25 +139,89 @@ fi
 
 echo "FluxLinux: startxfce4=READY"
 
+# Guest GPU mode from setup_hw_accel_debian.sh (/etc/fluxlinux/gpu_mode)
+# turnip → Adreno/Zink; virgl → host virgl_test_server; else softpipe
+GUEST_ROOTFS="$TERMUX_PREFIX/var/lib/proot-distro/containers/$DISTRO/rootfs"
+GPU_MODE="virgl"
+if [ -r "$GUEST_ROOTFS/etc/fluxlinux/gpu_mode" ]; then
+  GPU_MODE=$(tr -d '[:space:]' <"$GUEST_ROOTFS/etc/fluxlinux/gpu_mode")
+fi
+# sanitize for embedding in guest shell
+case "$GPU_MODE" in
+  turnip|virgl) ;;
+  *) GPU_MODE=virgl ;;
+esac
+echo "FluxLinux: Guest GPU mode=$GPU_MODE"
+
 # Launch XFCE in proot
 if [ "$DISTRO" = "termux" ]; then
   export PULSE_SERVER=127.0.0.1
   env DISPLAY=:0 startxfce4
 else
+  # Single guest script: read mode file inside rootfs (no host quote hell)
   python "$TERMUX_PREFIX/bin/proot-distro" login "$DISTRO" --shared-tmp -- /bin/bash -c '
     export DISPLAY=:0
     export PULSE_SERVER=tcp:127.0.0.1
     export XDG_RUNTIME_DIR=/tmp
     export VTEST_SOCKET_NAME=/tmp/.virgl_test
-    export LIBGL_ALWAYS_SOFTWARE=1
-    export GALLIUM_DRIVER=llvmpipe
+
+    GPU_MODE=virgl
+    if [ -r /etc/fluxlinux/gpu_mode ]; then
+      GPU_MODE=$(tr -d "[:space:]" </etc/fluxlinux/gpu_mode)
+    fi
+    case "$GPU_MODE" in turnip|virgl) ;; *) GPU_MODE=virgl ;; esac
+    echo "FluxLinux(guest): GPU mode=$GPU_MODE"
+
+    apply_gpu_env() {
+      unset GALLIUM_DRIVER MESA_LOADER_DRIVER_OVERRIDE VK_ICD_FILENAMES
+      unset LIBGL_ALWAYS_SOFTWARE TU_DEBUG MESA_VK_WSI_DEBUG
+      case "$GPU_MODE" in
+        turnip)
+          export MESA_LOADER_DRIVER_OVERRIDE=zink
+          export VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/freedreno_icd.aarch64.json
+          export TU_DEBUG=noconform
+          export MESA_VK_WSI_DEBUG=sw
+          export MESA_GL_VERSION_OVERRIDE=4.6
+          export MESA_GLES_VERSION_OVERRIDE=3.2
+          ;;
+        virgl)
+          if [ -S /tmp/.virgl_test ]; then
+            export GALLIUM_DRIVER=virpipe
+          else
+            export LIBGL_ALWAYS_SOFTWARE=1
+            export GALLIUM_DRIVER=llvmpipe
+            echo "FluxLinux(guest): VirGL socket missing — llvmpipe fallback"
+          fi
+          ;;
+        *)
+          export LIBGL_ALWAYS_SOFTWARE=1
+          export GALLIUM_DRIVER=llvmpipe
+          ;;
+      esac
+    }
+
+    apply_gpu_env
+    # Preserve exported GPU vars across su - (login shell clears some env)
+    export GPU_MODE
     su - flux -c "
       export DISPLAY=:0
       export PULSE_SERVER=tcp:127.0.0.1
       export XDG_RUNTIME_DIR=/tmp
       export VTEST_SOCKET_NAME=/tmp/.virgl_test
-      export LIBGL_ALWAYS_SOFTWARE=1
-      export GALLIUM_DRIVER=llvmpipe
+      export GPU_MODE=$GPU_MODE
+      if [ \"\$GPU_MODE\" = turnip ]; then
+        export MESA_LOADER_DRIVER_OVERRIDE=zink
+        export VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/freedreno_icd.aarch64.json
+        export TU_DEBUG=noconform
+        export MESA_VK_WSI_DEBUG=sw
+        export MESA_GL_VERSION_OVERRIDE=4.6
+        export MESA_GLES_VERSION_OVERRIDE=3.2
+      elif [ \"\$GPU_MODE\" = virgl ] && [ -S /tmp/.virgl_test ]; then
+        export GALLIUM_DRIVER=virpipe
+      else
+        export LIBGL_ALWAYS_SOFTWARE=1
+        export GALLIUM_DRIVER=llvmpipe
+      fi
       xfconf-query -c xfwm4 -p /general/use_compositing -s false 2>/dev/null
       dbus-launch --exit-with-session startxfce4
     "

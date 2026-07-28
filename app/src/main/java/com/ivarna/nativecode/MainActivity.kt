@@ -3327,7 +3327,7 @@ class MainActivity : AppCompatActivity() {
         val guestScripts = arrayOf(
             "setup_debian_family.sh" to "Create users and VNC startup configurations in guest.",
             "setup_customization_debian.sh" to "Apply dark themes and custom packages inside Debian guest.",
-            "setup_hw_accel_debian.sh" to "Configure hardware acceleration and VirGL rendering in guest.",
+            "setup_hw_accel_debian.sh" to "Configure GPU accel: Turnip (Snapdragon/Adreno) or VirGL (others).",
             "setup_cli_tools.sh" to "Install Node.js/NVM and AI CLI tools (Aider, Claude, Cline) in guest."
         )
 
@@ -3502,10 +3502,18 @@ class MainActivity : AppCompatActivity() {
             "chroot_guest" -> {
                 // Guest script executed inside Debian Chroot container
                 val stageCmd = "mkdir -p /data/local/tmp/chrootDebian13/tmp && cp $scriptPath /data/local/tmp/chrootDebian13/tmp/$scriptName && chmod +x /data/local/tmp/chrootDebian13/tmp/$scriptName"
-                val runCmd = if (File("/data/local/tmp/run_debian13_root.sh").exists()) {
-                    "/data/local/tmp/run_debian13_root.sh bash /tmp/$scriptName"
+                val guestInner = if (scriptName == "setup_hw_accel_debian.sh") {
+                    val gpu = GpuAccelDetector.fluxGpuEnv()
+                    getSharedPreferences("nativecode_prefs", MODE_PRIVATE).edit()
+                        .putString("flux_gpu", gpu).apply()
+                    "env FLUX_GPU=$gpu bash /tmp/$scriptName"
                 } else {
-                    "busybox mount -o remount,dev,suid /data 2>/dev/null; busybox mount --bind /dev /data/local/tmp/chrootDebian13/dev 2>/dev/null; busybox mount --bind /sys /data/local/tmp/chrootDebian13/sys 2>/dev/null; busybox mount -t proc proc /data/local/tmp/chrootDebian13/proc 2>/dev/null; busybox mount -t devpts devpts /data/local/tmp/chrootDebian13/dev/pts 2>/dev/null; busybox chroot /data/local/tmp/chrootDebian13 /bin/su - root -c \"bash /tmp/$scriptName\""
+                    "bash /tmp/$scriptName"
+                }
+                val runCmd = if (File("/data/local/tmp/run_debian13_root.sh").exists()) {
+                    "/data/local/tmp/run_debian13_root.sh $guestInner"
+                } else {
+                    "busybox mount -o remount,dev,suid /data 2>/dev/null; busybox mount --bind /dev /data/local/tmp/chrootDebian13/dev 2>/dev/null; busybox mount --bind /sys /data/local/tmp/chrootDebian13/sys 2>/dev/null; busybox mount -t proc proc /data/local/tmp/chrootDebian13/proc 2>/dev/null; busybox mount -t devpts devpts /data/local/tmp/chrootDebian13/dev/pts 2>/dev/null; busybox chroot /data/local/tmp/chrootDebian13 /bin/su - root -c \"$guestInner\""
                 }
                 args = arrayOf("/system/bin/sh", "-c", "/system/bin/su -c \"$stageCmd && $runCmd\"")
                 envMap = HashMap(System.getenv()).apply {
@@ -3516,7 +3524,14 @@ class MainActivity : AppCompatActivity() {
             }
             "proot" -> {
                 // Guest script executed inside Debian PRoot container
-                val scriptCmd = "bash /data/data/com.ivarna.nativecode/files/home/$scriptName"
+                val scriptCmd = if (scriptName == "setup_hw_accel_debian.sh") {
+                    val gpu = GpuAccelDetector.fluxGpuEnv()
+                    getSharedPreferences("nativecode_prefs", MODE_PRIVATE).edit()
+                        .putString("flux_gpu", gpu).apply()
+                    "env FLUX_GPU=$gpu bash /data/data/com.ivarna.nativecode/files/home/$scriptName"
+                } else {
+                    "bash /data/data/com.ivarna.nativecode/files/home/$scriptName"
+                }
                 val (a, e) = LinuxCommandBuilder.build(this, scriptCmd, user = "root")
                 args = a; envMap = e
             }
