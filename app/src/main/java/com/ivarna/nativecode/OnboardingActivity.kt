@@ -29,6 +29,7 @@ import androidx.core.view.setPadding
 import android.system.Os
 import com.ivarna.nativecode.terminal.GpuAccelDetector
 import com.ivarna.nativecode.terminal.HostCommandBuilder
+import com.ivarna.nativecode.terminal.ProjectPathResolver
 import com.ivarna.nativecode.terminal.TermuxHostPaths
 import java.io.File
 import java.io.FileOutputStream
@@ -108,8 +109,21 @@ class OnboardingActivity : AppCompatActivity() {
         setContentView(rootLayout)
 
         deployScripts()
+
+        // Optional deep-link from Settings → Chroot install
+        intent.getStringExtra("preferred_isolation")?.let { pref ->
+            if (pref == "chroot" || pref == "proot") selectedIsolationMethod = pref
+        }
         val startPage = intent.getIntExtra("target_page", 0)
         showPage(startPage)
+
+        // Jump straight into Environment Setup and run full install chain
+        if (intent.getBooleanExtra("auto_start_setup", false) && startPage == 3) {
+            if (!isDebianBaseSetupStarted) {
+                isDebianBaseSetupStarted = true
+                runDebianBaseSetup()
+            }
+        }
     }
 
     private fun showPage(index: Int) {
@@ -682,6 +696,8 @@ class OnboardingActivity : AppCompatActivity() {
             selectedIsolationMethod = "chroot"
             updateIsolationCardSelections("chroot", prootCard, chrootCard)
         }
+        // Honor preferred_isolation from intent (e.g. Settings → Install Chroot)
+        updateIsolationCardSelections(selectedIsolationMethod, prootCard, chrootCard)
 
         // Customization Script Toggle Card (Cyber-Brutalist Design)
         val customToggleCard = LinearLayout(this).apply {
@@ -874,7 +890,15 @@ class OnboardingActivity : AppCompatActivity() {
                     assetName = "scripts/chroot/setup_debian13_chroot.sh",
                     onLine = { line -> updateBaseStatus(line) },
                     onDone = { code ->
-                        if (code == 0) {
+                        // Proceed if exit 0 OR base marker present (false exit 1 from am start, etc.)
+                        val installed = ProjectPathResolver.isChrootInstalled()
+                        if (code != 0 && installed) {
+                            updateBaseStatus(
+                                "[CHROOT] Base exit $code but .flux_configured present — continuing guest setup..."
+                            )
+                        }
+                        if (code == 0 || installed) {
+                            updateBaseStatus("[CHROOT] Base complete — starting guest chain (E→H)...")
                             // Step E: Provision Debian packages (runs inside chroot as root)
                             updateBaseStatus("[CHROOT] E. Provisioning Debian packages...")
                             copyAndRunInChroot(

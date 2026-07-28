@@ -81,6 +81,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var addTerminalBtn: ImageView
     private lateinit var backBtn: ImageView
     private lateinit var scriptInstallBackBtn: ImageView
+    private lateinit var scriptInstallTitleTv: TextView
 
     private val sessionsList = ArrayList<TerminalSession>()
     private val terminalSessionTypes = ArrayList<String>()
@@ -133,6 +134,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var diffViewerContainer: LinearLayout
     private lateinit var scriptsScrollView: ScrollView
     private lateinit var scriptsLayout: LinearLayout
+    private lateinit var chrootSettingsScrollView: ScrollView
 
     private lateinit var scriptInstallLayout: LinearLayout
     private lateinit var scriptInstallViewContainer: FrameLayout
@@ -160,6 +162,32 @@ class MainActivity : AppCompatActivity() {
     private val composeSwapTotalState = androidx.compose.runtime.mutableLongStateOf(0L)
     private val composeDiskState = androidx.compose.runtime.mutableIntStateOf(0)
 
+    // Chroot Settings page — live labels for async refresh
+    private var chrootStatusBadge: TextView? = null
+    private var chrootRootBadge: TextView? = null
+    private var chrootRootRowView: View? = null
+    private var chrootSizePanelView: View? = null
+    private var chrootPathRowView: View? = null
+    private var chrootSizeValueTv: TextView? = null
+    private var chrootSizeUnitTv: TextView? = null
+    private var chrootSizeHintTv: TextView? = null
+    private var chrootUninstallBtn: TextView? = null
+    private var chrootInstallBtn: TextView? = null
+    private var chrootRefreshBtn: TextView? = null
+    private var chrootLoadingRow: LinearLayout? = null
+    private var chrootProgressBar: ProgressBar? = null
+    private var chrootMeasuring = false
+    private var pendingChrootUninstall = false
+
+    companion object {
+        private const val PREF_CHROOT_INSTALLED = "chroot_installed"
+        private const val PREF_CHROOT_DIR = "chroot_dir_present"
+        private const val PREF_CHROOT_BYTES = "chroot_size_bytes"
+        private const val PREF_CHROOT_ROOT_OK = "chroot_root_ok"
+        private const val PREF_CHROOT_SIZE_VIA_ROOT = "chroot_size_via_root"
+        private const val PREF_CHROOT_LAST_MS = "chroot_last_check_ms"
+    }
+
     private val executor = Executors.newCachedThreadPool()
     private val mainHandler = Handler(Looper.getMainLooper())
 
@@ -176,6 +204,7 @@ class MainActivity : AppCompatActivity() {
     private val ID_PROJECT_SETTINGS = 11
     private val ID_PROJECT_DIR_TREE = 12
     private val ID_PROJECT_GIT_DIFF = 13
+    private val ID_CHROOT_SETTINGS = 14
     
     private var fileViewerBackPage = ID_FILES
     private var diffViewerBackPage = ID_GIT
@@ -483,6 +512,15 @@ class MainActivity : AppCompatActivity() {
 
     private fun handleIntent(intent: Intent?) {
         intent?.let {
+            // Chroot uninstall script deep-link: nativecode://callback?result=success&name=distro_uninstall_...
+            val data = it.data
+            if (data != null && data.scheme == "nativecode" && data.host == "callback") {
+                val name = data.getQueryParameter("name").orEmpty()
+                val result = data.getQueryParameter("result").orEmpty()
+                if (name.contains("uninstall", ignoreCase = true) && result == "success") {
+                    onChrootUninstalled(fromCallback = true)
+                }
+            }
             val projPath = it.getStringExtra("PROJECT_PATH")
             if (projPath != null) {
                 activeProjectPath = projPath
@@ -652,6 +690,9 @@ class MainActivity : AppCompatActivity() {
         if (::scriptsScrollView.isInitialized) {
             scriptsScrollView.visibility = View.GONE
         }
+        if (::chrootSettingsScrollView.isInitialized) {
+            chrootSettingsScrollView.visibility = View.GONE
+        }
         if (::scriptInstallLayout.isInitialized) {
             scriptInstallLayout.visibility = View.GONE
         }
@@ -746,6 +787,14 @@ class MainActivity : AppCompatActivity() {
             }
             ID_SETTINGS -> {
                 settingsHubScrollView.visibility = View.VISIBLE
+            }
+            ID_CHROOT_SETTINGS -> {
+                if (::chrootSettingsScrollView.isInitialized) {
+                    chrootSettingsScrollView.visibility = View.VISIBLE
+                }
+                applyInstantChrootStatus()
+                applyCachedChrootInfo()
+                refreshChrootSettingsCard(force = false)
             }
             ID_SCRIPTS -> {
                 if (::scriptsScrollView.isInitialized) {
@@ -880,6 +929,11 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        if (::chrootSettingsScrollView.isInitialized && chrootSettingsScrollView.visibility == View.VISIBLE) {
+            navigateToPage(ID_SETTINGS)
+            return
+        }
+
         if (::scriptsScrollView.isInitialized && scriptsScrollView.visibility == View.VISIBLE) {
             navigateToPage(ID_SETTINGS)
             return
@@ -921,7 +975,7 @@ class MainActivity : AppCompatActivity() {
             showProjectNav = true
         }
         
-        if (id == ID_SCRIPTS || id == ID_SCRIPT_INSTALL || id == ID_PROJECT_CREATE) {
+        if (id == ID_SCRIPTS || id == ID_SCRIPT_INSTALL || id == ID_PROJECT_CREATE || id == ID_CHROOT_SETTINGS) {
             showGlobalNav = false
             showProjectNav = false
         }
@@ -1376,6 +1430,7 @@ class MainActivity : AppCompatActivity() {
         buildFileViewerLayout()
         buildDiffViewerLayout()
         buildScriptsLayout()
+        buildChrootSettingsPage()
         buildScriptInstallLayout()
         buildProjectCreateLayout()
         buildProjectsListLayout()
@@ -1393,6 +1448,7 @@ class MainActivity : AppCompatActivity() {
         contentFrame.addView(fileViewerRootContainer)
         contentFrame.addView(diffViewerRootContainer)
         contentFrame.addView(scriptsScrollView)
+        contentFrame.addView(chrootSettingsScrollView)
         contentFrame.addView(scriptInstallLayout)
         contentFrame.addView(projectCreateScrollView)
         contentFrame.addView(projectsListContainer)
@@ -3088,8 +3144,12 @@ class MainActivity : AppCompatActivity() {
         settingsHubLayout.addView(buildTerminalSettingsCard())
         settingsHubLayout.addView(spacer(16))
 
-        // Environment card
+        // Environment card (proot / chroot switch)
         settingsHubLayout.addView(buildEnvironmentCard())
+        settingsHubLayout.addView(spacer(16))
+
+        // Chroot Settings — opens dedicated page (size / root / uninstall)
+        settingsHubLayout.addView(buildChrootSettingsSectionButton())
         settingsHubLayout.addView(spacer(16))
 
         // System Scripts
@@ -3164,6 +3224,87 @@ class MainActivity : AppCompatActivity() {
             }
             val sub = TextView(this@MainActivity).apply {
                 text = "Run installation, configuration, or control scripts"
+                textSize = 11f
+                setTextColor(NC.ON_SURF_VAR)
+                typeface = Typeface.MONOSPACE
+            }
+            details.addView(name)
+            details.addView(sub)
+            val arrow = ImageView(this@MainActivity).apply {
+                setImageResource(R.drawable.ic_chevron_right)
+                setColorFilter(NC.PRIMARY)
+                layoutParams = LinearLayout.LayoutParams(dp(20), dp(20))
+            }
+            addView(icon)
+            addView(details)
+            addView(arrow)
+        }
+    }
+
+    private fun buildChrootSettingsSectionButton(): View {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            background = cyberBrutalistBg(
+                fillColor = NC.SURFACE_LOW,
+                strokeColor = NC.OUTLINE_VAR,
+                shadowColor = NC.SHADOW_DARK,
+                offsetDp = 6,
+                cornerRadiusDp = 0
+            )
+            setPadding(dp(16), dp(16), dp(16), dp(16))
+            setOnClickListener {
+                if (pageStack.isEmpty() || pageStack.peek() != ID_CHROOT_SETTINGS) {
+                    pageStack.push(ID_CHROOT_SETTINGS)
+                }
+                navigateToPage(ID_CHROOT_SETTINGS)
+            }
+
+            setOnTouchListener { v, event ->
+                when (event.action) {
+                    MotionEvent.ACTION_DOWN -> {
+                        v.translationX = dp(4).toFloat()
+                        v.translationY = dp(4).toFloat()
+                        v.background = cyberBrutalistBg(
+                            fillColor = NC.SURFACE_LOW,
+                            strokeColor = NC.OUTLINE_VAR,
+                            shadowColor = NC.SHADOW_DARK,
+                            offsetDp = 2,
+                            cornerRadiusDp = 0
+                        )
+                    }
+                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                        v.translationX = 0f
+                        v.translationY = 0f
+                        v.background = cyberBrutalistBg(
+                            fillColor = NC.SURFACE_LOW,
+                            strokeColor = NC.OUTLINE_VAR,
+                            shadowColor = NC.SHADOW_DARK,
+                            offsetDp = 6,
+                            cornerRadiusDp = 0
+                        )
+                    }
+                }
+                false
+            }
+
+            val icon = ImageView(this@MainActivity).apply {
+                setImageResource(R.drawable.ic_storage)
+                setColorFilter(NC.PRIMARY)
+                layoutParams = LinearLayout.LayoutParams(dp(24), dp(24)).apply { rightMargin = dp(12) }
+            }
+            val details = LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
+            }
+            val name = TextView(this@MainActivity).apply {
+                text = "CHROOT SETTINGS"
+                textSize = 15f
+                setTextColor(Color.WHITE)
+                typeface = Typeface.DEFAULT_BOLD
+            }
+            val sub = TextView(this@MainActivity).apply {
+                text = "Rootfs size, path, and uninstall (outside app storage)"
                 textSize = 11f
                 setTextColor(NC.ON_SURF_VAR)
                 typeface = Typeface.MONOSPACE
@@ -3440,15 +3581,16 @@ class MainActivity : AppCompatActivity() {
                 onBackPressed()
             }
         }
-        val titleTv = TextView(this).apply {
-            text = "Script Installation"
+        scriptInstallTitleTv = TextView(this).apply {
+            text = "Script Runner"
             textSize = 16f
             setTextColor(NC.ON_SURFACE)
             typeface = Typeface.DEFAULT_BOLD
+            layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
         }
 
         topBar.addView(scriptInstallBackBtn)
-        topBar.addView(titleTv)
+        topBar.addView(scriptInstallTitleTv)
         scriptInstallLayout.addView(topBar)
 
         scriptInstallViewContainer = FrameLayout(this).apply {
@@ -3463,8 +3605,40 @@ class MainActivity : AppCompatActivity() {
         scriptInstallLayout.addView(scriptInstallViewContainer)
     }
 
+    /** Top-bar label for script runner page — never always "Script Installation". */
+    private fun scriptRunnerTitle(scriptName: String, runMode: String): String {
+        return when (scriptName) {
+            "uninstall_debian13_chroot.sh" -> "Chroot Uninstall"
+            "setup_debian13_chroot.sh" -> "Chroot Installation"
+            "setup_debian_family.sh" -> "Debian Family Setup"
+            "setup_customization_debian.sh" -> "Debian Customization"
+            "setup_hw_accel_debian.sh" -> "Hardware Acceleration Setup"
+            "setup_cli_tools.sh" -> "CLI Tools Setup"
+            "setup_termux.sh" -> "Host Environment Setup"
+            "flux_install.sh" -> "Flux / PRoot Install"
+            "start_gui.sh" -> "Start Graphical Desktop"
+            "stop_gui.sh" -> "Stop Graphical Desktop"
+            else -> when {
+                scriptName.contains("uninstall", ignoreCase = true) -> "Script Uninstall"
+                scriptName.startsWith("setup_") -> "Script Setup"
+                scriptName.startsWith("start_") -> "Script Start"
+                scriptName.startsWith("stop_") -> "Script Stop"
+                else -> when (runMode) {
+                    "chroot_host", "chroot" -> "Chroot Script"
+                    "chroot_guest" -> "Chroot Guest Script"
+                    "proot" -> "PRoot Script"
+                    "host" -> "Host Script"
+                    else -> "Script Runner"
+                }
+            }
+        }
+    }
+
     private fun runScriptInTerminal(scriptName: String, runMode: String = "proot") {
         scriptInstallTerminalView.setTextSize(scriptFontSize)
+        if (::scriptInstallTitleTv.isInitialized) {
+            scriptInstallTitleTv.text = scriptRunnerTitle(scriptName, runMode)
+        }
 
         // Ensure all scripts are deployed to files/home
         deployScripts()
@@ -3597,6 +3771,20 @@ class MainActivity : AppCompatActivity() {
                              scriptInstallBackBtn.visibility = View.VISIBLE
                          }
                      }
+                     // Chroot uninstall: flip prefs + refresh Settings card when rootfs gone
+                     if (scriptName == "uninstall_debian13_chroot.sh" && pendingChrootUninstall) {
+                         pendingChrootUninstall = false
+                         if (session.exitStatus == 0 || !ProjectPathResolver.isChrootRootfsPresent()) {
+                             onChrootUninstalled(fromCallback = false)
+                         } else {
+                             refreshChrootSettingsCard()
+                             Toast.makeText(
+                                 this@MainActivity,
+                                 "Uninstall may have failed — check log / root access",
+                                 Toast.LENGTH_LONG
+                             ).show()
+                         }
+                     }
                 }
             }
             override fun onCopyTextToClipboard(session: TerminalSession, text: String) {
@@ -3707,6 +3895,9 @@ class MainActivity : AppCompatActivity() {
         terminalWorkspaceLayout.visibility = View.GONE
         gitOperationsScrollView.visibility = View.GONE
         settingsHubScrollView.visibility = View.GONE
+        if (::chrootSettingsScrollView.isInitialized) {
+            chrootSettingsScrollView.visibility = View.GONE
+        }
         if (::diffViewerRootContainer.isInitialized) {
             diffViewerRootContainer.visibility = View.GONE
         }
@@ -5734,6 +5925,998 @@ class MainActivity : AppCompatActivity() {
         card.addView(spacer(12))
         card.addView(infoRow("OS Version", "Debian 13 (Trixie)"))
         return card
+    }
+
+    /**
+     * Dedicated Chroot Settings page (Settings Hub → this).
+     * Hub only shows a nav row; full status/size/root/uninstall lives here.
+     */
+    private fun buildChrootSettingsPage() {
+        chrootSettingsScrollView = ScrollView(this).apply {
+            layoutParams = FrameLayout.LayoutParams(MATCH, MATCH)
+            visibility = View.GONE
+            clipToPadding = false
+            setPadding(0, 0, 0, dp(80))
+            setBackgroundColor(NC.BG)
+        }
+        val pageLayout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(16), dp(16), dp(16))
+        }
+        chrootSettingsScrollView.addView(pageLayout)
+
+        val headerCol = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, 0, 0, dp(16))
+        }
+        val headerTitleRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val pageBackBtn = ImageView(this).apply {
+            setImageResource(R.drawable.ic_arrow_back)
+            setColorFilter(NC.PRIMARY)
+            setPadding(dp(4), dp(4), dp(4), dp(4))
+            layoutParams = LinearLayout.LayoutParams(dp(36), dp(36)).apply { rightMargin = dp(8) }
+            contentDescription = "Back"
+            setOnClickListener {
+                // Prefer explicit Settings return (sub-page)
+                if (pageStack.isNotEmpty() && pageStack.peek() == ID_CHROOT_SETTINGS) {
+                    pageStack.pop()
+                }
+                navigateToPage(ID_SETTINGS, false)
+            }
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                setColor(NC.SURFACE_CONTAINER)
+                setStroke(dp(1), NC.OUTLINE_VAR)
+            }
+        }
+        val headerIcon = ImageView(this).apply {
+            setImageResource(R.drawable.ic_storage)
+            setColorFilter(NC.PRIMARY)
+            layoutParams = LinearLayout.LayoutParams(dp(26), dp(26)).apply { rightMargin = dp(10) }
+        }
+        val titleTv = TextView(this).apply {
+            text = "CHROOT SETTINGS"
+            textSize = 22f
+            setTextColor(NC.PRIMARY)
+            typeface = Typeface.DEFAULT_BOLD
+            layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
+        }
+        headerTitleRow.addView(pageBackBtn)
+        headerTitleRow.addView(headerIcon)
+        headerTitleRow.addView(titleTv)
+        val subTitleTv = TextView(this).apply {
+            text = "// ROOT-LEVEL DEBIAN — OUTSIDE APP STORAGE"
+            textSize = 11f
+            setTextColor(NC.ON_SURF_VAR)
+            typeface = Typeface.MONOSPACE
+            setPadding(0, dp(4), 0, dp(12))
+        }
+        val divider = View(this).apply {
+            layoutParams = LinearLayout.LayoutParams(MATCH, dp(1)).apply { bottomMargin = dp(8) }
+            setBackgroundColor(NC.OUTLINE_VAR)
+        }
+        headerCol.addView(headerTitleRow)
+        headerCol.addView(subTitleTv)
+        headerCol.addView(divider)
+        pageLayout.addView(headerCol)
+        pageLayout.addView(buildChrootSettingsContentCard())
+    }
+
+    /**
+     * Chroot detail card content — external rootfs at CHROOT_PATH.
+     * Instant status from marker + cache; root/size async.
+     */
+    private fun buildChrootSettingsContentCard(): LinearLayout {
+        val card = glassCard()
+        card.addView(sectionHeader(R.drawable.ic_storage, "Storage & Manage", NC.PRIMARY))
+
+        val subTv = TextView(this).apply {
+            text = "// ROOT-LEVEL DEBIAN — OUTSIDE APP STORAGE"
+            textSize = 10f
+            setTextColor(NC.ON_SURF_VAR)
+            typeface = Typeface.MONOSPACE
+            setPadding(0, 0, 0, dp(10))
+        }
+        card.addView(subTv)
+
+        // Warning strip
+        val warnStrip = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                setColor(Color.parseColor("#2A1A10"))
+                setStroke(dp(1), NC.TERTIARY)
+            }
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(12) }
+        }
+        val warnIcon = TextView(this).apply {
+            text = "!"
+            textSize = 12f
+            setTextColor(Color.parseColor("#0A0A0A"))
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                setColor(NC.TERTIARY)
+            }
+            layoutParams = LinearLayout.LayoutParams(dp(20), dp(20)).apply { rightMargin = dp(10) }
+        }
+        val warnText = TextView(this).apply {
+            text = "Rootfs is not removed when you uninstall the app. Free space here."
+            textSize = 11f
+            setTextColor(NC.TERTIARY)
+            typeface = Typeface.MONOSPACE
+            layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
+        }
+        warnStrip.addView(warnIcon)
+        warnStrip.addView(warnText)
+        card.addView(warnStrip)
+
+        // STATUS row — updated instantly from marker/cache (before size)
+        card.addView(buildChrootMetaRow("STATUS") { row ->
+            chrootStatusBadge = TextView(this).apply {
+                text = "…"
+                textSize = 10f
+                typeface = Typeface.MONOSPACE
+                setPadding(dp(8), dp(3), dp(8), dp(3))
+            }
+            row.addView(chrootStatusBadge)
+        })
+
+        // ROOT row — only visible when root is granted (hidden if no root → card = NOT INSTALLED only)
+        chrootRootRowView = buildChrootMetaRow("ROOT ACCESS") { row ->
+            chrootRootBadge = TextView(this).apply {
+                text = "CHECKING"
+                textSize = 10f
+                typeface = Typeface.MONOSPACE
+                setPadding(dp(8), dp(3), dp(8), dp(3))
+                setTextColor(NC.ON_SURF_VAR)
+                background = GradientDrawable().apply {
+                    shape = GradientDrawable.RECTANGLE
+                    setColor(NC.SURFACE_HIGHEST)
+                    setStroke(dp(1), NC.OUTLINE_VAR)
+                }
+            }
+            row.addView(chrootRootBadge)
+        }
+        card.addView(chrootRootRowView)
+
+        // Storage metric panel + loading strip
+        val sizePanel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                setColor(NC.SURFACE_LOWEST)
+                setStroke(dp(1), NC.OUTLINE_VAR)
+            }
+            setPadding(dp(12), dp(12), dp(12), dp(12))
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(10) }
+        }
+        chrootSizePanelView = sizePanel
+        val sizeHeader = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val sizeTitle = TextView(this).apply {
+            text = "LINUX STORAGE"
+            textSize = 11f
+            setTextColor(NC.ON_SURF_VAR)
+            typeface = Typeface.MONOSPACE
+            layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
+        }
+        chrootRefreshBtn = TextView(this).apply {
+            text = " REFRESH"
+            textSize = 10f
+            setTextColor(NC.PRIMARY)
+            typeface = Typeface.MONOSPACE
+            setCompoundDrawablesWithIntrinsicBounds(R.drawable.ic_refresh, 0, 0, 0)
+            compoundDrawableTintList = android.content.res.ColorStateList.valueOf(NC.PRIMARY)
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                setColor(NC.SURFACE_CONTAINER)
+                setStroke(dp(1), NC.OUTLINE_VAR)
+            }
+            setPadding(dp(8), dp(4), dp(10), dp(4))
+            setOnClickListener { refreshChrootSettingsCard(force = true) }
+        }
+        sizeHeader.addView(sizeTitle)
+        sizeHeader.addView(chrootRefreshBtn)
+        sizePanel.addView(sizeHeader)
+
+        // Indeterminate loading row (visible while root/du runs)
+        chrootLoadingRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            visibility = View.GONE
+            setPadding(0, dp(10), 0, dp(4))
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
+        }
+        chrootProgressBar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
+            isIndeterminate = true
+            layoutParams = LinearLayout.LayoutParams(0, dp(4), 1f)
+            indeterminateTintList = android.content.res.ColorStateList.valueOf(NC.PRIMARY)
+        }
+        val loadingLabel = TextView(this).apply {
+            text = " SCANNING"
+            textSize = 10f
+            setTextColor(NC.PRIMARY)
+            typeface = Typeface.MONOSPACE
+            setPadding(dp(8), 0, 0, 0)
+        }
+        chrootLoadingRow?.addView(chrootProgressBar)
+        chrootLoadingRow?.addView(loadingLabel)
+        sizePanel.addView(chrootLoadingRow)
+
+        val sizeValRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.BOTTOM
+            setPadding(0, dp(8), 0, 0)
+        }
+        chrootSizeValueTv = TextView(this).apply {
+            text = "—"
+            textSize = 32f
+            setTextColor(NC.PRIMARY)
+            typeface = Typeface.MONOSPACE
+            paint.isFakeBoldText = true
+            layoutParams = LinearLayout.LayoutParams(WRAP, WRAP)
+        }
+        chrootSizeUnitTv = TextView(this).apply {
+            text = ""
+            textSize = 14f
+            setTextColor(NC.ON_SURF_VAR)
+            typeface = Typeface.MONOSPACE
+            setPadding(dp(6), 0, 0, dp(6))
+        }
+        sizeValRow.addView(chrootSizeValueTv)
+        sizeValRow.addView(chrootSizeUnitTv)
+        sizePanel.addView(sizeValRow)
+
+        chrootSizeHintTv = TextView(this).apply {
+            text = "…"
+            textSize = 10f
+            setTextColor(NC.ON_SURF_VAR)
+            typeface = Typeface.MONOSPACE
+            setPadding(0, dp(4), 0, 0)
+        }
+        sizePanel.addView(chrootSizeHintTv)
+        card.addView(sizePanel)
+
+        // Path row (management detail — hidden when no root)
+        val pathRow = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                setColor(NC.SURFACE_LOWEST)
+                setStroke(dp(1), NC.OUTLINE_VAR)
+            }
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(14) }
+        }
+        pathRow.addView(TextView(this).apply {
+            text = "HOST PATH"
+            textSize = 10f
+            setTextColor(NC.ON_SURF_VAR)
+            typeface = Typeface.MONOSPACE
+            setPadding(0, 0, 0, dp(4))
+        })
+        pathRow.addView(TextView(this).apply {
+            text = ChrootCommandBuilder.CHROOT_PATH
+            textSize = 12f
+            setTextColor(Color.WHITE)
+            typeface = Typeface.MONOSPACE
+            setTextIsSelectable(true)
+        })
+        chrootPathRowView = pathRow
+        card.addView(pathRow)
+
+        chrootUninstallBtn = TextView(this).apply {
+            text = "UNINSTALL CHROOT"
+            textSize = 13f
+            setTextColor(NC.ERROR)
+            typeface = Typeface.MONOSPACE
+            gravity = Gravity.CENTER
+            background = cyberBrutalistBg(
+                fillColor = Color.parseColor("#1E1212"),
+                strokeColor = NC.ERROR,
+                shadowColor = NC.SHADOW_DARK,
+                offsetDp = 6,
+                cornerRadiusDp = 0,
+                rightFaceColor = Color.parseColor("#3C4A3F")
+            )
+            setPadding(dp(16), dp(12), dp(16), dp(12))
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
+            setOnClickListener { confirmAndUninstallChroot() }
+            setOnTouchListener { v, event ->
+                when (event.action) {
+                    MotionEvent.ACTION_DOWN -> {
+                        v.translationX = dp(4).toFloat()
+                        v.translationY = dp(4).toFloat()
+                        v.background = cyberBrutalistBg(
+                            fillColor = Color.parseColor("#1E1212"),
+                            strokeColor = NC.ERROR,
+                            shadowColor = NC.SHADOW_DARK,
+                            offsetDp = 2,
+                            cornerRadiusDp = 0,
+                            rightFaceColor = Color.parseColor("#3C4A3F")
+                        )
+                    }
+                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                        v.translationX = 0f
+                        v.translationY = 0f
+                        v.background = cyberBrutalistBg(
+                            fillColor = Color.parseColor("#1E1212"),
+                            strokeColor = NC.ERROR,
+                            shadowColor = NC.SHADOW_DARK,
+                            offsetDp = 6,
+                            cornerRadiusDp = 0,
+                            rightFaceColor = Color.parseColor("#3C4A3F")
+                        )
+                    }
+                }
+                false
+            }
+        }
+        card.addView(chrootUninstallBtn)
+
+        chrootInstallBtn = TextView(this).apply {
+            text = "INSTALL CHROOT"
+            textSize = 13f
+            setTextColor(Color.parseColor("#0A0A0A"))
+            typeface = Typeface.MONOSPACE
+            gravity = Gravity.CENTER
+            background = cyberBrutalistBg(
+                fillColor = NC.PRIMARY,
+                strokeColor = NC.PRIMARY,
+                shadowColor = NC.SHADOW_DARK,
+                offsetDp = 6,
+                cornerRadiusDp = 0,
+                rightFaceColor = Color.parseColor("#3C4A3F")
+            )
+            setPadding(dp(16), dp(12), dp(16), dp(12))
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(0) }
+            visibility = View.GONE
+            setOnClickListener { launchChrootInstallOnboarding() }
+            setOnTouchListener { v, event ->
+                when (event.action) {
+                    MotionEvent.ACTION_DOWN -> {
+                        v.translationX = dp(4).toFloat()
+                        v.translationY = dp(4).toFloat()
+                        v.background = cyberBrutalistBg(
+                            fillColor = NC.PRIMARY,
+                            strokeColor = NC.PRIMARY,
+                            shadowColor = NC.SHADOW_DARK,
+                            offsetDp = 2,
+                            cornerRadiusDp = 0,
+                            rightFaceColor = Color.parseColor("#3C4A3F")
+                        )
+                    }
+                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                        v.translationX = 0f
+                        v.translationY = 0f
+                        v.background = cyberBrutalistBg(
+                            fillColor = NC.PRIMARY,
+                            strokeColor = NC.PRIMARY,
+                            shadowColor = NC.SHADOW_DARK,
+                            offsetDp = 6,
+                            cornerRadiusDp = 0,
+                            rightFaceColor = Color.parseColor("#3C4A3F")
+                        )
+                    }
+                }
+                false
+            }
+        }
+        card.addView(chrootInstallBtn)
+
+        // 1) Instant status from local marker/dir  2) paint cache  3) async root+size
+        applyInstantChrootStatus()
+        applyCachedChrootInfo()
+        refreshChrootSettingsCard(force = false)
+        return card
+    }
+
+    private fun buildChrootMetaRow(label: String, addValue: (LinearLayout) -> Unit): LinearLayout {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                setColor(NC.SURFACE_LOWEST)
+                setStroke(dp(1), NC.OUTLINE_VAR)
+            }
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(10) }
+            addView(TextView(this@MainActivity).apply {
+                text = label
+                textSize = 12f
+                setTextColor(Color.WHITE)
+                typeface = Typeface.MONOSPACE
+                layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
+            })
+            addValue(this)
+        }
+    }
+
+    /** Instant (main-thread): marker + dir File.exists — no su, no du. */
+    private fun applyInstantChrootStatus() {
+        val markerOk = ProjectPathResolver.isChrootInstalled()
+        val dirExists = ProjectPathResolver.isChrootRootfsPresent()
+        val installed = markerOk || dirExists
+        applyChrootStatusBadge(chrootStatusBadge, installed, markerOk, dirExists)
+        applyChrootInstallUninstallVisibility(installed)
+    }
+
+    /** Paint last known size/root from SharedPreferences (nativecode_prefs). */
+    private fun applyCachedChrootInfo() {
+        val prefs = getSharedPreferences("nativecode_prefs", MODE_PRIVATE)
+        if (!prefs.contains(PREF_CHROOT_LAST_MS)) return
+
+        val rootOk = prefs.getBoolean(PREF_CHROOT_ROOT_OK, false)
+        // Cached no-root → NOT INSTALLED only (never show stale DENIED / partial GB)
+        if (!rootOk) {
+            applyNoRootChrootCardUi()
+            return
+        }
+
+        val bytes = prefs.getLong(PREF_CHROOT_BYTES, -1L).takeIf { it >= 0L }
+        val viaRoot = prefs.getBoolean(PREF_CHROOT_SIZE_VIA_ROOT, false)
+        val lastMs = prefs.getLong(PREF_CHROOT_LAST_MS, 0L)
+        val markerOk = prefs.getBoolean(PREF_CHROOT_INSTALLED, false)
+        val dirOk = prefs.getBoolean(PREF_CHROOT_DIR, false)
+
+        chrootRootRowView?.visibility = View.VISIBLE
+        chrootSizePanelView?.visibility = View.VISIBLE
+        chrootPathRowView?.visibility = View.VISIBLE
+
+        val installed = markerOk || dirOk
+        applyChrootStatusBadge(chrootStatusBadge, installed, markerOk, dirOk)
+        applyChrootRootBadge(chrootRootBadge, rootOk = true, checking = false)
+        applyChrootInstallUninstallVisibility(installed)
+
+        if (bytes != null) {
+            val (v, u) = formatStorageBytes(bytes)
+            chrootSizeValueTv?.text = v
+            chrootSizeUnitTv?.text = u
+            chrootSizeValueTv?.alpha = 0.85f
+        }
+        chrootSizeHintTv?.text = formatChrootCacheHint(lastMs, viaRoot, rootOk = true)
+        chrootSizeHintTv?.setTextColor(NC.ON_SURF_VAR)
+    }
+
+    private fun formatChrootCacheHint(lastMs: Long, viaRoot: Boolean, rootOk: Boolean): String {
+        val age = if (lastMs > 0L) {
+            val mins = ((System.currentTimeMillis() - lastMs) / 60000L).coerceAtLeast(0L)
+            when {
+                mins < 1 -> "just now"
+                mins < 60 -> "${mins}m ago"
+                mins < 1440 -> "${mins / 60}h ago"
+                else -> "${mins / 1440}d ago"
+            }
+        } else "unknown"
+        val how = when {
+            viaRoot -> "root du"
+            rootOk -> "root"
+            else -> "no-root walk"
+        }
+        return "Cached · $how · $age"
+    }
+
+    private fun saveChrootInfo(
+        installed: Boolean,
+        dirExists: Boolean,
+        bytes: Long?,
+        rootOk: Boolean,
+        viaRoot: Boolean
+    ) {
+        getSharedPreferences("nativecode_prefs", MODE_PRIVATE).edit()
+            .putBoolean(PREF_CHROOT_INSTALLED, installed)
+            .putBoolean(PREF_CHROOT_DIR, dirExists)
+            .putLong(PREF_CHROOT_BYTES, bytes ?: -1L)
+            .putBoolean(PREF_CHROOT_ROOT_OK, rootOk)
+            .putBoolean(PREF_CHROOT_SIZE_VIA_ROOT, viaRoot)
+            .putLong(PREF_CHROOT_LAST_MS, System.currentTimeMillis())
+            .apply()
+    }
+
+    private fun clearChrootInfoCache() {
+        getSharedPreferences("nativecode_prefs", MODE_PRIVATE).edit()
+            .remove(PREF_CHROOT_INSTALLED)
+            .remove(PREF_CHROOT_DIR)
+            .remove(PREF_CHROOT_BYTES)
+            .remove(PREF_CHROOT_ROOT_OK)
+            .remove(PREF_CHROOT_SIZE_VIA_ROOT)
+            .remove(PREF_CHROOT_LAST_MS)
+            .apply()
+    }
+
+    private fun setChrootLoading(loading: Boolean) {
+        chrootMeasuring = loading
+        chrootLoadingRow?.visibility = if (loading) View.VISIBLE else View.GONE
+        chrootRefreshBtn?.isEnabled = !loading
+        chrootRefreshBtn?.alpha = if (loading) 0.45f else 1f
+        if (loading) {
+            chrootRootBadge?.let {
+                it.text = "CHECKING"
+                it.setTextColor(NC.ON_SURF_VAR)
+                it.background = GradientDrawable().apply {
+                    shape = GradientDrawable.RECTANGLE
+                    setColor(NC.SURFACE_HIGHEST)
+                    setStroke(dp(1), NC.OUTLINE_VAR)
+                }
+            }
+            chrootSizeHintTv?.text = "Checking root · measuring rootfs…"
+            chrootSizeHintTv?.setTextColor(NC.PRIMARY)
+            chrootSizeValueTv?.alpha = 0.45f
+        } else {
+            chrootSizeValueTv?.alpha = 1f
+        }
+    }
+
+    /**
+     * @param force true = user tapped REFRESH (clear su cache + re-probe).
+     *
+     * Flow:
+     *  1. Loading + ROOT=CHECKING (status stays until root known)
+     *  2. BG: RootShell su discovery (no File.exists skip) → if no root → NOT INSTALLED only
+     *  3. If root: dir/du via root → full card; save prefs
+     */
+    private fun refreshChrootSettingsCard(force: Boolean = true) {
+        if (chrootSizeValueTv == null) return
+        if (chrootMeasuring) return
+
+        setChrootLoading(true)
+        // While checking, keep root row visible as CHECKING
+        chrootRootRowView?.visibility = View.VISIBLE
+        chrootSizePanelView?.visibility = View.VISIBLE
+        chrootPathRowView?.visibility = View.VISIBLE
+
+        executor.execute {
+            if (force) RootShell.clearSuCache()
+
+            val path = ChrootCommandBuilder.CHROOT_PATH
+            val rootOk = RootShell.isRootAvailable()
+
+            if (!rootOk) {
+                // No app root access → card is NOT INSTALLED only (no DENIED / no partial GB)
+                saveChrootInfo(
+                    installed = false,
+                    dirExists = false,
+                    bytes = null,
+                    rootOk = false,
+                    viaRoot = false
+                )
+                mainHandler.post {
+                    setChrootLoading(false)
+                    applyNoRootChrootCardUi()
+                }
+                return@execute
+            }
+
+            // Root granted — full management UI (install/uninstall set after dir probe)
+            mainHandler.post {
+                chrootRootRowView?.visibility = View.VISIBLE
+                chrootSizePanelView?.visibility = View.VISIBLE
+                chrootPathRowView?.visibility = View.VISIBLE
+                applyChrootRootBadge(chrootRootBadge, rootOk = true, checking = false)
+            }
+
+            val markerOk = ProjectPathResolver.isChrootInstalled()
+            var dirExists = ProjectPathResolver.isChrootRootfsPresent() || markerOk
+            var bytes: Long? = null
+            var viaRoot = false
+            var measureNote: String
+
+            val existsOut = RootShell.capture("if [ -d '$path' ]; then echo YES; else echo NO; fi")
+            when (existsOut.trim().lines().lastOrNull()?.trim()) {
+                "YES" -> dirExists = true
+                "NO" -> dirExists = false
+            }
+
+            if (dirExists) {
+                val duOut = RootShell.capture("du -sb '$path' 2>/dev/null | cut -f1")
+                bytes = duOut.trim().lines().mapNotNull { it.trim().toLongOrNull() }.firstOrNull()
+                viaRoot = bytes != null
+                measureNote = if (viaRoot) {
+                    "Host rootfs · measured with root"
+                } else {
+                    "Root OK · size probe failed"
+                }
+            } else {
+                measureNote = "No chroot rootfs on host"
+            }
+
+            val installed = markerOk || dirExists
+            saveChrootInfo(installed, dirExists, bytes, rootOk = true, viaRoot)
+            val (valStr, unitStr) = formatStorageBytes(bytes)
+
+            mainHandler.post {
+                setChrootLoading(false)
+                applyChrootStatusBadge(chrootStatusBadge, installed, markerOk, dirExists)
+                applyChrootRootBadge(chrootRootBadge, rootOk = true, checking = false)
+                chrootSizeValueTv?.text = valStr
+                chrootSizeUnitTv?.text = unitStr
+                chrootSizeHintTv?.text = measureNote
+                chrootSizeHintTv?.setTextColor(if (installed) NC.ON_SURF_VAR else NC.SECONDARY)
+                applyChrootInstallUninstallVisibility(installed)
+            }
+        }
+    }
+
+    /**
+     * No root access for this app → card only reports NOT INSTALLED.
+     * Hide ROOT / path / uninstall management chrome (no false DENIED, no partial size).
+     */
+    private fun applyNoRootChrootCardUi() {
+        applyChrootStatusBadge(
+            chrootStatusBadge,
+            installed = false,
+            markerOk = false,
+            dirExists = false
+        )
+        chrootRootRowView?.visibility = View.GONE
+        chrootPathRowView?.visibility = View.GONE
+        // Not detected → install CTA only (onboarding grants root path)
+        applyChrootInstallUninstallVisibility(installed = false)
+        // Keep size panel as empty state (not partial walk)
+        chrootSizePanelView?.visibility = View.VISIBLE
+        chrootSizeValueTv?.text = "—"
+        chrootSizeUnitTv?.text = ""
+        chrootSizeValueTv?.alpha = 1f
+        chrootSizeHintTv?.text = "Root required · install via onboarding after granting su"
+        chrootSizeHintTv?.setTextColor(NC.SECONDARY)
+    }
+
+    private fun applyChrootStatusBadge(
+        badge: TextView?,
+        installed: Boolean,
+        markerOk: Boolean,
+        dirExists: Boolean
+    ) {
+        if (badge == null) return
+        when {
+            markerOk -> {
+                badge.text = "INSTALLED"
+                badge.setTextColor(Color.parseColor("#0A0A0A"))
+                badge.background = GradientDrawable().apply {
+                    shape = GradientDrawable.RECTANGLE
+                    setColor(NC.PRIMARY)
+                }
+            }
+            dirExists || installed -> {
+                badge.text = "PARTIAL"
+                badge.setTextColor(Color.parseColor("#0A0A0A"))
+                badge.background = GradientDrawable().apply {
+                    shape = GradientDrawable.RECTANGLE
+                    setColor(NC.TERTIARY)
+                }
+            }
+            else -> {
+                badge.text = "NOT INSTALLED"
+                badge.setTextColor(NC.ON_SURF_VAR)
+                badge.background = GradientDrawable().apply {
+                    shape = GradientDrawable.RECTANGLE
+                    setColor(NC.SURFACE_HIGHEST)
+                    setStroke(dp(1), NC.OUTLINE_VAR)
+                }
+            }
+        }
+    }
+
+    private fun applyChrootRootBadge(badge: TextView?, rootOk: Boolean, checking: Boolean) {
+        if (badge == null) return
+        when {
+            checking -> {
+                badge.text = "CHECKING"
+                badge.setTextColor(NC.ON_SURF_VAR)
+                badge.background = GradientDrawable().apply {
+                    shape = GradientDrawable.RECTANGLE
+                    setColor(NC.SURFACE_HIGHEST)
+                    setStroke(dp(1), NC.OUTLINE_VAR)
+                }
+            }
+            rootOk -> {
+                badge.text = "GRANTED"
+                badge.setTextColor(Color.parseColor("#0A0A0A"))
+                badge.background = GradientDrawable().apply {
+                    shape = GradientDrawable.RECTANGLE
+                    setColor(NC.PRIMARY)
+                }
+            }
+            else -> {
+                badge.text = "DENIED"
+                badge.setTextColor(Color.parseColor("#0A0A0A"))
+                badge.background = GradientDrawable().apply {
+                    shape = GradientDrawable.RECTANGLE
+                    setColor(NC.ERROR)
+                }
+            }
+        }
+    }
+
+    private fun formatStorageBytes(bytes: Long?): Pair<String, String> {
+        if (bytes == null) return "—" to ""
+        if (bytes < 0L) return "—" to ""
+        val mb = bytes / (1024.0 * 1024.0)
+        return if (mb >= 1024.0) {
+            String.format(Locale.US, "%.1f", mb / 1024.0) to "GB"
+        } else if (mb >= 1.0) {
+            String.format(Locale.US, "%.1f", mb) to "MB"
+        } else {
+            val kb = bytes / 1024.0
+            if (kb >= 1.0) {
+                String.format(Locale.US, "%.0f", kb) to "KB"
+            } else {
+                bytes.toString() to "B"
+            }
+        }
+    }
+
+    /**
+     * Install CTA only when rootfs/marker not detected.
+     * Uninstall only when installed (or partial dir present).
+     */
+    private fun applyChrootInstallUninstallVisibility(installed: Boolean) {
+        if (installed) {
+            chrootInstallBtn?.visibility = View.GONE
+            chrootUninstallBtn?.visibility = View.VISIBLE
+            chrootUninstallBtn?.isEnabled = true
+            chrootUninstallBtn?.alpha = 1f
+        } else {
+            chrootUninstallBtn?.visibility = View.GONE
+            chrootUninstallBtn?.isEnabled = false
+            chrootUninstallBtn?.alpha = 0.4f
+            chrootInstallBtn?.visibility = View.VISIBLE
+        }
+    }
+
+    /** Full chroot install chain via Onboarding (isolation=chroot → Environment Setup). */
+    private fun launchChrootInstallOnboarding() {
+        val intent = Intent(this, OnboardingActivity::class.java).apply {
+            putExtra("force_onboarding", true)
+            putExtra("preferred_isolation", "chroot")
+            putExtra("target_page", 3) // Environment Setup (full install log)
+            putExtra("auto_start_setup", true)
+        }
+        startActivity(intent)
+    }
+
+    private fun confirmAndUninstallChroot() {
+        if (chrootUninstallBtn?.isEnabled != true) {
+            Toast.makeText(this, "No chroot rootfs to uninstall", Toast.LENGTH_SHORT).show()
+            return
+        }
+        showBrutalistConfirmDialog(
+            title = "UNINSTALL CHROOT?",
+            message =
+                "Permanently deletes ${ChrootCommandBuilder.CHROOT_PATH}, unmounts binds, " +
+                    "and removes host launcher scripts.\n\n" +
+                    "The app package stays installed. PRoot data is not touched.\n\n" +
+                    "This cannot be undone.",
+            confirmLabel = "UNINSTALL",
+            cancelLabel = "CANCEL",
+            destructive = true,
+            onConfirm = {
+                pendingChrootUninstall = true
+                runScriptInTerminal("uninstall_debian13_chroot.sh", "chroot_host")
+            }
+        )
+    }
+
+    /**
+     * Cyber-brutalist confirm sheet (ui_design.md): sharp 0px, NC surfaces,
+     * two-tone extrusion, mono labels — never stock Material AlertDialog.
+     */
+    private fun showBrutalistConfirmDialog(
+        title: String,
+        message: String,
+        confirmLabel: String,
+        cancelLabel: String = "CANCEL",
+        destructive: Boolean = false,
+        onConfirm: () -> Unit
+    ) {
+        val dialog = android.app.Dialog(this, android.R.style.Theme_Translucent_NoTitleBar)
+        dialog.setCancelable(true)
+
+        val scrim = FrameLayout(this).apply {
+            setBackgroundColor(Color.parseColor("#CC0A0A0A"))
+            layoutParams = ViewGroup.LayoutParams(MATCH, MATCH)
+            setOnClickListener { dialog.dismiss() }
+        }
+
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = cyberBrutalistBg(
+                fillColor = NC.SURFACE_LOW,
+                strokeColor = if (destructive) NC.ERROR else NC.OUTLINE_VAR,
+                shadowColor = NC.SHADOW_DARK,
+                offsetDp = 6,
+                cornerRadiusDp = 0,
+                rightFaceColor = Color.parseColor("#3C4A3F")
+            )
+            setPadding(dp(20), dp(20), dp(20), dp(20))
+            layoutParams = FrameLayout.LayoutParams(MATCH, WRAP).apply {
+                gravity = Gravity.CENTER
+                leftMargin = dp(24)
+                rightMargin = dp(24)
+            }
+            isClickable = true // absorb scrim clicks
+        }
+
+        val titleRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, 0, 0, dp(12))
+        }
+        if (destructive) {
+            titleRow.addView(TextView(this).apply {
+                text = "!"
+                textSize = 14f
+                setTextColor(Color.parseColor("#0A0A0A"))
+                typeface = Typeface.DEFAULT_BOLD
+                gravity = Gravity.CENTER
+                background = GradientDrawable().apply {
+                    shape = GradientDrawable.RECTANGLE
+                    setColor(NC.ERROR)
+                }
+                layoutParams = LinearLayout.LayoutParams(dp(22), dp(22)).apply { rightMargin = dp(10) }
+            })
+        }
+        titleRow.addView(TextView(this).apply {
+            text = title
+            textSize = 16f
+            setTextColor(if (destructive) NC.ERROR else Color.WHITE)
+            typeface = Typeface.MONOSPACE
+            paint.isFakeBoldText = true
+            layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
+        })
+        card.addView(titleRow)
+
+        card.addView(View(this).apply {
+            layoutParams = LinearLayout.LayoutParams(MATCH, dp(1)).apply { bottomMargin = dp(14) }
+            setBackgroundColor(NC.OUTLINE_VAR)
+        })
+
+        card.addView(TextView(this).apply {
+            text = message
+            textSize = 13f
+            setTextColor(NC.ON_SURF_VAR)
+            typeface = Typeface.MONOSPACE
+            setLineSpacing(dp(2).toFloat(), 1.15f)
+            setPadding(0, 0, 0, dp(20))
+        })
+
+        val btnRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+
+        fun pressable(
+            label: String,
+            fill: Int,
+            stroke: Int,
+            textColor: Int,
+            weight: Float,
+            endMargin: Int,
+            action: () -> Unit
+        ): TextView {
+            return TextView(this).apply {
+                text = label
+                textSize = 12f
+                setTextColor(textColor)
+                typeface = Typeface.MONOSPACE
+                gravity = Gravity.CENTER
+                background = cyberBrutalistBg(
+                    fillColor = fill,
+                    strokeColor = stroke,
+                    shadowColor = NC.SHADOW_DARK,
+                    offsetDp = 4,
+                    cornerRadiusDp = 0,
+                    rightFaceColor = Color.parseColor("#3C4A3F")
+                )
+                setPadding(dp(12), dp(12), dp(12), dp(12))
+                layoutParams = LinearLayout.LayoutParams(0, WRAP, weight).apply {
+                    if (endMargin > 0) rightMargin = endMargin
+                }
+                setOnClickListener { action() }
+                setOnTouchListener { v, event ->
+                    when (event.action) {
+                        MotionEvent.ACTION_DOWN -> {
+                            v.translationX = dp(2).toFloat()
+                            v.translationY = dp(2).toFloat()
+                            v.background = cyberBrutalistBg(
+                                fillColor = fill,
+                                strokeColor = stroke,
+                                shadowColor = NC.SHADOW_DARK,
+                                offsetDp = 2,
+                                cornerRadiusDp = 0,
+                                rightFaceColor = Color.parseColor("#3C4A3F")
+                            )
+                        }
+                        MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                            v.translationX = 0f
+                            v.translationY = 0f
+                            v.background = cyberBrutalistBg(
+                                fillColor = fill,
+                                strokeColor = stroke,
+                                shadowColor = NC.SHADOW_DARK,
+                                offsetDp = 4,
+                                cornerRadiusDp = 0,
+                                rightFaceColor = Color.parseColor("#3C4A3F")
+                            )
+                        }
+                    }
+                    false
+                }
+            }
+        }
+
+        val cancelBtn = pressable(
+            cancelLabel,
+            fill = NC.SURFACE_CONTAINER,
+            stroke = NC.OUTLINE_VAR,
+            textColor = Color.WHITE,
+            weight = 1f,
+            endMargin = dp(10)
+        ) { dialog.dismiss() }
+
+        val confirmFill = if (destructive) Color.parseColor("#1E1212") else NC.PRIMARY
+        val confirmStroke = if (destructive) NC.ERROR else NC.PRIMARY
+        val confirmText = if (destructive) NC.ERROR else Color.parseColor("#0A0A0A")
+        val confirmBtn = pressable(
+            confirmLabel,
+            fill = confirmFill,
+            stroke = confirmStroke,
+            textColor = confirmText,
+            weight = 1f,
+            endMargin = 0
+        ) {
+            dialog.dismiss()
+            onConfirm()
+        }
+
+        btnRow.addView(cancelBtn)
+        btnRow.addView(confirmBtn)
+        card.addView(btnRow)
+
+        scrim.addView(card)
+        dialog.setContentView(scrim)
+        dialog.window?.apply {
+            setLayout(MATCH, MATCH)
+            setBackgroundDrawableResource(android.R.color.transparent)
+            // keep status bar readable
+            statusBarColor = Color.TRANSPARENT
+            navigationBarColor = Color.TRANSPARENT
+        }
+        dialog.show()
+    }
+
+    private fun onChrootUninstalled(fromCallback: Boolean) {
+        if (LinuxCommandBuilder.currentMethod == "chroot") {
+            LinuxCommandBuilder.currentMethod = "proot"
+            getSharedPreferences("nativecode_prefs", MODE_PRIVATE)
+                .edit().putString("linux_method", "proot").apply()
+            if (::homeContainerLabel.isInitialized) {
+                homeContainerLabel.text = ProjectPathResolver.methodLabel()
+            }
+        }
+        clearChrootInfoCache()
+        applyInstantChrootStatus()
+        chrootSizeValueTv?.text = "—"
+        chrootSizeUnitTv?.text = ""
+        chrootSizeHintTv?.text = "Uninstalled"
+        applyChrootRootBadge(chrootRootBadge, rootOk = false, checking = false)
+        refreshChrootSettingsCard(force = true)
+        val msg = if (fromCallback) {
+            "Chroot uninstalled — switched to PRoot if needed"
+        } else {
+            "Chroot uninstall finished — storage will refresh"
+        }
+        Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
     }
 
     // ── Helper UI properties / primitives ─────────────────────────────────────

@@ -34,13 +34,15 @@ error() {
 # Cleanup function
 cleanup_mounts() {
     printf "\033[1;36m[+] Safety Check: Unmounting filesystems...\033[0m\n"
-    $BB umount "$DEBIANPATH/sdcard" 2>/dev/null
-    $BB umount "$DEBIANPATH/dev/shm" 2>/dev/null
-    $BB umount "$DEBIANPATH/dev/pts" 2>/dev/null
-    $BB umount "$DEBIANPATH/proc" 2>/dev/null
-    $BB umount "$DEBIANPATH/sys" 2>/dev/null
-    $BB umount "$DEBIANPATH/dev" 2>/dev/null
-    $BB umount "$DEBIANPATH/tmp" 2>/dev/null
+    $BB umount "$DEBIANPATH/sdcard" 2>/dev/null || true
+    $BB umount "$DEBIANPATH/mnt/termux-tmp" 2>/dev/null || true
+    $BB umount "$DEBIANPATH/dev/shm" 2>/dev/null || true
+    $BB umount "$DEBIANPATH/dev/pts" 2>/dev/null || true
+    $BB umount "$DEBIANPATH/proc" 2>/dev/null || true
+    $BB umount "$DEBIANPATH/sys" 2>/dev/null || true
+    $BB umount "$DEBIANPATH/dev" 2>/dev/null || true
+    $BB umount "$DEBIANPATH/tmp" 2>/dev/null || true
+    return 0
 }
 
 # Exit handler
@@ -155,6 +157,33 @@ extract_file() {
     goodbye
 }
 
+
+# Sticky disk-backed /tmp for apt (_apt). Host stages scripts at
+# $DEBIANPATH/tmp (same path as chroot /tmp) — no tmpfs overlay.
+# NEVER bind Termux files/usr/tmp onto /tmp (app_data perms/SELinux break mkstemp).
+# Host app tmp is bridged at /mnt/termux-tmp only.
+ensure_chroot_tmp() {
+    HOST_TMP="/data/data/com.ivarna.nativecode/files/usr/tmp"
+    mkdir -p "$DEBIANPATH/tmp" "$HOST_TMP" "$DEBIANPATH/mnt/termux-tmp" "$DEBIANPATH/var/tmp"
+
+    # Drop previous bad bind/tmpfs on /tmp if present
+    if grep -q " $DEBIANPATH/tmp " /proc/mounts 2>/dev/null; then
+        $BB umount "$DEBIANPATH/tmp" 2>/dev/null || $BB umount -l "$DEBIANPATH/tmp" 2>/dev/null || true
+    fi
+
+    chmod 1777 "$DEBIANPATH/tmp" 2>/dev/null || true
+    chmod 1777 "$DEBIANPATH/var/tmp" 2>/dev/null || true
+    progress "Sticky /tmp ready at $DEBIANPATH/tmp (mode 1777, no host bind)"
+
+    chmod 1777 "$HOST_TMP" 2>/dev/null || true
+    $BB mount --bind "$HOST_TMP" "$DEBIANPATH/mnt/termux-tmp" 2>/dev/null || true
+
+    if [ -f "$HOST_TMP/launch_tool.sh" ]; then
+        cp -f "$HOST_TMP/launch_tool.sh" "$DEBIANPATH/tmp/launch_tool.sh" 2>/dev/null || true
+        chmod 755 "$DEBIANPATH/tmp/launch_tool.sh" 2>/dev/null || true
+    fi
+}
+
 # Main Configuration Logic
 configure_debian_chroot() {
     progress "Configuring Debian chroot environment..."
@@ -165,7 +194,8 @@ configure_debian_chroot() {
     fi
 
     progress "Mounting filesystems..."
-    $BB mount -o remount,dev,suid /data
+    # Soft remount: busybox often cannot resolve /data on Magisk/KSU (not fatal)
+    $BB mount -o remount,dev,suid /data 2>/dev/null || $BB mount -o remount,dev,suid / 2>/dev/null || true
 
     $BB mount --bind /dev "$DEBIANPATH/dev" || goodbye
     $BB mount --bind /sys "$DEBIANPATH/sys" || goodbye
@@ -173,10 +203,11 @@ configure_debian_chroot() {
     $BB mount -t devpts devpts "$DEBIANPATH/dev/pts" || goodbye
 
     mkdir -p "$DEBIANPATH/dev/shm"
-    $BB mount -t tmpfs -o size=512M tmpfs "$DEBIANPATH/dev/shm" || goodbye
+    $BB mount -t tmpfs -o size=512M,mode=1777 tmpfs "$DEBIANPATH/dev/shm" || goodbye
 
-    mkdir -p "$DEBIANPATH/tmp"
-    $BB mount --bind /data/data/com.ivarna.nativecode/files/usr/tmp "$DEBIANPATH/tmp" 2>/dev/null || true
+    # Debian /tmp must be sticky world-writable for apt (_apt).
+    # Do NOT bind Termux files/usr/tmp here — app_data perms/SELinux break mkstemp.
+    ensure_chroot_tmp
 
     mkdir -p "$DEBIANPATH/sdcard"
     $BB mount --bind /sdcard "$DEBIANPATH/sdcard" || goodbye
@@ -209,9 +240,24 @@ configure_debian_chroot() {
         export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
         export TMPDIR=/tmp
         export DEBIAN_FRONTEND=noninteractive
-        apt update
-        apt upgrade -y
-        apt install -y nano vim net-tools sudo git dbus-x11 wget unzip
+        # apt (_apt) requires sticky world-writable /tmp
+        chmod 1777 /tmp /var/tmp 2>/dev/null || true
+        # Drop stale indexes from a previous failed signature pass
+        rm -rf /var/lib/apt/lists/*
+        mkdir -p /var/lib/apt/lists/partial
+        chmod 755 /var/lib/apt/lists /var/lib/apt/lists/partial
+        # Quick write probe (fails fast with a clear message)
+        if ! su -s /bin/sh _apt -c "echo ok > /tmp/.apt_write_probe" 2>/dev/null; then
+            # _apt may not exist yet on minimal rootfs — probe as nobody if present
+            if ! touch /tmp/.apt_write_probe 2>/dev/null; then
+                echo "[!] /tmp is not writable — apt will fail"
+                exit 1
+            fi
+        fi
+        rm -f /tmp/.apt_write_probe
+        apt-get update -y
+        apt-get upgrade -y
+        apt-get install -y nano vim net-tools sudo git dbus-x11 wget unzip
     ' || goodbye
 
     progress "Creating User ($USERNAME)..."
@@ -237,7 +283,8 @@ configure_debian_chroot() {
         export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
         export TMPDIR=/tmp
         export DEBIAN_FRONTEND=noninteractive
-        apt install -y xfce4 xfce4-terminal
+        chmod 1777 /tmp /var/tmp 2>/dev/null || true
+        apt-get install -y xfce4 xfce4-terminal
     ' || goodbye
 
     touch "$DEBIANPATH/.flux_configured"
@@ -253,7 +300,7 @@ DEBIANPATH="/data/local/tmp/chrootDebian13"
 BB="$BB"
 export LD_LIBRARY_PATH=$LD_LIBRARY_PATH
 
-\$BB mount -o remount,dev,suid /data
+\$BB mount -o remount,dev,suid /data 2>/dev/null || true
 
 \$BB mount --bind /dev \$DEBIANPATH/dev
 \$BB mount --bind /sys \$DEBIANPATH/sys
@@ -261,10 +308,19 @@ export LD_LIBRARY_PATH=$LD_LIBRARY_PATH
 \$BB mount -t devpts devpts \$DEBIANPATH/dev/pts
 
 mkdir -p \$DEBIANPATH/dev/shm
-\$BB mount -t tmpfs -o size=512M tmpfs \$DEBIANPATH/dev/shm
+\$BB mount -t tmpfs -o size=512M,mode=1777 tmpfs \$DEBIANPATH/dev/shm
 
-mkdir -p \$DEBIANPATH/tmp
-\$BB mount --bind /data/data/com.ivarna.nativecode/files/usr/tmp \$DEBIANPATH/tmp 2>/dev/null || true
+mkdir -p \$DEBIANPATH/tmp \$DEBIANPATH/mnt/termux-tmp
+# Unmount bad /tmp bind from older installs; keep disk-backed sticky /tmp
+if grep -q " \$DEBIANPATH/tmp " /proc/mounts 2>/dev/null; then
+    \$BB umount \$DEBIANPATH/tmp 2>/dev/null || \$BB umount -l \$DEBIANPATH/tmp 2>/dev/null || true
+fi
+chmod 1777 \$DEBIANPATH/tmp 2>/dev/null || true
+\$BB mount --bind /data/data/com.ivarna.nativecode/files/usr/tmp \$DEBIANPATH/mnt/termux-tmp 2>/dev/null || true
+if [ -f /data/data/com.ivarna.nativecode/files/usr/tmp/launch_tool.sh ]; then
+    cp -f /data/data/com.ivarna.nativecode/files/usr/tmp/launch_tool.sh \$DEBIANPATH/tmp/launch_tool.sh 2>/dev/null || true
+    chmod 755 \$DEBIANPATH/tmp/launch_tool.sh 2>/dev/null || true
+fi
 mkdir -p \$DEBIANPATH/sdcard
 \$BB mount --bind /sdcard \$DEBIANPATH/sdcard
 
@@ -319,9 +375,18 @@ export LD_LIBRARY_PATH=$LD_LIBRARY_PATH
 \$BB mount -t proc proc \$DEBIANPATH/proc >/dev/null 2>&1
 \$BB mount -t devpts devpts \$DEBIANPATH/dev/pts >/dev/null 2>&1
 mkdir -p \$DEBIANPATH/dev/shm
-\$BB mount -t tmpfs -o size=512M tmpfs \$DEBIANPATH/dev/shm >/dev/null 2>&1
-mkdir -p \$DEBIANPATH/tmp
-\$BB mount --bind /data/data/com.ivarna.nativecode/files/usr/tmp \$DEBIANPATH/tmp >/dev/null 2>&1
+\$BB mount -t tmpfs -o size=512M,mode=1777 tmpfs \$DEBIANPATH/dev/shm >/dev/null 2>&1
+mkdir -p \$DEBIANPATH/tmp \$DEBIANPATH/mnt/termux-tmp
+# Unmount bad /tmp bind from older installs; keep disk-backed sticky /tmp
+if grep -q " \$DEBIANPATH/tmp " /proc/mounts 2>/dev/null; then
+    \$BB umount \$DEBIANPATH/tmp 2>/dev/null || \$BB umount -l \$DEBIANPATH/tmp 2>/dev/null || true
+fi
+chmod 1777 \$DEBIANPATH/tmp 2>/dev/null || true
+\$BB mount --bind /data/data/com.ivarna.nativecode/files/usr/tmp \$DEBIANPATH/mnt/termux-tmp 2>/dev/null || true
+if [ -f /data/data/com.ivarna.nativecode/files/usr/tmp/launch_tool.sh ]; then
+    cp -f /data/data/com.ivarna.nativecode/files/usr/tmp/launch_tool.sh \$DEBIANPATH/tmp/launch_tool.sh 2>/dev/null || true
+    chmod 755 \$DEBIANPATH/tmp/launch_tool.sh 2>/dev/null || true
+fi
 mkdir -p \$DEBIANPATH/sdcard
 \$BB mount --bind /sdcard \$DEBIANPATH/sdcard >/dev/null 2>&1
 
@@ -356,10 +421,19 @@ export LD_LIBRARY_PATH=$LD_LIBRARY_PATH
 \$BB mount -t devpts devpts \$DEBIANPATH/dev/pts 2>/dev/null
 
 mkdir -p \$DEBIANPATH/dev/shm
-\$BB mount -t tmpfs -o size=512M tmpfs \$DEBIANPATH/dev/shm 2>/dev/null
+\$BB mount -t tmpfs -o size=512M,mode=1777 tmpfs \$DEBIANPATH/dev/shm 2>/dev/null
 
-mkdir -p \$DEBIANPATH/tmp
-\$BB mount --bind /data/data/com.ivarna.nativecode/files/usr/tmp \$DEBIANPATH/tmp 2>/dev/null || true
+mkdir -p \$DEBIANPATH/tmp \$DEBIANPATH/mnt/termux-tmp
+# Unmount bad /tmp bind from older installs; keep disk-backed sticky /tmp
+if grep -q " \$DEBIANPATH/tmp " /proc/mounts 2>/dev/null; then
+    \$BB umount \$DEBIANPATH/tmp 2>/dev/null || \$BB umount -l \$DEBIANPATH/tmp 2>/dev/null || true
+fi
+chmod 1777 \$DEBIANPATH/tmp 2>/dev/null || true
+\$BB mount --bind /data/data/com.ivarna.nativecode/files/usr/tmp \$DEBIANPATH/mnt/termux-tmp 2>/dev/null || true
+if [ -f /data/data/com.ivarna.nativecode/files/usr/tmp/launch_tool.sh ]; then
+    cp -f /data/data/com.ivarna.nativecode/files/usr/tmp/launch_tool.sh \$DEBIANPATH/tmp/launch_tool.sh 2>/dev/null || true
+    chmod 755 \$DEBIANPATH/tmp/launch_tool.sh 2>/dev/null || true
+fi
 mkdir -p \$DEBIANPATH/sdcard
 \$BB mount --bind /sdcard \$DEBIANPATH/sdcard 2>/dev/null
 
@@ -389,10 +463,19 @@ export LD_LIBRARY_PATH=$LD_LIBRARY_PATH
 \$BB mount -t devpts devpts \$DEBIANPATH/dev/pts 2>/dev/null
 
 mkdir -p \$DEBIANPATH/dev/shm
-\$BB mount -t tmpfs -o size=512M tmpfs \$DEBIANPATH/dev/shm 2>/dev/null
+\$BB mount -t tmpfs -o size=512M,mode=1777 tmpfs \$DEBIANPATH/dev/shm 2>/dev/null
 
-mkdir -p \$DEBIANPATH/tmp
-\$BB mount --bind /data/data/com.ivarna.nativecode/files/usr/tmp \$DEBIANPATH/tmp 2>/dev/null || true
+mkdir -p \$DEBIANPATH/tmp \$DEBIANPATH/mnt/termux-tmp
+# Unmount bad /tmp bind from older installs; keep disk-backed sticky /tmp
+if grep -q " \$DEBIANPATH/tmp " /proc/mounts 2>/dev/null; then
+    \$BB umount \$DEBIANPATH/tmp 2>/dev/null || \$BB umount -l \$DEBIANPATH/tmp 2>/dev/null || true
+fi
+chmod 1777 \$DEBIANPATH/tmp 2>/dev/null || true
+\$BB mount --bind /data/data/com.ivarna.nativecode/files/usr/tmp \$DEBIANPATH/mnt/termux-tmp 2>/dev/null || true
+if [ -f /data/data/com.ivarna.nativecode/files/usr/tmp/launch_tool.sh ]; then
+    cp -f /data/data/com.ivarna.nativecode/files/usr/tmp/launch_tool.sh \$DEBIANPATH/tmp/launch_tool.sh 2>/dev/null || true
+    chmod 755 \$DEBIANPATH/tmp/launch_tool.sh 2>/dev/null || true
+fi
 mkdir -p \$DEBIANPATH/sdcard
 \$BB mount --bind /sdcard \$DEBIANPATH/sdcard 2>/dev/null
 
@@ -405,8 +488,9 @@ EOF
     cleanup_mounts
     success "NativeCode: Chroot Setup Complete!"
 
-    # Notify NativeCode app
-    am start -a android.intent.action.VIEW -d "nativecode://callback?result=success&name=distro_install_debian13_chroot" >/dev/null 2>&1
+    # Notify NativeCode app (non-fatal: often fails under pure root / no app context)
+    am start -a android.intent.action.VIEW -d "nativecode://callback?result=success&name=distro_install_debian13_chroot" >/dev/null 2>&1 || true
+    return 0
 }
 
 main() {
@@ -460,7 +544,7 @@ main() {
     if [ -f "$DEBIANPATH/.flux_configured" ]; then
         success "Debian 13 Chroot already installed."
         progress "Skipping installation..."
-        am start -a android.intent.action.VIEW -d "nativecode://callback?result=success&name=distro_install_debian13_chroot" >/dev/null 2>&1
+        am start -a android.intent.action.VIEW -d "nativecode://callback?result=success&name=distro_install_debian13_chroot" >/dev/null 2>&1 || true
         exit 0
     fi
 
@@ -492,6 +576,7 @@ main() {
 
     extract_file "$DEBIANPATH" "$ROOTFS_ARCHIVE"
     configure_debian_chroot
+    exit 0
 }
 
 main "$@"

@@ -55,6 +55,12 @@ object ProjectPathResolver {
         return File("${ChrootCommandBuilder.CHROOT_PATH}/.flux_configured").exists()
     }
 
+    /** Host rootfs directory for Debian chroot (outside app storage). */
+    fun chrootRootfsDir(): File = File(ChrootCommandBuilder.CHROOT_PATH)
+
+    /** True if chroot rootfs directory exists on host (may be partial install). */
+    fun isChrootRootfsPresent(): Boolean = chrootRootfsDir().exists()
+
     /** Human-readable label for a linux method. */
     fun methodLabel(method: String = LinuxCommandBuilder.currentMethod): String {
         return if (method == "chroot") "Chroot (Debian Trixie)" else "PRoot (Debian Trixie)"

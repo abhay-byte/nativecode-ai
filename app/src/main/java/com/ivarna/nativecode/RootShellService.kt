@@ -28,6 +28,16 @@ object RootShell {
     /** Temp dir where asset scripts are staged before execution. */
     private const val SCRIPTS_TMP = "/data/local/tmp/nativecode_scripts"
 
+    /**
+     * Working su argv prefix, e.g. `["/system/bin/su","-c"]` or `["/system/bin/sh","-c"]` with
+     * embedded su. Discovered once via [resolveSuInvocation]; null if root unavailable.
+     *
+     * IMPORTANT: do NOT gate on File.exists() — KernelSU/Magisk often hide su from the app
+     * mount namespace until exec; File.exists() false positives skip the only working path.
+     */
+    @Volatile
+    private var cachedSuInvocation: List<String>? = null
+
     // ─────────────────────────────────────────────────────────────────────────
     // Public API
     // ─────────────────────────────────────────────────────────────────────────
@@ -36,18 +46,23 @@ object RootShell {
      * Returns true if a working root shell (su) is available.
      * Runs synchronously — always call from a background thread.
      */
-    fun isRootAvailable(): Boolean {
+    fun isRootAvailable(): Boolean = resolveSuInvocation() != null
+
+    /**
+     * Capture stdout of a root command (blocking). Empty string on failure.
+     * Background thread only.
+     */
+    fun capture(cmd: String): String {
+        val inv = resolveSuInvocation() ?: return ""
         return try {
-            val pb = ProcessBuilder("su", "-c", "id")
-                .redirectErrorStream(true)
-                .start()
-            val output = pb.inputStream.bufferedReader().readText()
-            val exitCode = pb.waitFor()
-            Log.d(TAG, "isRootAvailable: exitCode=$exitCode, output=${output.trim()}")
-            exitCode == 0 && output.contains("uid=0")
+            val args = buildSuArgs(inv, cmd)
+            val pb = ProcessBuilder(args).redirectErrorStream(true).start()
+            val out = pb.inputStream.bufferedReader().readText()
+            pb.waitFor()
+            out
         } catch (e: Exception) {
-            Log.w(TAG, "isRootAvailable exception: ${e.message}")
-            false
+            Log.w(TAG, "capture failed: ${e.message}")
+            ""
         }
     }
 
@@ -62,7 +77,13 @@ object RootShell {
         onDone: (Int) -> Unit = {}
     ) {
         executor.execute {
-            val code = runCommand(listOf("su", "-c", cmd), onLine)
+            val inv = resolveSuInvocation()
+            val code = if (inv == null) {
+                mainHandler.post { onLine("[RootShell] ERROR: no working su binary") }
+                -1
+            } else {
+                runCommand(buildSuArgs(inv, cmd), onLine)
+            }
             mainHandler.post { onDone(code) }
         }
     }
@@ -72,7 +93,8 @@ object RootShell {
      * Must be called from a background thread. Returns the exit code.
      */
     fun executeSync(cmd: String): Int {
-        return runCommand(listOf("su", "-c", cmd)) {}
+        val inv = resolveSuInvocation() ?: return -1
+        return runCommand(buildSuArgs(inv, cmd)) {}
     }
 
     /**
@@ -84,10 +106,7 @@ object RootShell {
         onLine: (String) -> Unit = {},
         onDone: (Int) -> Unit = {}
     ) {
-        executor.execute {
-            val code = runCommand(listOf("su", "-c", "sh \"$scriptPath\""), onLine)
-            mainHandler.post { onDone(code) }
-        }
+        execute("sh \"$scriptPath\"", onLine, onDone)
     }
 
     /**
@@ -112,14 +131,63 @@ object RootShell {
                 }
                 return@execute
             }
-            val code = runCommand(listOf("su", "-c", "sh \"$stagedPath\""), onLine)
+            val inv = resolveSuInvocation()
+            val code = if (inv == null) {
+                mainHandler.post { onLine("[RootShell] ERROR: no working su binary") }
+                -1
+            } else {
+                runCommand(buildSuArgs(inv, "sh \"$stagedPath\""), onLine)
+            }
             mainHandler.post { onDone(code) }
         }
     }
 
     /**
+     * Discover a working su invocation. Tries absolute paths without File.exists(),
+     * plus `sh -c` wrappers matching MainActivity script runners.
+     * Caches the first success. Background thread only.
+     */
+    fun resolveSuInvocation(): List<String>? {
+        cachedSuInvocation?.let { return it }
+
+        // Each entry: argv that runs a shell command string as root via trailing -c style,
+        // OR special "sh_wrap" forms handled in trySuProbe.
+        val trials: List<List<String>> = listOf(
+            // Direct (KernelSU / Magisk common)
+            listOf("/system/bin/su", "-c"),
+            listOf("/system/xbin/su", "-c"),
+            listOf("/sbin/su", "-c"),
+            listOf("/debug_ramdisk/su", "-c"),
+            listOf("su", "-c"),
+            // Magisk sometimes wants uid first: su 0 -c 'cmd'
+            listOf("/system/bin/su", "0", "-c"),
+            listOf("su", "0", "-c"),
+            // Same pattern as chroot_host script runner: sh -c '/system/bin/su -c …'
+            listOf("/system/bin/sh", "-c", "SU_WRAP:/system/bin/su"),
+            listOf("/system/bin/sh", "-c", "SU_WRAP:su"),
+            listOf("/system/bin/sh", "-c", "SU_WRAP:/debug_ramdisk/su")
+        )
+
+        for (trial in trials) {
+            if (trySuProbe(trial)) {
+                cachedSuInvocation = trial
+                Log.i(TAG, "resolveSuInvocation OK: $trial")
+                return trial
+            }
+        }
+        Log.w(TAG, "resolveSuInvocation: no working su")
+        return null
+    }
+
+    /** Clear cached su (e.g. after user grants root in manager). */
+    fun clearSuCache() {
+        cachedSuInvocation = null
+    }
+
+    /**
      * Run a command inside the Debian 13 chroot as [user].
-     * Assumes chroot mounts are already set up.
+     * Mount policy matches ChrootCommandBuilder / setup script:
+     * sticky disk /tmp (no app-tmp bind onto /tmp), optional /mnt/termux-tmp bridge.
      */
     fun executeInChroot(
         cmd: String,
@@ -129,13 +197,18 @@ object RootShell {
         onDone: (Int) -> Unit = {}
     ) {
         // Ensure filesystems are mounted — without this /dev/null is inaccessible and apt fails.
+        // Never bind host/app tmp onto chroot /tmp (SELinux + _apt mkstemp).
         val mounts = listOf(
             "busybox mount -o remount,dev,suid /data 2>/dev/null || true",
             "busybox mount --bind /dev $chrootPath/dev 2>/dev/null || true",
             "busybox mount --bind /sys $chrootPath/sys 2>/dev/null || true",
             "busybox mount -t proc proc $chrootPath/proc 2>/dev/null || true",
             "busybox mount -t devpts devpts $chrootPath/dev/pts 2>/dev/null || true",
-            "mkdir -p $chrootPath/dev/shm && busybox mount -t tmpfs -o size=512M tmpfs $chrootPath/dev/shm 2>/dev/null || true"
+            "mkdir -p $chrootPath/dev/shm && busybox mount -t tmpfs -o size=512M,mode=1777 tmpfs $chrootPath/dev/shm 2>/dev/null || true",
+            "mkdir -p $chrootPath/tmp $chrootPath/mnt/termux-tmp $chrootPath/sdcard",
+            "busybox umount $chrootPath/tmp 2>/dev/null || true",
+            "chmod 1777 $chrootPath/tmp 2>/dev/null || true",
+            "busybox mount --bind /sdcard $chrootPath/sdcard 2>/dev/null || true"
         ).joinToString("; ")
         val inner = "$mounts; busybox chroot $chrootPath /bin/su - $user -c \"$cmd\""
         execute(inner, onLine, onDone)
@@ -144,6 +217,32 @@ object RootShell {
     // ─────────────────────────────────────────────────────────────────────────
     // Internal helpers
     // ─────────────────────────────────────────────────────────────────────────
+
+    private fun buildSuArgs(invocation: List<String>, cmd: String): List<String> {
+        // SU_WRAP form: ["/system/bin/sh","-c","SU_WRAP:/system/bin/su"] → sh -c '/system/bin/su -c <cmd>'
+        if (invocation.size >= 3 && invocation[2].startsWith("SU_WRAP:")) {
+            val suBin = invocation[2].removePrefix("SU_WRAP:")
+            val escaped = cmd.replace("'", "'\\''")
+            return listOf(invocation[0], invocation[1], "$suBin -c '$escaped'")
+        }
+        return invocation + cmd
+    }
+
+    private fun trySuProbe(invocation: List<String>): Boolean {
+        return try {
+            val args = buildSuArgs(invocation, "id")
+            Log.d(TAG, "trySuProbe: $args")
+            val pb = ProcessBuilder(args).redirectErrorStream(true).start()
+            // Read first (small output) — avoids pipe deadlock; process exits on deny quickly
+            val out = pb.inputStream.bufferedReader().readText()
+            val code = pb.waitFor()
+            Log.d(TAG, "trySuProbe exit=$code out=${out.trim().take(120)}")
+            code == 0 && out.contains("uid=0")
+        } catch (e: Exception) {
+            Log.w(TAG, "trySuProbe fail: ${e.message}")
+            false
+        }
+    }
 
     /** Streams stdout+stderr from a ProcessBuilder command, returns exit code. */
     private fun runCommand(
