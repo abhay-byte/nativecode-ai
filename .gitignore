@@ -10,6 +10,9 @@ local.properties
 # Ignore large bootstrap assets and packaging roots
 bootstrap.tar
 bootstrap_root/
+# Pinned Debian rootfs shipped in APK assets (local/CI place under assets/rootfs/)
+app/src/main/assets/rootfs/*.tar.xz
+debian_13_rootfs.tar.xz
 termux-packages/*
 !termux-packages/output/
 !termux-packages/output/**

@@ -1,15 +1,18 @@
 #!/data/data/com.ivarna.nativecode/files/usr/bin/bash
-# stop_gui.sh - Stop XFCE4 Desktop Environment in PRoot Distro for com.ivarna.nativecode
+# stop_gui.sh - Stop XFCE4 Desktop Environment in PRoot Distro
+# Paths: TermuxHostPaths via fluxlinux-host.env (SSOT)
 
 DISTRO=${1:-debian}
-PKG="com.ivarna.nativecode"
+PKG="${TERMUX_APP__PACKAGE_NAME:-com.ivarna.nativecode}"
+_HOST_ENV="${TERMUX__PREFIX:-/data/data/${PKG}/files/usr}/etc/fluxlinux-host.env"
+[ -r "$_HOST_ENV" ] && . "$_HOST_ENV"
 
-# Set critical environment variables for proot-distro
-export TERMUX_APP__PACKAGE_NAME="$PKG"
-export TERMUX__PREFIX="/data/data/$PKG/files/usr"
-export TERMUX__HOME="/data/data/$PKG/files/home"
-export HOME="/data/data/$PKG/files/home"
-export PROOT_TMP_DIR="/data/data/$PKG/files/usr/tmp"
+export TERMUX_APP__PACKAGE_NAME="${TERMUX_APP__PACKAGE_NAME:-$PKG}"
+export TERMUX__PREFIX="${TERMUX__PREFIX:-/data/data/${TERMUX_APP__PACKAGE_NAME}/files/usr}"
+export TERMUX__HOME="${TERMUX__HOME:-/data/data/${TERMUX_APP__PACKAGE_NAME}/files/home}"
+export HOME="${HOME:-$TERMUX__HOME}"
+export PROOT_TMP_DIR="${PROOT_TMP_DIR:-$TERMUX__PREFIX/tmp}"
+PKG="$TERMUX_APP__PACKAGE_NAME"
 
 echo "========================================"
 echo "FluxLinux: Stopping GUI for $DISTRO"

@@ -8,6 +8,14 @@
 DEBIANPATH="/data/local/tmp/chrootDebian13"
 USERNAME="flux"
 
+# Same pinned rootfs as proot path (app assets → deploy to $HOME)
+PKG="${TERMUX_APP__PACKAGE_NAME:-com.ivarna.nativecode}"
+APP_HOME="${TERMUX__HOME:-/data/data/${PKG}/files/home}"
+APP_PREFIX="${TERMUX__PREFIX:-/data/data/${PKG}/files/usr}"
+ROOTFS_NAME="debian_13_rootfs.tar.xz"
+ROOTFS_URL="${FLUX_ROOTFS_URL:-https://github.com/abhay-byte/fluxlinux/releases/download/rootfs/debian_13_rootfs.tar.xz}"
+ROOTFS_SHA256="${FLUX_ROOTFS_SHA256:-13e29f6099c3b805e84694507ede460c03886ffb364c03317272691cf84e6803}"
+
 # Function to show progress message
 progress() {
     printf "\033[1;36m[+] %s\033[0m\n" "$1"
@@ -43,65 +51,108 @@ goodbye() {
     exit 1
 }
 
-# Download Helper
+# Resolve app-packaged / manual / download rootfs (same file as flux_install.sh)
+resolve_rootfs_archive() {
+    ROOTFS_ARCHIVE=""
+
+    if [ -n "${FLUX_ROOTFS_PATH:-}" ] && [ -f "$FLUX_ROOTFS_PATH" ] && [ -s "$FLUX_ROOTFS_PATH" ]; then
+        ROOTFS_ARCHIVE="$FLUX_ROOTFS_PATH"
+        progress "rootfs from FLUX_ROOTFS_PATH=$ROOTFS_ARCHIVE"
+        return 0
+    fi
+
+    for candidate in \
+        "$APP_HOME/$ROOTFS_NAME" \
+        "$APP_HOME/rootfs/$ROOTFS_NAME" \
+        "$APP_PREFIX/var/lib/proot-distro/cache/rootfs/$ROOTFS_NAME" \
+        "/sdcard/Download/$ROOTFS_NAME" \
+        "/sdcard/Download/rootfs.tar.xz" \
+        "/storage/emulated/0/Download/$ROOTFS_NAME" \
+        "/storage/emulated/0/Download/rootfs.tar.xz" \
+        "$DEBIANPATH/$ROOTFS_NAME" \
+        "$DEBIANPATH/rootfs.tar.xz"
+    do
+        if [ -f "$candidate" ] && [ -s "$candidate" ]; then
+            ROOTFS_ARCHIVE="$candidate"
+            progress "rootfs found: $ROOTFS_ARCHIVE"
+            return 0
+        fi
+    done
+
+    return 1
+}
+
+# Download Helper (fallback only — prefer app-local archive)
 download_file() {
+    # $1=dir $2=filename $3=url
     progress "Downloading file..."
-    if [ -e "$1/$2" ]; then
+    if [ -e "$1/$2" ] && [ -s "$1/$2" ]; then
         printf "\033[1;33m[!] File already exists: %s\033[0m\n" "$2"
         printf "\033[1;33m[!] Skipping download...\033[0m\n"
-    else
+        return 0
+    fi
+    mkdir -p "$1" 2>/dev/null || true
+    if command -v wget >/dev/null 2>&1; then
         wget -O "$1/$2" "$3"
         if [ $? -eq 0 ]; then
             success "File downloaded successfully: $2"
-        else
-            error "Standard wget failed: $2."
-            progress "Trying fallback to Busybox wget..."
-            $BB wget -O "$1/$2" "$3"
-            if [ $? -eq 0 ]; then
-                 success "File downloaded successfully (Fallback)"
-            else
-                 goodbye
-            fi
-        fi
-    fi
-}
-
-# Extraction Helper
-extract_file() {
-    progress "Extracting file..."
-    if [ -f "$1/bin/bash" ]; then
-        printf "\033[1;33m[!] Rootfs appears populated: %s/bin/bash\033[0m\n" "$1"
-        printf "\033[1;33m[!] Skipping extraction...\033[0m\n"
-    else
-        if tar xpvf "$1/rootfs.tar.xz" -C "$1" --numeric-owner >/dev/null 2>&1; then
-            success "Rootfs extracted successfully."
             return 0
         fi
+        error "Standard wget failed: $2."
+    fi
+    progress "Trying Busybox wget..."
+    $BB wget -O "$1/$2" "$3"
+    if [ $? -eq 0 ]; then
+        success "File downloaded successfully (Fallback)"
+        return 0
+    fi
+    goodbye
+}
 
-        progress "Standard extract failed. Trying unxz pipe..."
-        UNXZ_CMD="unxz"
-        if ! command -v unxz >/dev/null 2>&1; then
-            if "$BB" unxz --help >/dev/null 2>&1; then
-                UNXZ_CMD="$BB unxz"
-            else
-                error "No 'unxz' tool found. Cannot extract .tar.xz file."
-                goodbye
-            fi
-        fi
-
-        if $UNXZ_CMD -c "$1/rootfs.tar.xz" | tar xpv -C "$1" --numeric-owner >/dev/null 2>&1; then
-             success "Rootfs extracted successfully (via unxz pipe)."
-             return 0
-        fi
-
-        if tar xJvf "$1/rootfs.tar.xz" -C "$1" --numeric-owner >/dev/null 2>&1; then
-             success "Rootfs extracted successfully (Fallback flags)."
-             return 0
-        fi
-
-        error "Extraction Failed! Your Busybox/Tar does not support XZ compression."
+# Extraction Helper — archive path is $2 (or $1/rootfs.tar.xz)
+extract_file() {
+    # $1=dest root  $2=optional archive path
+    _dest="$1"
+    _archive="${2:-$_dest/rootfs.tar.xz}"
+    progress "Extracting file from $_archive ..."
+    if [ -f "$_dest/bin/bash" ] || [ -e "$_dest/bin/sh" ]; then
+        printf "\033[1;33m[!] Rootfs appears populated: %s/bin\033[0m\n" "$_dest"
+        printf "\033[1;33m[!] Skipping extraction...\033[0m\n"
+        return 0
+    fi
+    if [ ! -f "$_archive" ] || [ ! -s "$_archive" ]; then
+        error "Rootfs archive missing: $_archive"
         goodbye
     fi
+
+    if tar xpvf "$_archive" -C "$_dest" --numeric-owner >/dev/null 2>&1; then
+        success "Rootfs extracted successfully."
+        return 0
+    fi
+
+    progress "Standard extract failed. Trying unxz pipe..."
+    UNXZ_CMD="unxz"
+    if ! command -v unxz >/dev/null 2>&1; then
+        if "$BB" unxz --help >/dev/null 2>&1; then
+            UNXZ_CMD="$BB unxz"
+        else
+            error "No 'unxz' tool found. Cannot extract .tar.xz file."
+            goodbye
+        fi
+    fi
+
+    if $UNXZ_CMD -c "$_archive" | tar xpv -C "$_dest" --numeric-owner >/dev/null 2>&1; then
+         success "Rootfs extracted successfully (via unxz pipe)."
+         return 0
+    fi
+
+    if tar xJvf "$_archive" -C "$_dest" --numeric-owner >/dev/null 2>&1; then
+         success "Rootfs extracted successfully (Fallback flags)."
+         return 0
+    fi
+
+    error "Extraction Failed! Your Busybox/Tar does not support XZ compression."
+    goodbye
 }
 
 # Main Configuration Logic
@@ -418,15 +469,28 @@ main() {
         success "Created directory: $DEBIANPATH"
     fi
 
-    # Check for manual download in /sdcard/Download
-    MANUAL_FILE="/sdcard/Download/rootfs.tar.xz"
-    if [ -f "$MANUAL_FILE" ]; then
-        progress "Found manual file: $MANUAL_FILE. Copying..."
-        cp "$MANUAL_FILE" "$DEBIANPATH/rootfs.tar.xz" && success "File copied." || true
+    # Prefer app-deployed rootfs (same as flux_install / assets/rootfs/)
+    if resolve_rootfs_archive; then
+        :
+    else
+        progress "No local rootfs — downloading $ROOTFS_URL"
+        download_file "$DEBIANPATH" "$ROOTFS_NAME" "$ROOTFS_URL"
+        ROOTFS_ARCHIVE="$DEBIANPATH/$ROOTFS_NAME"
     fi
 
-    download_file "$DEBIANPATH" "rootfs.tar.xz" "https://github.com/abhay-byte/nativecode/releases/download/rootfs/debian_13_rootfs.tar.xz"
-    extract_file "$DEBIANPATH"
+    # Optional SHA check (when sha256sum available)
+    if [ -n "$ROOTFS_SHA256" ] && command -v sha256sum >/dev/null 2>&1; then
+        _got="$(sha256sum "$ROOTFS_ARCHIVE" | awk '{print $1}')"
+        if [ "$_got" != "$ROOTFS_SHA256" ]; then
+            error "SHA256 mismatch for $ROOTFS_ARCHIVE"
+            error "  expected $ROOTFS_SHA256"
+            error "  got      $_got"
+            goodbye
+        fi
+        success "SHA256 OK"
+    fi
+
+    extract_file "$DEBIANPATH" "$ROOTFS_ARCHIVE"
     configure_debian_chroot
 }
 

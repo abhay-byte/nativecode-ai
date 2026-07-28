@@ -15,9 +15,18 @@ android {
         versionName = "1.0"
     }
 
+    signingConfigs {
+        create("release") {
+            storeFile = file("/home/abhaybyte/repos/keys/nativecode-release.jks")
+            storePassword = "abhaybyte@2026"
+            keyAlias = "nativecode"
+            keyPassword = "abhaybyte@2026"
+        }
+    }
+
     buildTypes {
         release {
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
@@ -45,6 +54,11 @@ android {
         jniLibs {
             useLegacyPackaging = true
         }
+    }
+
+    // Keep large rootfs/bootstrap archives stored uncompressed in the APK
+    androidResources {
+        noCompress += listOf("xz", "tar")
     }
 
     lint {

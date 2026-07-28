@@ -1,19 +1,23 @@
 #!/data/data/com.ivarna.nativecode/files/usr/bin/bash
 # start_gui.sh - Launch XFCE4 Desktop Environment in PRoot Distro
+# Paths: TermuxHostPaths via fluxlinux-host.env (SSOT)
 
 DISTRO=${1:-debian}
-PKG="com.ivarna.nativecode"
+PKG="${TERMUX_APP__PACKAGE_NAME:-com.ivarna.nativecode}"
+_HOST_ENV="${TERMUX__PREFIX:-/data/data/${PKG}/files/usr}/etc/fluxlinux-host.env"
+[ -r "$_HOST_ENV" ] && . "$_HOST_ENV"
 
 # Detect how we're running
 IS_ROOT=false
 if [ "$(id -u)" = "0" ]; then IS_ROOT=true; fi
 
-# Termux paths
-TERMUX_PREFIX="/data/data/$PKG/files/usr"
-TERMUX_HOME="$TERMUX_PREFIX/home"
+# Termux paths (from SSOT env, with safe fallbacks)
+PKG="${TERMUX_APP__PACKAGE_NAME:-$PKG}"
+TERMUX_PREFIX="${TERMUX__PREFIX:-/data/data/$PKG/files/usr}"
+TERMUX_HOME="${TERMUX__HOME:-/data/data/$PKG/files/home}"
 export HOME="$TERMUX_HOME"
-export TMPDIR="$TERMUX_PREFIX/tmp"
-export PROOT_TMP_DIR="$TMPDIR"
+export TMPDIR="${TMPDIR:-$TERMUX_PREFIX/tmp}"
+export PROOT_TMP_DIR="${PROOT_TMP_DIR:-$TMPDIR}"
 export PATH="$TERMUX_PREFIX/bin:$TERMUX_PREFIX/bin/applets:/system/bin:/system/xbin:$PATH"
 export LD_LIBRARY_PATH="$TERMUX_PREFIX/lib:$TERMUX_PREFIX/opt/virglrenderer-android/lib"
 export TERMUX_APP__PACKAGE_NAME="$PKG"

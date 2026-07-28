@@ -5,7 +5,7 @@ plugins {
 
 android {
     namespace = "com.termux.x11"
-    compileSdk = 34
+    compileSdk = 36
 
     defaultConfig {
         minSdk = 26

@@ -27,6 +27,8 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.setPadding
 import android.system.Os
+import com.ivarna.nativecode.terminal.HostCommandBuilder
+import com.ivarna.nativecode.terminal.TermuxHostPaths
 import java.io.File
 import java.io.FileOutputStream
 import java.io.InputStream
@@ -984,6 +986,9 @@ class OnboardingActivity : AppCompatActivity() {
                     loginInitPy.writeText(content)
                 }
 
+                // SSOT: rewrite residual com.termux paths in bootstrap text files
+                TermuxHostPaths.applyPackageToExtractedPrefix(filesDir)
+
                 File(varDir, "log/apt").mkdirs(); File(varDir, "lib/dpkg").mkdirs(); tmpDir.mkdirs()
 
                 updateBaseStatus("C. Deploying Host Configs...")
@@ -991,10 +996,18 @@ class OnboardingActivity : AppCompatActivity() {
                 File(etcDir, "resolv.conf").writeText("nameserver 8.8.8.8\nnameserver 8.8.4.4\n")
 
                 updateBaseStatus("D. Initializing Host Environment...")
+                // Always re-validate host deps after bootstrap; clear stale marker
+                HostCommandBuilder.clearSetupMarker(this@OnboardingActivity)
                 val nld = applicationInfo.nativeLibraryDir
-                val proot = File(nld, "libproot.so").absolutePath
-                val bash = File(nld, "libbash.so").absolutePath
-                check(runShellCommand(arrayOf(proot, bash, File(homeDir, "setup_termux.sh").absolutePath), isCliSetup = false) == 0) { "Host setup failed" }
+                val proot = TermuxHostPaths.libProot(this@OnboardingActivity).absolutePath
+                val bash = TermuxHostPaths.libBash(this@OnboardingActivity).absolutePath
+                check(
+                    runShellCommand(
+                        arrayOf(proot, bash, File(homeDir, "setup_termux.sh").absolutePath),
+                        isCliSetup = false,
+                        forceHostSetup = true
+                    ) == 0
+                ) { "Host setup failed" }
 
                 updateBaseStatus("E. Provisioning Debian Guest Container...")
                 val debBytes = assets.open("scripts/setup_debian_family.sh").use { it.readBytes() }
@@ -1006,8 +1019,8 @@ class OnboardingActivity : AppCompatActivity() {
                 assets.open("scripts/setup_hw_accel_debian.sh").use { input -> FileOutputStream(hwScript).use { input.copyTo(it) } }
                 hwScript.setExecutable(true)
                 check(runShellCommand(arrayOf(
-                    "/data/data/com.ivarna.nativecode/files/usr/bin/python",
-                    "/data/data/com.ivarna.nativecode/files/usr/bin/proot-distro",
+                    TermuxHostPaths.BIN + "/python",
+                    TermuxHostPaths.PROOT_DISTRO,
                     "login", "debian", "--shared-tmp", "--",
                     "env", "FLUX_GPU=virgl", "bash", "/tmp/setup_hw_accel_debian.sh"
                 ), isCliSetup = false) == 0) { "GPU setup failed" }
@@ -1018,8 +1031,8 @@ class OnboardingActivity : AppCompatActivity() {
                     assets.open("scripts/setup_customization_debian.sh").use { input -> FileOutputStream(customScript).use { input.copyTo(it) } }
                     customScript.setExecutable(true)
                     check(runShellCommand(arrayOf(
-                        "/data/data/com.ivarna.nativecode/files/usr/bin/python",
-                        "/data/data/com.ivarna.nativecode/files/usr/bin/proot-distro",
+                        TermuxHostPaths.BIN + "/python",
+                        TermuxHostPaths.PROOT_DISTRO,
                         "login", "debian", "--shared-tmp", "--",
                         "env", "FLUX_THEME=dark", "bash", "/tmp/setup_customization_debian.sh"
                     ), isCliSetup = false) == 0) { "Customization failed" }
@@ -1337,8 +1350,8 @@ class OnboardingActivity : AppCompatActivity() {
 
                 updateCliStatus("Running installation inside Debian (NVM, Node v26, opencode-ai, @openai/codex)...")
                 val runCode = runShellCommand(arrayOf(
-                    "/data/data/com.ivarna.nativecode/files/usr/bin/python",
-                    "/data/data/com.ivarna.nativecode/files/usr/bin/proot-distro",
+                    TermuxHostPaths.BIN + "/python",
+                    TermuxHostPaths.PROOT_DISTRO,
                     "login", "debian", "--shared-tmp", "--",
                     "bash", "/tmp/setup_cli_tools.sh"
                 ), isCliSetup = true)
@@ -1604,10 +1617,11 @@ class OnboardingActivity : AppCompatActivity() {
 
     private fun deployScripts() {
         try {
+            // SSOT host env + residual bootstrap path rewrite (safe if no usr yet)
+            TermuxHostPaths.applyPackageToExtractedPrefix(filesDir)
             val homeDir = File(filesDir, "home").also { it.mkdirs() }
             val scripts = arrayOf(
                 "setup_termux.sh",
-                "termux_tweaks.sh",
                 "flux_install.sh",
                 "start_gui.sh",
                 "stop_gui.sh",
@@ -1617,7 +1631,6 @@ class OnboardingActivity : AppCompatActivity() {
             )
             for (script in scripts) {
                 val assetPath = when {
-                    script.contains("tweaks") -> "scripts/termux_tweaks.sh"
                     script.contains("chroot") -> "scripts/chroot/$script"
                     else -> "scripts/$script"
                 }
@@ -1633,33 +1646,39 @@ class OnboardingActivity : AppCompatActivity() {
             val termuxDir = File(homeDir, ".termux").also { it.mkdirs() }
             val fontOut = File(termuxDir, "font.ttf")
             assets.open("fonts/font.ttf").use { input -> FileOutputStream(fontOut).use { input.copyTo(it) } }
+            // Pinned Debian 13 rootfs for proot-distro install ./file --name debian
+            deployRootfsArchive(homeDir)
         } catch (e: Exception) {
             Log.e("Onboarding", "Failed to deploy scripts", e)
         }
     }
 
-    private fun runShellCommand(cmd: Array<String>, isCliSetup: Boolean): Int {
+    /** Copy assets/rootfs/debian_13_rootfs.tar.xz → $HOME (skip if already present & large). */
+    private fun deployRootfsArchive(homeDir: File) {
+        val out = File(homeDir, "debian_13_rootfs.tar.xz")
+        if (out.isFile && out.length() > 50L * 1024L * 1024L) {
+            Log.i("Onboarding", "Rootfs already deployed: ${out.absolutePath} (${out.length()} bytes)")
+            return
+        }
+        try {
+            assets.open("rootfs/debian_13_rootfs.tar.xz").use { input ->
+                FileOutputStream(out).use { input.copyTo(it) }
+            }
+            Log.i("Onboarding", "Deployed rootfs: ${out.absolutePath} (${out.length()} bytes)")
+        } catch (e: Exception) {
+            Log.e("Onboarding", "Failed to deploy rootfs archive from assets", e)
+        }
+    }
+
+    private fun runShellCommand(
+        cmd: Array<String>,
+        isCliSetup: Boolean,
+        forceHostSetup: Boolean = false
+    ): Int {
         val adjusted = if (cmd.isNotEmpty() && cmd[0].startsWith("/data/data/"))
             arrayOf("/system/bin/linker64") + cmd else cmd
         val pb = ProcessBuilder(*adjusted)
-        val env = pb.environment()
-        val nld = applicationInfo.nativeLibraryDir
-        env["PATH"] = "$nld:/data/data/com.ivarna.nativecode/files/usr/bin:/system/bin"
-        env["PD_PROOT_BIN"] = File(nld, "libproot.so").absolutePath
-        env["PROOT_LOADER"] = File(nld, "libloader.so").absolutePath
-        env["LD_LIBRARY_PATH"] = "/data/data/com.ivarna.nativecode/files/usr/lib:/data/data/com.ivarna.nativecode/files/usr/opt/virglrenderer-android/lib"
-        env["LD_PRELOAD"] = "/data/data/com.ivarna.nativecode/files/usr/lib/libtermux-exec.so"
-        env["PREFIX"] = "/data/data/com.ivarna.nativecode/files/usr"
-        env["HOME"] = "/data/data/com.ivarna.nativecode/files/home"
-        env["TMPDIR"] = "/data/data/com.ivarna.nativecode/files/usr/tmp"
-        env["PROOT_TMP_DIR"] = "/data/data/com.ivarna.nativecode/files/usr/tmp"
-        env["TERMUX_APP__PACKAGE_NAME"] = "com.ivarna.nativecode"
-        env["TERMUX_X11_APK_PATH"] = applicationInfo.sourceDir
-        env["TERMUX_X11_OVERRIDE_PACKAGE"] = "com.ivarna.nativecode"
-        env["TERMUX__PREFIX"] = "/data/data/com.ivarna.nativecode/files/usr"
-        env["TERMUX__HOME"] = "/data/data/com.ivarna.nativecode/files/home"
-        env["SSL_CERT_FILE"] = "/data/data/com.ivarna.nativecode/files/usr/etc/tls/cert.pem"
-        env["CURL_CA_BUNDLE"] = "/data/data/com.ivarna.nativecode/files/usr/etc/tls/cert.pem"
+        HostCommandBuilder.applyTo(this, pb, forceHostSetup = forceHostSetup)
         pb.redirectErrorStream(true)
         val proc = pb.start()
         val buf = ByteArray(1024)

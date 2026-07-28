@@ -1503,7 +1503,11 @@ class MainActivity : AppCompatActivity() {
 
     private fun ensureBootstrapExtracted() {
         val termuxExecFile = File(filesDir, "usr/lib/libtermux-exec.so")
-        if (termuxExecFile.exists()) return
+        if (termuxExecFile.exists()) {
+            // Already extracted — still re-apply SSOT package rewrite + host env
+            TermuxHostPaths.applyPackageToExtractedPrefix(filesDir)
+            return
+        }
 
         try {
             val usrDir = File(filesDir, "usr")
@@ -1515,6 +1519,7 @@ class MainActivity : AppCompatActivity() {
             assets.open("bootstrap.tar").use { input ->
                 extractTarStream(input, filesDir)
             }
+            TermuxHostPaths.applyPackageToExtractedPrefix(filesDir)
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -3289,8 +3294,7 @@ class MainActivity : AppCompatActivity() {
 
         val hostScripts = arrayOf(
             "setup_termux.sh" to "Setup basic environment and directories on host.",
-            "termux_tweaks.sh" to "Apply device specific patches and shell tweaks on host.",
-            "flux_install.sh" to "Install Debian container and initial config on host.",
+            "flux_install.sh" to "One-click: install Debian proot + setup_debian_family (user/xfce/vnc).",
             "start_gui.sh" to "Start desktop environment and display services on host.",
             "stop_gui.sh" to "Terminate running GUI sessions safely on host."
         )
@@ -3472,7 +3476,6 @@ class MainActivity : AppCompatActivity() {
         if (!scriptFile.exists()) {
             try {
                 val assetPath = when {
-                    scriptName.contains("tweaks") -> "scripts/termux_tweaks.sh"
                     scriptName.contains("chroot") -> "scripts/chroot/$scriptName"
                     else -> "scripts/$scriptName"
                 }
@@ -3518,17 +3521,15 @@ class MainActivity : AppCompatActivity() {
                 args = a; envMap = e
             }
             else -> { // "host"
-                args = arrayOf(shell, scriptPath)
-                envMap = HashMap(System.getenv()).apply {
-                    put("PATH", "$nld:/data/data/com.ivarna.nativecode/files/usr/bin:/system/bin")
-                    put("HOME", "/data/data/com.ivarna.nativecode/files/home")
-                    put("TERM", "xterm-256color")
-                    put("PREFIX", "/data/data/com.ivarna.nativecode/files/usr")
-                    put("LD_LIBRARY_PATH", "/data/data/com.ivarna.nativecode/files/usr/lib")
-                    put("TERMUX_APP__PACKAGE_NAME", "com.ivarna.nativecode")
-                    put("TERMUX__PREFIX", "/data/data/com.ivarna.nativecode/files/usr")
-                    put("TERMUX__HOME", "/data/data/com.ivarna.nativecode/files/home")
-                }
+                val force = HostCommandBuilder.shouldForceHostSetup(scriptName)
+                if (force) HostCommandBuilder.clearSetupMarker(this)
+                val (hostArgs, hostEnv) = HostCommandBuilder.build(
+                    this,
+                    scriptPath,
+                    forceHostSetup = force
+                )
+                args = hostArgs
+                envMap = hostEnv
             }
         }
         val env = envMap.map { "${it.key}=${it.value}" }.toTypedArray()
@@ -5839,10 +5840,10 @@ class MainActivity : AppCompatActivity() {
 
     private fun deployScripts() {
         try {
+            TermuxHostPaths.applyPackageToExtractedPrefix(filesDir)
             val homeDir = File(filesDir, "home").also { it.mkdirs() }
             val scripts = arrayOf(
                 "setup_termux.sh",
-                "termux_tweaks.sh",
                 "flux_install.sh",
                 "start_gui.sh",
                 "stop_gui.sh",
@@ -5855,7 +5856,6 @@ class MainActivity : AppCompatActivity() {
             )
             for (script in scripts) {
                 val assetPath = when {
-                    script.contains("tweaks") -> "scripts/termux_tweaks.sh"
                     script.contains("chroot") -> "scripts/chroot/$script"
                     else -> "scripts/$script"
                 }
@@ -5871,8 +5871,28 @@ class MainActivity : AppCompatActivity() {
             val termuxDir = File(homeDir, ".termux").also { it.mkdirs() }
             val fontOut = File(termuxDir, "font.ttf")
             assets.open("fonts/font.ttf").use { input -> FileOutputStream(fontOut).use { input.copyTo(it) } }
+            // Pinned Debian 13 rootfs for proot-distro install ./file --name debian
+            deployRootfsArchive(homeDir)
         } catch (e: Exception) {
             Log.e("Setup", "Failed to deploy scripts", e)
+        }
+    }
+
+    /** Copy assets/rootfs/debian_13_rootfs.tar.xz → $HOME (skip if already present & large). */
+    private fun deployRootfsArchive(homeDir: File) {
+        val out = File(homeDir, "debian_13_rootfs.tar.xz")
+        // Skip re-copy of ~82MiB archive once deployed
+        if (out.isFile && out.length() > 50L * 1024L * 1024L) {
+            Log.i("Setup", "Rootfs already deployed: ${out.absolutePath} (${out.length()} bytes)")
+            return
+        }
+        try {
+            assets.open("rootfs/debian_13_rootfs.tar.xz").use { input ->
+                FileOutputStream(out).use { input.copyTo(it) }
+            }
+            Log.i("Setup", "Deployed rootfs: ${out.absolutePath} (${out.length()} bytes)")
+        } catch (e: Exception) {
+            Log.e("Setup", "Failed to deploy rootfs archive from assets", e)
         }
     }
 
@@ -5885,7 +5905,7 @@ class MainActivity : AppCompatActivity() {
         executor.execute {
             val nld  = applicationInfo.nativeLibraryDir
             val bash = File(nld, "libbash.so").absolutePath
-            ShellCommandRunner.run(this, arrayOf(bash, "/data/data/com.ivarna.nativecode/files/home/start_gui.sh", "debian"))
+            ShellCommandRunner.run(this, arrayOf(bash, File(TermuxHostPaths.HOME, "start_gui.sh").absolutePath, "debian"))
         }
 
         mainHandler.postDelayed({
