@@ -1,16 +1,16 @@
 package com.ivarna.nativecode
 
+import android.animation.Animator
+import android.animation.AnimatorListenerAdapter
 import android.animation.ObjectAnimator
 import android.animation.ValueAnimator
 import android.content.Context
 import android.content.Intent
-import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.LayerDrawable
-import android.graphics.drawable.shapes.OvalShape
 import android.os.Bundle
 import android.view.MotionEvent
 import android.util.Base64
@@ -19,11 +19,13 @@ import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.view.animation.AccelerateDecelerateInterpolator
+import android.view.animation.DecelerateInterpolator
+import android.view.animation.OvershootInterpolator
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
-import androidx.core.view.WindowInsetsControllerCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.setPadding
 import android.system.Os
@@ -35,6 +37,7 @@ import java.io.File
 import java.io.FileOutputStream
 import java.io.InputStream
 import java.util.concurrent.Executors
+import kotlin.math.min
 
 class OnboardingActivity : AppCompatActivity() {
 
@@ -55,15 +58,38 @@ class OnboardingActivity : AppCompatActivity() {
     // "proot" (default, rootless) or "chroot" (requires KernelSU/Magisk root)
     private var selectedIsolationMethod = "proot"
 
-    // page 4 (Full Environment Setup: base + AI CLIs) views
-    private lateinit var baseStatusText: TextView
-    private lateinit var baseProgressBar: ProgressBar
+    // page 4 (Full Environment Setup: base + AI CLIs) — progress-first UI
+    private lateinit var setupPercentText: TextView
+    private lateinit var setupPhaseMetaText: TextView
+    private lateinit var setupStepTitleText: TextView
+    private lateinit var setupDetailText: TextView
+    private lateinit var setupProgressTrack: FrameLayout
+    private lateinit var setupProgressFill: View
     private lateinit var baseLogText: TextView
     private lateinit var baseLogScroll: ScrollView
+    private lateinit var setupLogPanel: View
+    private lateinit var setupLogToggleBtn: LinearLayout
+    private lateinit var setupLogToggleLabel: TextView
     private lateinit var baseNextBtn: View
 
-    // page 5 (Complete) views
-    private lateinit var completeText: TextView
+    private var setupLogVisible = false
+    private val setupLogBuffer = StringBuilder()
+    private var setupOverallPercent = 0
+    private var setupPhaseIndex = 0
+    private var setupPhaseFraction = 0f
+    private var setupPhases: List<SetupPhase> = emptyList()
+    private var setupFailed = false
+    private var setupFinished = false
+
+    /** Displayed progress 0–100f (animated toward [setupOverallPercent]). */
+    private var setupAnimatedPercent = 0f
+    private var progressBarAnimator: ValueAnimator? = null
+    private var percentTextAnimator: ValueAnimator? = null
+    private var progressPulseAnimator: ObjectAnimator? = null
+    private var percentPunchAnimator: ObjectAnimator? = null
+    private var setupDisplayedPercentInt = 0
+
+    private data class SetupPhase(val id: String, val label: String, val weight: Int)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -957,7 +983,7 @@ class OnboardingActivity : AppCompatActivity() {
         return root
     }
 
-    // ── Page 5: Full Environment Setup (base + AI CLIs) ────────────────────────
+    // ── Page 4: Full Environment Setup (progress-first; logs on demand) ────────
     private fun buildDebianBasePage(): View {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -967,9 +993,17 @@ class OnboardingActivity : AppCompatActivity() {
 
         root.addView(smallHeader("Environment Setup", R.drawable.ic_storage))
 
-        // Status Card (Cyber-Brutalist sharp 0px card)
-        val card = LinearLayout(this).apply {
+        // Center cluster: progress + log controls vertically in remaining space
+        val center = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            layoutParams = LinearLayout.LayoutParams(MATCH, 0, 1f)
+        }
+
+        // Progress card (Cyber-Brutalist sharp 0px) — text centered
+        val progressCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
             background = cyberBrutalistBg(
                 fillColor = NC.SURFACE_CONTAINER,
                 strokeColor = NC.BORDER,
@@ -978,26 +1012,139 @@ class OnboardingActivity : AppCompatActivity() {
                 cornerRadiusDp = 0,
                 rightFaceColor = NC.OUTLINE_VAR
             )
-            setPadding(dp(18), dp(16), dp(18), dp(16))
-            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(16) }
+            setPadding(dp(24), dp(28), dp(24), dp(28))
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(20) }
         }
-        baseStatusText = TextView(this).apply {
-            text = "Initializing full environment setup (base + AI CLIs)..."
-            textSize = 13f
-            setTextColor(NC.PRIMARY)
-            typeface = Typeface.MONOSPACE
-            setPadding(0, 0, 0, dp(12))
-        }
-        baseProgressBar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
-            isIndeterminate = true
-            indeterminateTintList = ColorStateList.valueOf(NC.PRIMARY)
-            layoutParams = LinearLayout.LayoutParams(MATCH, dp(6))
-        }
-        card.addView(baseStatusText)
-        card.addView(baseProgressBar)
-        root.addView(card)
 
-        // Terminal Console View (Cyber-Brutalist sharp 0px card)
+        setupPhaseMetaText = TextView(this).apply {
+            text = setupPhaseMetaLabel()
+            textSize = 11f
+            setTextColor(NC.ON_SURF_VAR)
+            typeface = Typeface.MONOSPACE
+            letterSpacing = 0.06f
+            gravity = Gravity.CENTER
+            setPadding(0, 0, 0, dp(12))
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
+        }
+        progressCard.addView(setupPhaseMetaText)
+
+        setupPercentText = TextView(this).apply {
+            text = "${setupOverallPercent}%"
+            textSize = 48f
+            setTextColor(NC.PRIMARY)
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            letterSpacing = -0.02f
+            setPadding(0, 0, 0, dp(20))
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
+            contentDescription = "Setup progress $setupOverallPercent percent"
+        }
+        progressCard.addView(setupPercentText)
+
+        setupProgressTrack = FrameLayout(this).apply {
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                setColor(NC.SURFACE_HIGH)
+                setStroke(dp(1), NC.BORDER)
+                cornerRadius = 0f
+            }
+            layoutParams = LinearLayout.LayoutParams(MATCH, dp(16)).apply { bottomMargin = dp(20) }
+            clipChildren = true
+        }
+        // Full-width fill; progress driven by scaleX from left (pivotX=0)
+        setupProgressFill = View(this).apply {
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                setColor(NC.PRIMARY_CON)
+                cornerRadius = 0f
+            }
+            layoutParams = FrameLayout.LayoutParams(MATCH, MATCH)
+            pivotX = 0f
+            scaleX = (setupAnimatedPercent / 100f).coerceIn(0f, 1f)
+            alpha = 1f
+        }
+        setupProgressTrack.addView(setupProgressFill)
+        progressCard.addView(setupProgressTrack)
+
+        setupStepTitleText = TextView(this).apply {
+            text = if (setupFinished) {
+                "Full environment setup complete"
+            } else if (setupFailed) {
+                "Setup failed — open log for details"
+            } else if (isDebianBaseSetupStarted) {
+                currentSetupPhase()?.label ?: "Installing environment…"
+            } else {
+                "Initializing full environment setup (base + AI CLIs)…"
+            }
+            textSize = 14f
+            setTextColor(if (setupFailed) NC.ERROR else NC.ON_SURFACE)
+            typeface = Typeface.MONOSPACE
+            gravity = Gravity.CENTER
+            setPadding(0, 0, 0, dp(6))
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
+        }
+        progressCard.addView(setupStepTitleText)
+
+        setupDetailText = TextView(this).apply {
+            text = if (setupFinished) "Ready to continue" else "Step progress updates as install runs"
+            textSize = 12f
+            setTextColor(NC.ON_SURF_VAR)
+            typeface = Typeface.MONOSPACE
+            gravity = Gravity.CENTER
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
+        }
+        progressCard.addView(setupDetailText)
+        center.addView(progressCard)
+
+        // Log toggle (secondary, full width) — logs hidden by default
+        setupLogToggleLabel = TextView(this).apply {
+            text = if (setupLogVisible) "Hide setup log" else "View setup log"
+            textSize = 14f
+            setTextColor(NC.ON_SURFACE)
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+        }
+        setupLogToggleBtn = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            background = cyberBrutalistBg(
+                fillColor = NC.SURFACE_CONTAINER,
+                strokeColor = NC.PRIMARY_CON,
+                shadowColor = NC.SURFACE_BRIGHT,
+                offsetDp = 6,
+                cornerRadiusDp = 0,
+                rightFaceColor = NC.OUTLINE_VAR
+            )
+            setPadding(dp(20), dp(14), dp(20), dp(14))
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(12) }
+            isClickable = true
+            isFocusable = true
+            contentDescription = "Toggle setup log visibility"
+            setOnClickListener { toggleSetupLogPanel() }
+            setOnTouchListener { v, event ->
+                when (event.action) {
+                    MotionEvent.ACTION_DOWN -> {
+                        v.translationX = dp(4).toFloat()
+                        v.translationY = dp(4).toFloat()
+                    }
+                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                        v.translationX = 0f
+                        v.translationY = 0f
+                    }
+                }
+                false
+            }
+        }
+        val logIcon = ImageView(this).apply {
+            setImageResource(R.drawable.ic_terminal)
+            setColorFilter(NC.PRIMARY)
+            layoutParams = LinearLayout.LayoutParams(dp(16), dp(16)).apply { rightMargin = dp(8) }
+        }
+        setupLogToggleBtn.addView(logIcon)
+        setupLogToggleBtn.addView(setupLogToggleLabel)
+        center.addView(setupLogToggleBtn)
+
+        // Log panel (GONE by default) — max height so center cluster stays balanced
         val consoleCard = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             background = cyberBrutalistBg(
@@ -1008,8 +1155,10 @@ class OnboardingActivity : AppCompatActivity() {
                 cornerRadiusDp = 0,
                 rightFaceColor = NC.OUTLINE_VAR
             )
-            layoutParams = LinearLayout.LayoutParams(MATCH, 0, 1f).apply { bottomMargin = dp(16) }
+            layoutParams = LinearLayout.LayoutParams(MATCH, dp(240))
+            visibility = if (setupLogVisible) View.VISIBLE else View.GONE
         }
+        setupLogPanel = consoleCard
         val consoleHeader = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -1027,16 +1176,25 @@ class OnboardingActivity : AppCompatActivity() {
             setTextColor(NC.PRIMARY)
             typeface = Typeface.MONOSPACE
             letterSpacing = 0.05f
+            layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
+        }
+        val consoleClose = TextView(this).apply {
+            text = "HIDE"
+            textSize = 11f
+            setTextColor(NC.ON_SURF_VAR)
+            typeface = Typeface.MONOSPACE
+            setOnClickListener { setSetupLogVisible(false) }
         }
         consoleHeader.addView(consoleIcon)
         consoleHeader.addView(consoleTitle)
+        consoleHeader.addView(consoleClose)
         consoleCard.addView(consoleHeader)
 
         baseLogScroll = ScrollView(this).apply {
             layoutParams = LinearLayout.LayoutParams(MATCH, MATCH)
         }
         baseLogText = TextView(this).apply {
-            text = ""
+            text = setupLogBuffer.toString()
             textSize = 11f
             setTextColor(NC.PRIMARY)
             typeface = Typeface.MONOSPACE
@@ -1045,40 +1203,358 @@ class OnboardingActivity : AppCompatActivity() {
         }
         baseLogScroll.addView(baseLogText)
         consoleCard.addView(baseLogScroll)
-        root.addView(consoleCard)
+        center.addView(consoleCard)
 
-        // Next Button (initially disabled) — full setup (base + AI CLIs) must finish first
+        root.addView(center)
+
+        // Next pinned to bottom
         baseNextBtn = primaryButton("Next: Complete Setup", R.drawable.ic_arrow_right) {
             showPage(5)
         }
-        baseNextBtn.isEnabled = false
-        baseNextBtn.alpha = 0.45f
+        if (setupFinished) {
+            baseNextBtn.isEnabled = true
+            baseNextBtn.alpha = 1f
+        } else {
+            baseNextBtn.isEnabled = false
+            baseNextBtn.alpha = 0.45f
+        }
         root.addView(baseNextBtn)
 
+        // Restore bar width after layout
+        applySetupProgressUi()
+
         return root
+    }
+
+    private fun toggleSetupLogPanel() {
+        setSetupLogVisible(!setupLogVisible)
+    }
+
+    private fun setSetupLogVisible(visible: Boolean) {
+        setupLogVisible = visible
+        if (::setupLogPanel.isInitialized) {
+            setupLogPanel.visibility = if (visible) View.VISIBLE else View.GONE
+        }
+        if (::setupLogToggleLabel.isInitialized) {
+            setupLogToggleLabel.text = if (visible) "Hide setup log" else "View setup log"
+        }
+        if (visible && ::baseLogScroll.isInitialized) {
+            baseLogScroll.post { baseLogScroll.fullScroll(View.FOCUS_DOWN) }
+        }
+    }
+
+    private fun prootSetupPhases(): List<SetupPhase> = listOf(
+        SetupPhase("A", "Preparing directories…", 3),
+        SetupPhase("B", "Extracting bootstrap assets…", 12),
+        SetupPhase("C", "Deploying host configs…", 5),
+        SetupPhase("D", "Initializing host environment…", 12),
+        SetupPhase("E", "Provisioning Debian guest…", 30),
+        SetupPhase("F", "Configuring hardware acceleration…", 10),
+        SetupPhase("G", "Customizing guest environment…", 10),
+        SetupPhase("H", "Installing AI CLI tools…", 18)
+    )
+
+    private fun chrootSetupPhases(): List<SetupPhase> = listOf(
+        SetupPhase("R0", "Checking root access…", 2),
+        SetupPhase("R1", "Installing Debian chroot base…", 35),
+        SetupPhase("E", "Provisioning Debian packages…", 20),
+        SetupPhase("F", "Configuring hardware acceleration…", 10),
+        SetupPhase("G", "Customizing guest environment…", 10),
+        SetupPhase("H", "Installing AI CLI tools…", 18)
+    )
+
+    private fun currentSetupPhase(): SetupPhase? =
+        setupPhases.getOrNull(setupPhaseIndex)
+
+    private fun setupPhaseMetaLabel(): String {
+        val method = selectedIsolationMethod.uppercase()
+        if (setupPhases.isEmpty()) return "SETUP · $method"
+        val step = (setupPhaseIndex + 1).coerceAtMost(setupPhases.size)
+        return "STEP $step / ${setupPhases.size} · $method"
+    }
+
+    private fun beginSetupPhases(method: String) {
+        setupFailed = false
+        setupFinished = false
+        setupPhases = if (method == "chroot") chrootSetupPhases() else prootSetupPhases()
+        setupPhaseIndex = 0
+        setupPhaseFraction = 0f
+        setupOverallPercent = 0
+        setupAnimatedPercent = 0f
+        setupDisplayedPercentInt = 0
+        cancelSetupProgressAnimators()
+        mainHandler.post {
+            applySetupProgressUi(animate = false)
+            startProgressPulse()
+        }
+    }
+
+    /** Enter a named phase; completed weight = sum of all prior phase weights. */
+    private fun enterSetupPhase(phaseId: String, detail: String? = null) {
+        val idx = setupPhases.indexOfFirst { it.id == phaseId }
+        if (idx < 0) return
+        setupPhaseIndex = idx
+        setupPhaseFraction = 0.05f
+        val phase = setupPhases[idx]
+        mainHandler.post {
+            if (::setupStepTitleText.isInitialized) {
+                setupStepTitleText.text = phase.label
+                setupStepTitleText.setTextColor(NC.ON_SURFACE)
+            }
+            if (::setupDetailText.isInitialized) {
+                setupDetailText.text = detail
+                    ?: "Step ${idx + 1} of ${setupPhases.size}"
+            }
+            recomputeSetupPercent(capAt99 = true)
+            applySetupProgressUi()
+        }
+    }
+
+    private fun setSetupPhaseFraction(fraction: Float, detail: String? = null) {
+        setupPhaseFraction = fraction.coerceIn(0f, 1f)
+        mainHandler.post {
+            if (detail != null && ::setupDetailText.isInitialized) {
+                setupDetailText.text = detail
+            }
+            recomputeSetupPercent(capAt99 = true)
+            applySetupProgressUi()
+        }
+    }
+
+    private fun recomputeSetupPercent(capAt99: Boolean) {
+        if (setupFinished) {
+            setupOverallPercent = 100
+            return
+        }
+        if (setupPhases.isEmpty()) {
+            setupOverallPercent = 0
+            return
+        }
+        val completed = setupPhases.take(setupPhaseIndex).sumOf { it.weight }
+        val curW = setupPhases.getOrNull(setupPhaseIndex)?.weight ?: 0
+        val raw = completed + curW * setupPhaseFraction
+        val total = setupPhases.sumOf { it.weight }.coerceAtLeast(1)
+        val pct = ((raw * 100f) / total).toInt()
+        setupOverallPercent = if (capAt99) min(99, pct) else pct.coerceIn(0, 100)
+    }
+
+    private fun finishSetupProgressSuccess() {
+        setupFinished = true
+        setupFailed = false
+        setupOverallPercent = 100
+        setupPhaseFraction = 1f
+        mainHandler.post {
+            stopProgressPulse()
+            if (::setupStepTitleText.isInitialized) {
+                setupStepTitleText.text = "Full environment setup complete"
+                setupStepTitleText.setTextColor(NC.PRIMARY)
+            }
+            if (::setupDetailText.isInitialized) {
+                setupDetailText.text = "Ready to continue"
+            }
+            applySetupProgressUi(animate = true, onBarSettled = { punchPercentSuccess() })
+            if (::baseNextBtn.isInitialized) {
+                baseNextBtn.isEnabled = true
+                baseNextBtn.alpha = 1f
+            }
+        }
+    }
+
+    private fun failSetupProgress(message: String) {
+        setupFailed = true
+        mainHandler.post {
+            stopProgressPulse()
+            if (::setupStepTitleText.isInitialized) {
+                setupStepTitleText.text = message
+                setupStepTitleText.setTextColor(NC.ERROR)
+            }
+            if (::setupDetailText.isInitialized) {
+                setupDetailText.text = "Open setup log for details"
+            }
+            applySetupProgressUi(animate = true)
+        }
+    }
+
+    private fun cancelSetupProgressAnimators() {
+        progressBarAnimator?.cancel()
+        progressBarAnimator = null
+        percentTextAnimator?.cancel()
+        percentTextAnimator = null
+        percentPunchAnimator?.cancel()
+        percentPunchAnimator = null
+        stopProgressPulse()
+    }
+
+    private fun startProgressPulse() {
+        if (!::setupProgressFill.isInitialized) return
+        if (setupFinished || setupFailed) return
+        stopProgressPulse()
+        // Soft terminal-green breathe while work runs (not blur — opacity only)
+        progressPulseAnimator = ObjectAnimator.ofFloat(setupProgressFill, View.ALPHA, 1f, 0.72f, 1f).apply {
+            duration = 1100
+            repeatCount = ValueAnimator.INFINITE
+            interpolator = AccelerateDecelerateInterpolator()
+            start()
+        }
+    }
+
+    private fun stopProgressPulse() {
+        progressPulseAnimator?.cancel()
+        progressPulseAnimator = null
+        if (::setupProgressFill.isInitialized) {
+            setupProgressFill.alpha = 1f
+        }
+    }
+
+    private fun punchPercentSuccess() {
+        if (!::setupPercentText.isInitialized) return
+        percentPunchAnimator?.cancel()
+        setupPercentText.scaleX = 1f
+        setupPercentText.scaleY = 1f
+        percentPunchAnimator = ObjectAnimator.ofFloat(setupPercentText, View.SCALE_X, 1f, 1.12f, 1f).apply {
+            duration = 420
+            interpolator = OvershootInterpolator(1.4f)
+            start()
+        }
+        ObjectAnimator.ofFloat(setupPercentText, View.SCALE_Y, 1f, 1.12f, 1f).apply {
+            duration = 420
+            interpolator = OvershootInterpolator(1.4f)
+            start()
+        }
+        // Brief fill flash
+        if (::setupProgressFill.isInitialized) {
+            ObjectAnimator.ofFloat(setupProgressFill, View.ALPHA, 1f, 0.55f, 1f).apply {
+                duration = 280
+                start()
+            }
+        }
+    }
+
+    /**
+     * Apply progress UI. When [animate], bar width (scaleX) and % label ease toward target.
+     * Mechanical decelerate curve — matches cyber-brutalist “hardware” feel.
+     */
+    private fun applySetupProgressUi(
+        animate: Boolean = true,
+        onBarSettled: (() -> Unit)? = null
+    ) {
+        if (!::setupPercentText.isInitialized) return
+        setupPercentText.contentDescription = "Setup progress $setupOverallPercent percent"
+        if (::setupPhaseMetaText.isInitialized) {
+            setupPhaseMetaText.text = setupPhaseMetaLabel()
+        }
+
+        val target = setupOverallPercent.toFloat().coerceIn(0f, 100f)
+
+        if (!::setupProgressFill.isInitialized) {
+            setupPercentText.text = "${setupOverallPercent}%"
+            setupDisplayedPercentInt = setupOverallPercent
+            setupAnimatedPercent = target
+            onBarSettled?.invoke()
+            return
+        }
+
+        // Ensure scale pivots from left edge of track after layout
+        setupProgressTrack.post {
+            if (!::setupProgressFill.isInitialized) return@post
+            setupProgressFill.pivotX = 0f
+            setupProgressFill.pivotY = setupProgressFill.height / 2f
+        }
+
+        if (!animate || kotlin.math.abs(target - setupAnimatedPercent) < 0.15f) {
+            progressBarAnimator?.cancel()
+            percentTextAnimator?.cancel()
+            setupAnimatedPercent = target
+            setupDisplayedPercentInt = setupOverallPercent
+            setupProgressFill.scaleX = (target / 100f).coerceIn(0.001f, 1f).let {
+                if (target <= 0f) 0f else it
+            }
+            setupPercentText.text = "${setupOverallPercent}%"
+            if (!setupFinished && !setupFailed) startProgressPulse()
+            onBarSettled?.invoke()
+            return
+        }
+
+        progressBarAnimator?.cancel()
+        percentTextAnimator?.cancel()
+
+        val fromBar = setupAnimatedPercent
+        val durationMs = (280L + (kotlin.math.abs(target - fromBar) * 8f).toLong()).coerceIn(280L, 720L)
+
+        progressBarAnimator = ValueAnimator.ofFloat(fromBar, target).apply {
+            duration = durationMs
+            interpolator = DecelerateInterpolator(1.6f)
+            addUpdateListener { va ->
+                val v = va.animatedValue as Float
+                setupAnimatedPercent = v
+                if (::setupProgressFill.isInitialized) {
+                    setupProgressFill.scaleX = if (v <= 0f) 0f else (v / 100f).coerceIn(0.001f, 1f)
+                }
+            }
+            addListener(object : AnimatorListenerAdapter() {
+                override fun onAnimationEnd(animation: Animator) {
+                    setupAnimatedPercent = target
+                    if (::setupProgressFill.isInitialized) {
+                        setupProgressFill.scaleX = if (target <= 0f) 0f else (target / 100f).coerceIn(0.001f, 1f)
+                    }
+                    if (!setupFinished && !setupFailed) startProgressPulse()
+                    onBarSettled?.invoke()
+                }
+            })
+            start()
+        }
+
+        val fromPct = setupDisplayedPercentInt
+        val toPct = setupOverallPercent
+        percentTextAnimator = ValueAnimator.ofInt(fromPct, toPct).apply {
+            duration = durationMs
+            interpolator = DecelerateInterpolator(1.4f)
+            addUpdateListener { va ->
+                val n = va.animatedValue as Int
+                setupDisplayedPercentInt = n
+                if (::setupPercentText.isInitialized) {
+                    setupPercentText.text = "$n%"
+                }
+            }
+            addListener(object : AnimatorListenerAdapter() {
+                override fun onAnimationEnd(animation: Animator) {
+                    setupDisplayedPercentInt = toPct
+                    if (::setupPercentText.isInitialized) {
+                        setupPercentText.text = "$toPct%"
+                    }
+                }
+            })
+            start()
+        }
+
+        // Keep pulse alive during progress (restart if cancelled by alpha anim)
+        if (!setupFinished && !setupFailed) startProgressPulse()
+    }
+
+    override fun onDestroy() {
+        cancelSetupProgressAnimators()
+        super.onDestroy()
     }
 
     private fun runDebianBaseSetup() {
         // ── CHROOT path (KernelSU / Magisk root required) ────────────────────
         if (selectedIsolationMethod == "chroot") {
+            beginSetupPhases("chroot")
+            enterSetupPhase("R0", "Verifying KernelSU / Magisk root…")
             updateBaseStatus("[CHROOT] Checking root access...")
             executor.execute {
                 val rootOk = RootShell.isRootAvailable()
                 if (!rootOk) {
                     updateBaseStatus("[CHROOT] ERROR: Root not available. Grant superuser to NativeCode in KernelSU/Magisk manager, then retry.")
-                    mainHandler.post {
-                        if (::baseProgressBar.isInitialized) {
-                            baseProgressBar.isIndeterminate = false
-                            baseProgressBar.progress = 0
-                        }
-                    }
+                    failSetupProgress("Root not available — grant superuser, then retry")
                     return@execute
                 }
+                enterSetupPhase("R1", "Running setup_debian13_chroot.sh…")
                 updateBaseStatus("[CHROOT] Root confirmed. Running setup_debian13_chroot.sh...")
                 RootShell.executeScriptAsset(
                     context = this,
                     assetName = "scripts/chroot/setup_debian13_chroot.sh",
-                    onLine = { line -> updateBaseStatus(line) },
+                    onLine = { line -> appendSetupLog(line) },
                     onDone = { code ->
                         // Proceed if exit 0 OR base marker present (false exit 1 from am start, etc.)
                         val installed = ProjectPathResolver.isChrootInstalled()
@@ -1088,8 +1564,10 @@ class OnboardingActivity : AppCompatActivity() {
                             )
                         }
                         if (code == 0 || installed) {
+                            setSetupPhaseFraction(1f, "Base chroot installed")
                             updateBaseStatus("[CHROOT] Base complete — starting guest chain (E→H)...")
                             // Step E: Provision Debian packages (runs inside chroot as root)
+                            enterSetupPhase("E", "Installing guest packages…")
                             updateBaseStatus("[CHROOT] E. Provisioning Debian packages...")
                             copyAndRunInChroot(
                                 assetName = "scripts/setup_debian_family.sh",
@@ -1098,10 +1576,16 @@ class OnboardingActivity : AppCompatActivity() {
                             ) { codeE ->
                                 if (codeE != 0) {
                                     updateBaseStatus("[CHROOT] Debian family setup failed (exit $codeE).")
+                                    failSetupProgress("Debian package setup failed (exit $codeE)")
                                     return@copyAndRunInChroot
                                 }
+                                setSetupPhaseFraction(1f)
                                 // Step F: Hardware acceleration (Adreno→turnip, else virgl)
                                 val gpuDetect = GpuAccelDetector.detect()
+                                enterSetupPhase(
+                                    "F",
+                                    "${gpuDetect.mode} · ${gpuDetect.vendorHint}"
+                                )
                                 updateBaseStatus(
                                     "[CHROOT] F. Configuring Hardware Acceleration " +
                                         "(${gpuDetect.mode}, vendor=${gpuDetect.vendorHint})..."
@@ -1118,8 +1602,10 @@ class OnboardingActivity : AppCompatActivity() {
                                     if (codeF != 0) {
                                         updateBaseStatus("[CHROOT] HW accel setup failed (exit $codeF). Continuing...")
                                     }
+                                    setSetupPhaseFraction(1f)
                                     // Step G: Customization (optional) → Step H: AI CLIs → finish
                                     if (enableDebianCustomization) {
+                                        enterSetupPhase("G", "Applying desktop theme…")
                                         updateBaseStatus("[CHROOT] G. Customizing Guest Environment...")
                                         copyAndRunInChroot(
                                             assetName = "scripts/setup_customization_debian.sh",
@@ -1129,16 +1615,20 @@ class OnboardingActivity : AppCompatActivity() {
                                             if (codeG != 0) {
                                                 updateBaseStatus("[CHROOT] Customization failed (exit $codeG). Continuing...")
                                             }
+                                            setSetupPhaseFraction(1f)
+                                            enterSetupPhase("H", "NVM, Node, opencode, codex…")
                                             runCliToolsSetupChroot { finishChrootBaseSetup() }
                                         }
                                     } else {
                                         updateBaseStatus("[CHROOT] G. Skipping Guest Customization (Toggle Off)...")
+                                        enterSetupPhase("H", "NVM, Node, opencode, codex…")
                                         runCliToolsSetupChroot { finishChrootBaseSetup() }
                                     }
                                 }
                             }
                         } else {
                             updateBaseStatus("[CHROOT] Setup failed with exit code $code. Check logs above.")
+                            failSetupProgress("Chroot setup failed (exit $code)")
                         }
                     }
                 )
@@ -1147,9 +1637,10 @@ class OnboardingActivity : AppCompatActivity() {
         }
 
         // ── PROOT path (default, rootless) ────────────────────────────────────
+        beginSetupPhases("proot")
         executor.execute {
             try {
-                // Persist linux_method = proot on completion
+                enterSetupPhase("A", "Creating prefix directories…")
                 updateBaseStatus("A. Preparing Directories...")
                 val usrDir = File(filesDir, "usr")
                 val tmpDir = File(usrDir, "tmp")
@@ -1160,12 +1651,15 @@ class OnboardingActivity : AppCompatActivity() {
                 File(varDir, "log/apt").mkdirs()
                 File(varDir, "lib/dpkg").mkdirs()
 
+                enterSetupPhase("B", "Unpacking bootstrap.tar…")
                 updateBaseStatus("B. Extracting Bootstrap Assets...")
                 val tarFile = File(filesDir, "bootstrap.tar")
                 if (!tarFile.exists()) {
-                    assets.open("bootstrap.tar").use { input ->
-                        FileOutputStream(tarFile).use { output -> input.copyTo(output) }
+                    copyAssetWithProgress("bootstrap.tar", tarFile) { frac, detail ->
+                        setSetupPhaseFraction(frac * 0.5f, detail)
                     }
+                } else {
+                    setSetupPhaseFraction(0.5f, "bootstrap.tar ready")
                 }
 
                 val tarProcess = Runtime.getRuntime().exec(
@@ -1177,6 +1671,7 @@ class OnboardingActivity : AppCompatActivity() {
                         extractTarStream(input, filesDir)
                     }
                 }
+                setSetupPhaseFraction(1f, "Bootstrap extracted")
                 if (tarFile.exists()) tarFile.delete()
 
                 val nested = File(filesDir, "data/data/com.ivarna.nativecode/files")
@@ -1200,14 +1695,16 @@ class OnboardingActivity : AppCompatActivity() {
 
                 File(varDir, "log/apt").mkdirs(); File(varDir, "lib/dpkg").mkdirs(); tmpDir.mkdirs()
 
+                enterSetupPhase("C", "Scripts + DNS…")
                 updateBaseStatus("C. Deploying Host Configs...")
                 deployScripts()
                 File(etcDir, "resolv.conf").writeText("nameserver 8.8.8.8\nnameserver 8.8.4.4\n")
+                setSetupPhaseFraction(1f)
 
+                enterSetupPhase("D", "Running setup_termux.sh…")
                 updateBaseStatus("D. Initializing Host Environment...")
                 // Always re-validate host deps after bootstrap; clear stale marker
                 HostCommandBuilder.clearSetupMarker(this@OnboardingActivity)
-                val nld = applicationInfo.nativeLibraryDir
                 val proot = TermuxHostPaths.libProot(this@OnboardingActivity).absolutePath
                 val bash = TermuxHostPaths.libBash(this@OnboardingActivity).absolutePath
                 check(
@@ -1216,13 +1713,17 @@ class OnboardingActivity : AppCompatActivity() {
                         forceHostSetup = true
                     ) == 0
                 ) { "Host setup failed" }
+                setSetupPhaseFraction(1f)
 
+                enterSetupPhase("E", "Debian rootfs + packages…")
                 updateBaseStatus("E. Provisioning Debian Guest Container...")
                 val debBytes = assets.open("scripts/setup_debian_family.sh").use { it.readBytes() }
                 val debPayload = Base64.encodeToString(debBytes, Base64.NO_WRAP)
                 check(runShellCommand(arrayOf(bash, File(homeDir, "flux_install.sh").absolutePath, "debian", debPayload)) == 0) { "Debian guest install failed" }
+                setSetupPhaseFraction(1f)
 
                 val gpuDetect = GpuAccelDetector.detect()
+                enterSetupPhase("F", "${gpuDetect.mode} · ${gpuDetect.vendorHint}")
                 updateBaseStatus(
                     "F. Configuring Hardware Accel " +
                         "(${gpuDetect.mode}, vendor=${gpuDetect.vendorHint})..."
@@ -1240,8 +1741,10 @@ class OnboardingActivity : AppCompatActivity() {
                     "login", "debian", "--shared-tmp", "--",
                     "env", "FLUX_GPU=${gpuDetect.mode}", "bash", "/tmp/setup_hw_accel_debian.sh"
                 )) == 0) { "GPU setup failed" }
+                setSetupPhaseFraction(1f)
 
                 if (enableDebianCustomization) {
+                    enterSetupPhase("G", "Applying desktop theme…")
                     updateBaseStatus("G. Customizing Guest Environment...")
                     val customScript = File(File(usrDir, "tmp"), "setup_customization_debian.sh")
                     assets.open("scripts/setup_customization_debian.sh").use { input -> FileOutputStream(customScript).use { input.copyTo(it) } }
@@ -1252,11 +1755,13 @@ class OnboardingActivity : AppCompatActivity() {
                         "login", "debian", "--shared-tmp", "--",
                         "env", "FLUX_THEME=dark", "bash", "/tmp/setup_customization_debian.sh"
                     )) == 0) { "Customization failed" }
+                    setSetupPhaseFraction(1f)
                 } else {
                     updateBaseStatus("G. Skipping Guest Customization (Toggle Off)...")
                 }
 
                 // Step H: AI CLI tools (was separate onboarding page — now end of main setup)
+                enterSetupPhase("H", "NVM, Node, opencode, codex…")
                 updateBaseStatus("H. Installing AI CLI tools (NVM, Node, opencode, codex, claude, …)...")
                 val cliCode = runCliToolsSetupProot()
                 if (cliCode == 0) {
@@ -1269,21 +1774,61 @@ class OnboardingActivity : AppCompatActivity() {
                 getSharedPreferences("nativecode_prefs", MODE_PRIVATE)
                     .edit().putString("linux_method", "proot").apply()
                 updateBaseStatus("Full Environment Setup Successful!")
-                mainHandler.post {
-                    if (::baseProgressBar.isInitialized) {
-                        baseProgressBar.isIndeterminate = false
-                        baseProgressBar.progress = 100
-                    }
-                    if (::baseNextBtn.isInitialized) {
-                        baseNextBtn.isEnabled = true
-                        baseNextBtn.alpha = 1f
-                    }
-                }
+                finishSetupProgressSuccess()
             } catch (e: Exception) {
                 Log.e("Onboarding", "Debian Base Setup failed", e)
                 updateBaseStatus("Error: ${e.message}")
+                failSetupProgress("Error: ${e.message}")
             }
         }
+    }
+
+    /** Copy asset to file with approximate byte progress for setup UI. */
+    private fun copyAssetWithProgress(
+        assetName: String,
+        dest: File,
+        onProgress: (fraction: Float, detail: String) -> Unit
+    ) {
+        val total = try {
+            assets.openFd(assetName).use { it.length }
+        } catch (_: Exception) {
+            -1L
+        }
+        assets.open(assetName).use { input ->
+            FileOutputStream(dest).use { output ->
+                val buf = ByteArray(64 * 1024)
+                var readTotal = 0L
+                var lastUi = 0L
+                while (true) {
+                    val n = input.read(buf)
+                    if (n < 0) break
+                    output.write(buf, 0, n)
+                    readTotal += n
+                    val now = System.currentTimeMillis()
+                    if (now - lastUi < 100) continue
+                    lastUi = now
+                    if (total > 0) {
+                        val frac = (readTotal.toFloat() / total).coerceIn(0f, 1f)
+                        onProgress(
+                            frac,
+                            "Copied ${formatBytes(readTotal)} / ${formatBytes(total)}"
+                        )
+                    } else {
+                        onProgress(0.3f, "Copied ${formatBytes(readTotal)}…")
+                    }
+                }
+            }
+        }
+        if (total > 0) onProgress(1f, "Copied ${formatBytes(total)}")
+    }
+
+    private fun formatBytes(bytes: Long): String {
+        if (bytes < 1024) return "$bytes B"
+        val kb = bytes / 1024.0
+        if (kb < 1024) return String.format("%.1f KB", kb)
+        val mb = kb / 1024.0
+        if (mb < 1024) return String.format("%.1f MB", mb)
+        return String.format("%.2f GB", mb / 1024.0)
     }
 
     private fun moveDirectoryContents(source: File, destination: File) {
@@ -1400,15 +1945,31 @@ class OnboardingActivity : AppCompatActivity() {
     }
 
     private fun updateBaseStatus(msg: String) {
+        // Phase title stays under enterSetupPhase / failSetupProgress.
+        // All status strings still go into the on-demand log.
+        appendSetupLog(">>> $msg\n")
+    }
+
+    private fun appendSetupLog(chunk: String) {
+        if (chunk.isEmpty()) return
+        synchronized(setupLogBuffer) {
+            setupLogBuffer.append(chunk)
+            // Cap ~200k chars to avoid OOM on huge apt streams
+            val max = 200_000
+            if (setupLogBuffer.length > max) {
+                setupLogBuffer.delete(0, setupLogBuffer.length - max)
+            }
+        }
         mainHandler.post {
-            if (::baseStatusText.isInitialized) {
-                baseStatusText.text = msg
-                if (::baseLogText.isInitialized) {
-                    baseLogText.append("\n>>> $msg\n")
-                    if (::baseLogScroll.isInitialized) {
-                        baseLogScroll.post { baseLogScroll.fullScroll(View.FOCUS_DOWN) }
-                    }
-                }
+            if (!::baseLogText.isInitialized) return@post
+            baseLogText.append(chunk)
+            // Keep TextView from growing without bound if buffer was trimmed
+            val text = baseLogText.text
+            if (text != null && text.length > 220_000) {
+                baseLogText.text = text.subSequence(text.length - 200_000, text.length)
+            }
+            if (setupLogVisible && ::baseLogScroll.isInitialized) {
+                baseLogScroll.post { baseLogScroll.fullScroll(View.FOCUS_DOWN) }
             }
         }
     }
@@ -1470,9 +2031,8 @@ class OnboardingActivity : AppCompatActivity() {
         val spacer1 = View(this).apply { layoutParams = LinearLayout.LayoutParams(MATCH, 0, 1f) }
         root.addView(spacer1)
 
-        // Hero Success Card (Cyber-Brutalist sharp 0px container)
-        val heroCard = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
+        // Brand logo (high-res) — replaces check-circle hero
+        val logoCard = LinearLayout(this).apply {
             gravity = Gravity.CENTER
             background = cyberBrutalistBg(
                 fillColor = NC.SURFACE_CONTAINER,
@@ -1482,35 +2042,19 @@ class OnboardingActivity : AppCompatActivity() {
                 cornerRadiusDp = 0,
                 rightFaceColor = NC.OUTLINE_VAR
             )
-            setPadding(dp(24), dp(28), dp(24), dp(28))
-            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply {
-                bottomMargin = dp(20)
+            setPadding(dp(20), dp(20), dp(20), dp(20))
+            layoutParams = LinearLayout.LayoutParams(dp(168), dp(168)).apply {
+                bottomMargin = dp(24)
             }
         }
-
-        val iconBox = LinearLayout(this).apply {
-            gravity = Gravity.CENTER
-            background = cyberBrutalistBg(
-                fillColor = NC.SURFACE_CONTAINER,
-                strokeColor = NC.PRIMARY,
-                shadowColor = NC.PRIMARY_CON,
-                offsetDp = 4,
-                cornerRadiusDp = 0,
-                rightFaceColor = NC.PRIMARY_CON
-            )
-            setPadding(dp(16))
-            layoutParams = LinearLayout.LayoutParams(dp(76), dp(76)).apply {
-                bottomMargin = dp(18)
-            }
+        val logoIv = ImageView(this).apply {
+            setImageResource(R.drawable.logo_highres)
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            layoutParams = LinearLayout.LayoutParams(dp(128), dp(128))
+            contentDescription = "NativeCode logo"
         }
-        val iconIv = ImageView(this).apply {
-            setImageResource(R.drawable.ic_check_circle)
-            setColorFilter(NC.PRIMARY)
-            layoutParams = LinearLayout.LayoutParams(dp(44), dp(44))
-        }
-        iconBox.addView(iconIv)
-        heroCard.addView(iconBox)
-        pulseView(iconBox)
+        logoCard.addView(logoIv)
+        root.addView(logoCard)
 
         val title = TextView(this).apply {
             text = "Setup Successful!"
@@ -1521,7 +2065,7 @@ class OnboardingActivity : AppCompatActivity() {
             letterSpacing = -0.02f
             setPadding(0, 0, 0, dp(8))
         }
-        heroCard.addView(title)
+        root.addView(title)
 
         val subtitle = TextView(this).apply {
             text = "Linux container & AI harness fully provisioned"
@@ -1529,9 +2073,9 @@ class OnboardingActivity : AppCompatActivity() {
             setTextColor(NC.ON_SURF_VAR)
             typeface = Typeface.MONOSPACE
             gravity = Gravity.CENTER
+            setPadding(0, 0, 0, dp(20))
         }
-        heroCard.addView(subtitle)
-        root.addView(heroCard)
+        root.addView(subtitle)
 
         // Detail Summary Card (Cyber-Brutalist sharp 0px card)
         val summaryCard = LinearLayout(this).apply {
@@ -1622,16 +2166,7 @@ class OnboardingActivity : AppCompatActivity() {
         getSharedPreferences("nativecode_prefs", MODE_PRIVATE)
             .edit().putString("linux_method", "chroot").apply()
         updateBaseStatus("[CHROOT] Full environment setup complete! linux_method=chroot saved.")
-        mainHandler.post {
-            if (::baseProgressBar.isInitialized) {
-                baseProgressBar.isIndeterminate = false
-                baseProgressBar.progress = 100
-            }
-            if (::baseNextBtn.isInitialized) {
-                baseNextBtn.isEnabled = true
-                baseNextBtn.alpha = 1f
-            }
-        }
+        finishSetupProgressSuccess()
     }
 
     /**
@@ -1674,7 +2209,7 @@ class OnboardingActivity : AppCompatActivity() {
             RootShell.executeInChroot(
                 cmd = cmd,
                 user = "root",
-                onLine = { line -> updateBaseStatus(line) },
+                onLine = { line -> appendSetupLog(line + "\n") },
                 onDone = onDone
             )
         }
@@ -1749,15 +2284,7 @@ class OnboardingActivity : AppCompatActivity() {
         val stream = proc.inputStream
         var read: Int
         while (stream.read(buf).also { read = it } != -1) {
-            val out = String(buf, 0, read)
-            mainHandler.post {
-                if (::baseLogText.isInitialized) {
-                    baseLogText.append(out)
-                    if (::baseLogScroll.isInitialized) {
-                        baseLogScroll.post { baseLogScroll.fullScroll(View.FOCUS_DOWN) }
-                    }
-                }
-            }
+            appendSetupLog(String(buf, 0, read))
         }
         return proc.waitFor()
     }
