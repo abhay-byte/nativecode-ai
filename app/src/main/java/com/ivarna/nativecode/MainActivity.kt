@@ -6169,8 +6169,13 @@ class MainActivity : AppCompatActivity() {
         }
         sectionTitleRow.addView(sectionTitleIcon)
         sectionTitleRow.addView(sectionTitle)
+        val methodNow = getSharedPreferences("nativecode_prefs", MODE_PRIVATE).getString("linux_method", "proot") ?: "proot"
         val sectionSub = TextView(this).apply {
-            text = "Launch Termux X11 and start or stop the XFCE4 desktop session."
+            text = if (methodNow == "chroot") {
+                "Chroot mode: Termux X11 + XFCE4 inside Debian chroot (root)."
+            } else {
+                "Proot mode: Termux X11 + XFCE4 via proot-distro (debian)."
+            }
             textSize = 12f
             setTextColor(NC.ON_SURF_VAR)
             typeface = Typeface.MONOSPACE
@@ -8849,17 +8854,24 @@ class MainActivity : AppCompatActivity() {
                 "flux_install.sh",
                 "start_gui.sh",
                 "stop_gui.sh",
+                "start_gui_chroot.sh",
+                "stop_gui_chroot.sh",
+                "start_debian13_gui.sh",
+                "stop_debian13_gui.sh",
                 "setup_debian_family.sh",
                 "setup_customization_debian.sh",
                 "setup_hw_accel_debian.sh",
                 "setup_cli_tools.sh",
                 "setup_debian13_chroot.sh",
                 "uninstall_debian13_chroot.sh",
-                "chroot_processes.sh"
+                "chroot_processes.sh",
+                "chroot_size.sh"
             )
             for (script in scripts) {
                 val assetPath = when {
-                    script.contains("chroot") -> "scripts/chroot/$script"
+                    script.contains("chroot") ||
+                        script == "start_debian13_gui.sh" ||
+                        script == "stop_debian13_gui.sh" -> "scripts/chroot/$script"
                     else -> "scripts/$script"
                 }
                 val out = File(homeDir, script)
@@ -8899,16 +8911,28 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /** Run a command and stream each output line to [onLine] on the main thread. */
+    /** Start XFCE: proot → start_gui.sh; chroot → start_gui_chroot.sh (host X11 + root DE). */
     private fun startGui() {
         val serviceIntent = Intent(this, BackgroundService::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(serviceIntent)
         else startService(serviceIntent)
 
+        val method = getSharedPreferences("nativecode_prefs", MODE_PRIVATE).getString("linux_method", "proot") ?: "proot"
+        if (method == "chroot" && !ProjectPathResolver.isChrootInstalled()) {
+            Toast.makeText(
+                this,
+                "Chroot not installed. Settings → Chroot Settings or Onboarding.",
+                Toast.LENGTH_LONG
+            ).show()
+        }
+
         executor.execute {
-            val nld  = applicationInfo.nativeLibraryDir
+            val nld = applicationInfo.nativeLibraryDir
             val bash = File(nld, "libbash.so").absolutePath
-            ShellCommandRunner.run(this, arrayOf(bash, File(TermuxHostPaths.HOME, "start_gui.sh").absolutePath, "debian"))
+            val scriptName = if (method == "chroot") "start_gui_chroot.sh" else "start_gui.sh"
+            val script = File(TermuxHostPaths.HOME, scriptName)
+            Log.i("GUI", "startGui method=$method script=${script.absolutePath}")
+            ShellCommandRunner.run(this, arrayOf(bash, script.absolutePath, "debian"))
         }
 
         mainHandler.postDelayed({
@@ -8918,16 +8942,21 @@ class MainActivity : AppCompatActivity() {
         }, 500)
     }
 
+    /** Stop XFCE: proot → stop_gui.sh; chroot → stop_gui_chroot.sh (no proot pkill). */
     private fun stopGui() {
         val stopBroadcast = Intent("com.termux.x11.ACTION_STOP")
         stopBroadcast.setPackage(packageName)
         sendBroadcast(stopBroadcast)
         stopService(Intent(this, BackgroundService::class.java))
 
+        val method = getSharedPreferences("nativecode_prefs", MODE_PRIVATE).getString("linux_method", "proot") ?: "proot"
         executor.execute {
-            val nld  = applicationInfo.nativeLibraryDir
+            val nld = applicationInfo.nativeLibraryDir
             val bash = File(nld, "libbash.so").absolutePath
-            ShellCommandRunner.run(this, arrayOf(bash, "/data/data/com.ivarna.nativecode/files/home/stop_gui.sh", "debian"))
+            val scriptName = if (method == "chroot") "stop_gui_chroot.sh" else "stop_gui.sh"
+            val script = File(TermuxHostPaths.HOME, scriptName)
+            Log.i("GUI", "stopGui method=$method script=${script.absolutePath}")
+            ShellCommandRunner.run(this, arrayOf(bash, script.absolutePath, "debian"))
         }
     }
 

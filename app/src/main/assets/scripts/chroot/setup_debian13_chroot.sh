@@ -326,38 +326,57 @@ fi
 mkdir -p \$DEBIANPATH/sdcard
 \$BB mount --bind /sdcard \$DEBIANPATH/sdcard
 
+# X11: bind only host .X11-unix into sticky /tmp (app Settings uses start_debian13_gui.sh SSOT)
+TARGET_PREFIX="/data/data/com.ivarna.nativecode/files/usr"
+mkdir -p \$TARGET_PREFIX/tmp/.X11-unix \$DEBIANPATH/tmp/.X11-unix
+chmod 1777 \$TARGET_PREFIX/tmp/.X11-unix 2>/dev/null || true
+\$BB mount --bind \$TARGET_PREFIX/tmp/.X11-unix \$DEBIANPATH/tmp/.X11-unix 2>/dev/null || true
+
 echo "Cleaning internal XFCE4 session..."
 \$BB chroot \$DEBIANPATH /bin/su - root -c "killall -9 xfce4-session xfwm4 xfdesktop xfce4-panel dbus-launch dbus-daemon" >/dev/null 2>&1
 
 echo "Starting Debian 13 Chroot GUI ($USERNAME)..."
-\$BB chroot \$DEBIANPATH /bin/su - $USERNAME -c 'export DISPLAY=:0 && export PULSE_SERVER=tcp:127.0.0.1 && export XDG_RUNTIME_DIR=/tmp && xfconf-query -c xfwm4 -p /general/use_compositing -s false 2>/dev/null; dbus-launch --exit-with-session startxfce4'
+echo "NOTE: Prefer app Settings START (start_gui_chroot.sh) for Pulse/X11 host stack."
+\$BB chroot \$DEBIANPATH /bin/su - $USERNAME -c 'export DISPLAY=:0 && export PULSE_SERVER=tcp:127.0.0.1 && export XDG_RUNTIME_DIR=/tmp && export VTEST_SOCKET_NAME=/mnt/host-tmp/.virgl_test && xfconf-query -c xfwm4 -p /general/use_compositing -s false 2>/dev/null; dbus-launch --exit-with-session startxfce4'
 EOF
     chmod +x "$LAUNCH_SCRIPT"
     success "GUI Launch script created."
 
-    # --- GENERATE GUI STOP SCRIPT ---
+    # Prefer asset SSOT stop when present under app home (redeployed by app)
     STOP_LAUNCHER="/data/local/tmp/stop_debian13_gui.sh"
     progress "Creating GUI Stop Script at $STOP_LAUNCHER..."
-
+    APP_STOP="/data/data/com.ivarna.nativecode/files/home/stop_debian13_gui.sh"
+    if [ -f "$APP_STOP" ]; then
+        cp -f "$APP_STOP" "$STOP_LAUNCHER"
+        chmod +x "$STOP_LAUNCHER"
+        success "GUI Stop Script copied from app assets: $STOP_LAUNCHER"
+    else
     cat <<EOF > "$STOP_LAUNCHER"
 #!/bin/sh
 DEBIANPATH="/data/local/tmp/chrootDebian13"
 BB="$BB"
 export LD_LIBRARY_PATH=$LD_LIBRARY_PATH
+TARGET_TERMUX_PREFIX="/data/data/com.ivarna.nativecode/files/usr"
 
 echo "Terminating Debian 13 Chroot GUI processes..."
 \$BB chroot \$DEBIANPATH /bin/su - root -c "killall -9 xfce4-session xfwm4 xfdesktop xfce4-panel dbus-launch dbus-daemon" >/dev/null 2>&1
 
-TARGET_TERMUX_PREFIX="/data/data/com.ivarna.nativecode/files/usr"
-if [ -f "\$TARGET_TERMUX_PREFIX/bin/pulseaudio" ]; then
-    \$TARGET_TERMUX_PREFIX/bin/pulseaudio --kill >/dev/null 2>&1
-fi
-
-pkill -f com.termux.x11 >/dev/null 2>&1
+pkill -9 -f termux-x11 >/dev/null 2>&1
+pkill -9 -f "app_process.*termux-x11" >/dev/null 2>&1
+rm -rf \$TARGET_TERMUX_PREFIX/tmp/.X11-unix \$TARGET_TERMUX_PREFIX/tmp/.X0-lock 2>/dev/null
 echo "Debian 13 GUI Stopped."
 EOF
     chmod +x "$STOP_LAUNCHER"
     success "GUI Stop Script created: $STOP_LAUNCHER"
+    fi
+
+    # Also stage full root GUI launcher from app home if present (Settings SSOT)
+    APP_START_GUI="/data/data/com.ivarna.nativecode/files/home/start_debian13_gui.sh"
+    if [ -f "$APP_START_GUI" ]; then
+        cp -f "$APP_START_GUI" /data/local/tmp/start_debian13_gui.sh
+        chmod +x /data/local/tmp/start_debian13_gui.sh
+        success "Staged start_debian13_gui.sh from app assets"
+    fi
 
     # --- GENERATE ROOT COMMAND RUNNER ---
     ROOT_RUNNER="/data/local/tmp/run_debian13_root.sh"

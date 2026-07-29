@@ -2319,13 +2319,19 @@ class OnboardingActivity : AppCompatActivity() {
                 "flux_install.sh",
                 "start_gui.sh",
                 "stop_gui.sh",
+                "start_gui_chroot.sh",
+                "stop_gui_chroot.sh",
+                "start_debian13_gui.sh",
+                "stop_debian13_gui.sh",
                 "setup_cli_tools.sh",
                 "setup_debian13_chroot.sh",
                 "uninstall_debian13_chroot.sh"
             )
             for (script in scripts) {
                 val assetPath = when {
-                    script.contains("chroot") -> "scripts/chroot/$script"
+                    script.contains("chroot") ||
+                        script == "start_debian13_gui.sh" ||
+                        script == "stop_debian13_gui.sh" -> "scripts/chroot/$script"
                     else -> "scripts/$script"
                 }
                 val out = File(homeDir, script)
