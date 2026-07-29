@@ -25,7 +25,9 @@ object ChrootCommandBuilder {
 
         val runScript = "/data/local/tmp/run_debian13_root.sh"
         val mountCmds = listOf(
-            "busybox mount -o remount,dev,suid /data >/dev/null 2>&1 || true",
+            // busybox often cannot resolve /data in /proc/mounts on KSU; system mount works.
+            // Without suid, guest sudo fails: "effective uid is not 0 ... nosuid".
+            "/system/bin/mount -o remount,dev,suid /data >/dev/null 2>&1 || busybox mount -o remount,dev,suid /data >/dev/null 2>&1 || true",
             "busybox mount --bind /dev $CHROOT_PATH/dev >/dev/null 2>&1 || true",
             "busybox mount --bind /sys $CHROOT_PATH/sys >/dev/null 2>&1 || true",
             "busybox mount -t proc proc $CHROOT_PATH/proc >/dev/null 2>&1 || true",
@@ -161,15 +163,17 @@ exec "${'$'}@"
     }
 
     /**
-     * Guest shell env one-liner (proot tools + shared PATH SSOT).
-     * No double-quotes — ProotCommandBuilder wraps shellCmd in zsh -c "...".
+     * Guest shell env one-liner (fallback only; tools prefer launch_tool.sh).
+     * Null-glob-safe nvm scan; single-quoted by ProotCommandBuilder so host bash
+     * does not expand $HOME/$PATH.
      */
     fun toolEnvInit(): String =
-        "[ -f \$HOME/.config/fluxlinux/cli-tools.env ] && . \$HOME/.config/fluxlinux/cli-tools.env; " +
+        "setopt NULL_GLOB 2>/dev/null; " +
+            "[ -f \$HOME/.config/fluxlinux/cli-tools.env ] && . \$HOME/.config/fluxlinux/cli-tools.env; " +
             "export PATH=\$HOME/.local/bin:\$HOME/bin:\$HOME/.cargo/bin:\$PATH; " +
             "export NVM_DIR=\${NVM_DIR:-\$HOME/.nvm}; " +
             "for _n in \$NVM_DIR/versions/node/v*/bin; do " +
-            "[ -d \$_n ] && export PATH=\$_n:\$PATH; done; unset _n"
+            "[ -d \"\$_n\" ] && export PATH=\$_n:\$PATH; done; unset _n"
 
     fun toolBinaryName(type: String): String = when (type) {
         "opencode" -> "opencode"
@@ -183,7 +187,8 @@ exec "${'$'}@"
     }
 
     /**
-     * Shell command for tool/shell session (chroot uses launch_tool; proot uses env init + exec).
+     * Shell command for tool/shell session.
+     * Both chroot and proot use /tmp/launch_tool.sh (proot via --shared-tmp → PREFIX/tmp).
      * @param workDir guest cwd; null = /home/flux
      */
     fun buildToolShellCommand(ctx: Context, type: String, workDir: String?): String {
@@ -196,16 +201,12 @@ exec "${'$'}@"
             }
         }
         val tool = toolBinaryName(type)
-        return if (LinuxCommandBuilder.currentMethod == "chroot") {
-            ensureLauncherScript(ctx)
-            if (workDir.isNullOrBlank()) {
-                "/tmp/launch_tool.sh $tool"
-            } else {
-                "mkdir -p $dir && cd $dir && /tmp/launch_tool.sh $tool"
-            }
+        // Write host launch_tool; chroot copies into guest /tmp; proot --shared-tmp maps PREFIX/tmp → /tmp
+        ensureLauncherScript(ctx)
+        return if (workDir.isNullOrBlank()) {
+            "/tmp/launch_tool.sh $tool"
         } else {
-            val env = toolEnvInit()
-            "export HOME=/home/flux; $env; mkdir -p $dir && cd $dir && exec $tool"
+            "mkdir -p $dir && cd $dir && /tmp/launch_tool.sh $tool"
         }
     }
 }

@@ -1,0 +1,14 @@
+PASS P0-03 true
+PASS P0-04 echo
+PASS P0-05 user=flux
+PASS P0-06 HOME=/home/flux
+PASS P0-07 sh
+PASS P0-07b sh->dash
+PASS P0-08 tmp
+PASS P0-09 proc
+PASS P0-10 dns
+PASS P0-20 touch
+PASS P0-21 mkdir
+PASS P0-22 apt
+PASS P0-23 dpkg
+SUMMARY pass=13 fail=0 skip=0

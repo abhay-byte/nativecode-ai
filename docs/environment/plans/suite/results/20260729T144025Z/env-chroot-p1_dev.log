@@ -1,0 +1,28 @@
+PASS P1-01 cc=cc
+PASS P1-02 compile_hello
+PASS P1-03 make
+SKIP P1-04 no_cmake
+PASS P1-05 git_commit
+PASS P1-06 clean
+PASS P1-07 python3
+The virtual environment was not created successfully because ensurepip is not
+available.  On Debian/Ubuntu systems, you need to install the python3-venv
+package using the following command.
+
+    apt install python3.13-venv
+
+You may need to use sudo with that command.  After installing the python3-venv
+package, recreate your virtual environment.
+
+Failing command: /home/flux/nc_p1_work_27994/venv/bin/python3
+
+SKIP P1-08 venv_fail
+PASS P1-09 node
+PASS P1-10 node_hello
+SKIP P1-11 
+SKIP P1-12 
+PASS P1-15 tar
+PASS P1-16 ssh_keygen
+PASS P1-17 curl
+PASS P1-18 openssl
+SUMMARY pass=12 fail=0 skip=4

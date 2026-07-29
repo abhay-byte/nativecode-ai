@@ -68,6 +68,9 @@ class OnboardingActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        // Install/upgrade: stage scripts before any onboarding shell work
+        AppUpgrade.runIfNeeded(this)
+
         val isForced = intent.getBooleanExtra("force_onboarding", false)
         val setupComplete = File(filesDir, "setup_complete").exists() ||
                 getSharedPreferences("nativecode_prefs", MODE_PRIVATE).getBoolean("onboarding_completed", false)

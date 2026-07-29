@@ -21,9 +21,12 @@ object ProotCommandBuilder {
                 "exec python $prootDistro login debian $sharedTmpFlag --user $user"
             )
         } else {
+            // Single-quote guest payload so host bash never expands $HOME/$PATH/etc.
+            // Escape embedded single quotes: ' → '\''
+            val escaped = shellCmd.replace("'", "'\\''")
             arrayOf(
                 shell, "-c",
-                "exec python $prootDistro login debian $sharedTmpFlag --user $user -- zsh -c \"$shellCmd\""
+                "exec python $prootDistro login debian $sharedTmpFlag --user $user -- zsh -c '$escaped'"
             )
         }
 

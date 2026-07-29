@@ -196,7 +196,8 @@ configure_debian_chroot() {
 
     progress "Mounting filesystems..."
     # Soft remount: busybox often cannot resolve /data on Magisk/KSU (not fatal)
-    $BB mount -o remount,dev,suid /data 2>/dev/null || $BB mount -o remount,dev,suid / 2>/dev/null || true
+    # Prefer system mount — busybox often "can't find /data" on KSU (sudo stays nosuid)
+    /system/bin/mount -o remount,dev,suid /data 2>/dev/null || $BB mount -o remount,dev,suid /data 2>/dev/null || $BB mount -o remount,dev,suid / 2>/dev/null || true
 
     $BB mount --bind /dev "$DEBIANPATH/dev" || goodbye
     $BB mount --bind /sys "$DEBIANPATH/sys" || goodbye
@@ -301,7 +302,7 @@ DEBIANPATH="/data/local/tmp/chrootDebian13"
 BB="$BB"
 export LD_LIBRARY_PATH=$LD_LIBRARY_PATH
 
-\$BB mount -o remount,dev,suid /data 2>/dev/null || true
+/system/bin/mount -o remount,dev,suid /data 2>/dev/null || \$BB mount -o remount,dev,suid /data 2>/dev/null || true
 
 \$BB mount --bind /dev \$DEBIANPATH/dev
 \$BB mount --bind /sys \$DEBIANPATH/sys
@@ -370,7 +371,7 @@ DEBIANPATH="/data/local/tmp/chrootDebian13"
 BB="$BB"
 export LD_LIBRARY_PATH=$LD_LIBRARY_PATH
 
-\$BB mount -o remount,dev,suid /data >/dev/null 2>&1
+/system/bin/mount -o remount,dev,suid /data >/dev/null 2>&1 || \$BB mount -o remount,dev,suid /data >/dev/null 2>&1
 \$BB mount --bind /dev \$DEBIANPATH/dev >/dev/null 2>&1
 \$BB mount --bind /sys \$DEBIANPATH/sys >/dev/null 2>&1
 \$BB mount -t proc proc \$DEBIANPATH/proc >/dev/null 2>&1
@@ -414,7 +415,7 @@ DEBIANPATH="/data/local/tmp/chrootDebian13"
 BB="$BB"
 export LD_LIBRARY_PATH=$LD_LIBRARY_PATH
 
-\$BB mount -o remount,dev,suid /data 2>/dev/null
+/system/bin/mount -o remount,dev,suid /data 2>/dev/null || \$BB mount -o remount,dev,suid /data 2>/dev/null
 
 \$BB mount --bind /dev \$DEBIANPATH/dev 2>/dev/null
 \$BB mount --bind /sys \$DEBIANPATH/sys 2>/dev/null
@@ -456,7 +457,7 @@ DEBIANPATH="/data/local/tmp/chrootDebian13"
 BB="$BB"
 export LD_LIBRARY_PATH=$LD_LIBRARY_PATH
 
-\$BB mount -o remount,dev,suid /data 2>/dev/null
+/system/bin/mount -o remount,dev,suid /data 2>/dev/null || \$BB mount -o remount,dev,suid /data 2>/dev/null
 
 \$BB mount --bind /dev \$DEBIANPATH/dev 2>/dev/null
 \$BB mount --bind /sys \$DEBIANPATH/sys 2>/dev/null

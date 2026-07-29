@@ -35,6 +35,9 @@ class SplashActivity : AppCompatActivity() {
         val splashScreen = installSplashScreen()
         super.onCreate(savedInstanceState)
 
+        // versionCode gate: restage host scripts on install/upgrade
+        AppUpgrade.runIfNeeded(this)
+
         // Make window status/navigation bar transparent over obsidian background
         WindowCompat.setDecorFitsSystemWindows(window, false)
         window.statusBarColor = Color.TRANSPARENT

@@ -241,8 +241,9 @@ object RootShell {
     ) {
         // Ensure filesystems are mounted — without this /dev/null is inaccessible and apt fails.
         // Never bind host/app tmp onto chroot /tmp (SELinux + _apt mkstemp).
+        // Prefer /system/bin/mount — busybox often cannot resolve /data on KSU (sudo stays nosuid).
         val mounts = listOf(
-            "busybox mount -o remount,dev,suid /data 2>/dev/null || true",
+            "/system/bin/mount -o remount,dev,suid /data >/dev/null 2>&1 || busybox mount -o remount,dev,suid /data >/dev/null 2>&1 || true",
             "busybox mount --bind /dev $chrootPath/dev 2>/dev/null || true",
             "busybox mount --bind /sys $chrootPath/sys 2>/dev/null || true",
             "busybox mount -t proc proc $chrootPath/proc 2>/dev/null || true",

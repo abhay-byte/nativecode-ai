@@ -350,6 +350,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var workspaceTabBar: LinearLayout
     private lateinit var workspaceTabBarScroll: HorizontalScrollView
     private lateinit var workspaceHubLayout: View
+    /** Host for workspace hub AI tool cards; rebuilt on linux_method change. */
+    private var workspaceHubToolsHost: LinearLayout? = null
     private lateinit var workspaceDirTreeLayout: LinearLayout
     private lateinit var workspaceGitDiffLayout: LinearLayout
     private lateinit var workspaceProjectNameTv: TextView
@@ -417,6 +419,9 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // Safe if Splash already ran; covers deep-link / skip-splash entry
+        AppUpgrade.runIfNeeded(this)
         
         // Enable fullscreen/immersive mode
         WindowCompat.setDecorFitsSystemWindows(window, false)
@@ -590,6 +595,7 @@ class MainActivity : AppCompatActivity() {
             .putString("linux_method", method)
             .putString("active_project_method", method)
             .apply()
+        refreshToolCardsForMethod()
         return method
     }
 
@@ -865,6 +871,7 @@ class MainActivity : AppCompatActivity() {
                     if (::terminalViewContainer.isInitialized) terminalViewContainer.visibility = View.GONE
                     if (::terminalKeyboardToolbar.isInitialized) terminalKeyboardToolbar.visibility = View.GONE
                     if (::terminalToolSelectorScrollView.isInitialized) {
+                        refreshTerminalToolSelector()
                         terminalToolSelectorScrollView.visibility = View.VISIBLE
                         terminalToolSelectorScrollView.post {
                             terminalToolSelectorScrollView.requestLayout()
@@ -1707,6 +1714,10 @@ class MainActivity : AppCompatActivity() {
             Toast.makeText(this, "Maximum 10 tabs allowed", Toast.LENGTH_SHORT).show()
             return
         }
+        if (type == "codex" && LinuxCommandBuilder.currentMethod == "chroot") {
+            Toast.makeText(this, "Codex unavailable in chroot", Toast.LENGTH_SHORT).show()
+            return
+        }
         ensureBootstrapExtracted()
         maybeToastHeavyToolLaunch(type)
         val nld     = applicationInfo.nativeLibraryDir
@@ -1899,7 +1910,11 @@ class MainActivity : AppCompatActivity() {
             TermToolDef("qwen-code",   "qwen-code",   "Qwen Code"),
             TermToolDef("grok",        "grok",        "Grok CLI"),
             TermToolDef("kiro",        "kiro",        "Kiro CLI")
-        )
+        ).let { list ->
+            if (LinuxCommandBuilder.currentMethod == "chroot")
+                list.filter { it.type != "codex" }
+            else list
+        }
 
         fun makeToolCard(tool: TermToolDef): LinearLayout {
             val card = LinearLayout(this@MainActivity).apply {
@@ -2026,6 +2041,161 @@ class MainActivity : AppCompatActivity() {
             scrollView.invalidate()
         }
         return scrollView
+    }
+
+    /** Rebuild terminal tool selector so chroot/proot codex visibility stays in sync. */
+    private fun refreshTerminalToolSelector() {
+        if (!::terminalToolSelectorScrollView.isInitialized) return
+        if (!::terminalWorkspaceLayout.isInitialized) return
+        val oldVis = terminalToolSelectorScrollView.visibility
+        val idx = terminalWorkspaceLayout.indexOfChild(terminalToolSelectorScrollView)
+        terminalWorkspaceLayout.removeView(terminalToolSelectorScrollView)
+        terminalToolSelectorScrollView = buildTerminalToolSelectorView().apply {
+            visibility = oldVis
+        }
+        if (idx >= 0) {
+            terminalWorkspaceLayout.addView(terminalToolSelectorScrollView, idx)
+        } else {
+            terminalWorkspaceLayout.addView(terminalToolSelectorScrollView)
+        }
+    }
+
+    /** Rebuild workspace hub tool cards after linux_method change. */
+    private fun refreshWorkspaceHubTools() {
+        val host = workspaceHubToolsHost ?: return
+        host.removeAllViews()
+        populateWorkspaceHubTools(host)
+    }
+
+    private data class WorkspaceAiToolDef(
+        val type: String,
+        val label: String,
+        val desc: String
+    )
+
+    private fun populateWorkspaceHubTools(host: LinearLayout) {
+        val aiTools = listOf(
+            WorkspaceAiToolDef("opencode", "opencode", "Claude Agent"),
+            WorkspaceAiToolDef("codex", "codex", "OpenAI Codex"),
+            WorkspaceAiToolDef("agy", "agy", "Antigravity"),
+            WorkspaceAiToolDef("claude-code", "claude-code", "Claude Code"),
+            WorkspaceAiToolDef("qwen-code", "qwen-code", "Qwen Code"),
+            WorkspaceAiToolDef("grok", "grok", "Grok CLI"),
+            WorkspaceAiToolDef("kiro", "kiro", "Kiro CLI"),
+            WorkspaceAiToolDef("shell", "shell", "Debian Shell")
+        ).let { list ->
+            if (LinuxCommandBuilder.currentMethod == "chroot")
+                list.filter { it.type != "codex" }
+            else list
+        }
+
+        fun makeToolCard(tool: WorkspaceAiToolDef): LinearLayout {
+            val card = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER
+                background = cyberBrutalistBg(
+                    fillColor = NC.SURFACE_LOW,
+                    strokeColor = NC.OUTLINE_VAR,
+                    shadowColor = NC.SHADOW_DARK,
+                    offsetDp = 4,
+                    cornerRadiusDp = 0
+                )
+                setPadding(dp(16), dp(20), dp(16), dp(18))
+                layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f).apply {
+                    setMargins(dp(4), dp(4), dp(4), dp(4))
+                }
+                setOnClickListener { createWorkspaceTerminalTab(tool.type) }
+                setOnTouchListener { v, event ->
+                    when (event.action) {
+                        MotionEvent.ACTION_DOWN -> {
+                            v.translationX = dp(2).toFloat()
+                            v.translationY = dp(2).toFloat()
+                            v.background = cyberBrutalistBg(
+                                fillColor = NC.SURFACE_CONTAINER,
+                                strokeColor = NC.PRIMARY,
+                                shadowColor = NC.SHADOW_DARK,
+                                offsetDp = 2,
+                                cornerRadiusDp = 0
+                            )
+                        }
+                        MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                            v.translationX = 0f
+                            v.translationY = 0f
+                            v.background = cyberBrutalistBg(
+                                fillColor = NC.SURFACE_LOW,
+                                strokeColor = NC.OUTLINE_VAR,
+                                shadowColor = NC.SHADOW_DARK,
+                                offsetDp = 4,
+                                cornerRadiusDp = 0
+                            )
+                        }
+                    }
+                    false
+                }
+            }
+
+            val iconSize = dp(64)
+            val iconView = ImageView(this).apply {
+                layoutParams = LinearLayout.LayoutParams(iconSize, iconSize).apply { bottomMargin = dp(10) }
+                scaleType = ImageView.ScaleType.FIT_CENTER
+            }
+
+            val filename = if (tool.type == "qwen-code") "qwen-code.webp" else "${tool.type}.png"
+            try {
+                assets.open("images/cli/$filename").use {
+                    val bmp = android.graphics.BitmapFactory.decodeStream(it)
+                    if (bmp != null) iconView.setImageBitmap(bmp)
+                }
+            } catch (_: Exception) {
+                iconView.setImageResource(R.drawable.ic_extension)
+                iconView.setColorFilter(NC.PRIMARY)
+            }
+
+            card.addView(iconView)
+
+            val nameTv = TextView(this).apply {
+                text = tool.label
+                textSize = 14f
+                setTextColor(NC.ON_SURFACE)
+                typeface = Typeface.DEFAULT_BOLD
+                gravity = Gravity.CENTER
+            }
+            card.addView(nameTv)
+
+            val descTv = TextView(this).apply {
+                text = tool.desc
+                textSize = 11f
+                setTextColor(NC.ON_SURF_VAR)
+                typeface = Typeface.MONOSPACE
+                gravity = Gravity.CENTER
+                setPadding(0, dp(2), 0, 0)
+            }
+            card.addView(descTv)
+
+            return card
+        }
+
+        aiTools.chunked(2).forEach { pair ->
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(2) }
+            }
+            pair.forEach { tool -> row.addView(makeToolCard(tool)) }
+            if (pair.size == 1) {
+                val spacer = View(this).apply {
+                    layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f).apply {
+                        setMargins(dp(4), dp(4), dp(4), dp(4))
+                    }
+                }
+                row.addView(spacer)
+            }
+            host.addView(row)
+        }
+    }
+
+    private fun refreshToolCardsForMethod() {
+        refreshTerminalToolSelector()
+        refreshWorkspaceHubTools()
     }
 
     // ── Custom Cyber-Brutalist Bottom Navigation ────────────────────────────
@@ -3850,7 +4020,7 @@ class MainActivity : AppCompatActivity() {
                 val runCmd = if (File("/data/local/tmp/run_debian13_root.sh").exists()) {
                     "/data/local/tmp/run_debian13_root.sh $guestInner"
                 } else {
-                    "busybox mount -o remount,dev,suid /data 2>/dev/null; busybox mount --bind /dev /data/local/tmp/chrootDebian13/dev 2>/dev/null; busybox mount --bind /sys /data/local/tmp/chrootDebian13/sys 2>/dev/null; busybox mount -t proc proc /data/local/tmp/chrootDebian13/proc 2>/dev/null; busybox mount -t devpts devpts /data/local/tmp/chrootDebian13/dev/pts 2>/dev/null; busybox chroot /data/local/tmp/chrootDebian13 /bin/su - root -c \"$guestInner\""
+                    "/system/bin/mount -o remount,dev,suid /data >/dev/null 2>&1 || busybox mount -o remount,dev,suid /data >/dev/null 2>&1 || true; busybox mount --bind /dev /data/local/tmp/chrootDebian13/dev 2>/dev/null; busybox mount --bind /sys /data/local/tmp/chrootDebian13/sys 2>/dev/null; busybox mount -t proc proc /data/local/tmp/chrootDebian13/proc 2>/dev/null; busybox mount -t devpts devpts /data/local/tmp/chrootDebian13/dev/pts 2>/dev/null; busybox chroot /data/local/tmp/chrootDebian13 /bin/su - root -c \"$guestInner\""
                 }
                 args = arrayOf("/system/bin/sh", "-c", "/system/bin/su -c \"$stageCmd && $runCmd\"")
                 envMap = HashMap(System.getenv()).apply {
@@ -6058,6 +6228,7 @@ class MainActivity : AppCompatActivity() {
                 .edit().putString("linux_method", "proot").apply()
             updateCardStyles()
             if (::homeContainerLabel.isInitialized) homeContainerLabel.text = ProjectPathResolver.methodLabel()
+            refreshToolCardsForMethod()
             Toast.makeText(this, "Switched to PRoot Mode", Toast.LENGTH_SHORT).show()
         }
 
@@ -6074,12 +6245,14 @@ class MainActivity : AppCompatActivity() {
                             .edit().putString("linux_method", "chroot").apply()
                         updateCardStyles()
                         if (::homeContainerLabel.isInitialized) homeContainerLabel.text = ProjectPathResolver.methodLabel()
+                        refreshToolCardsForMethod()
                     } else {
                         LinuxCommandBuilder.currentMethod = "chroot"
                         getSharedPreferences("nativecode_prefs", MODE_PRIVATE)
                             .edit().putString("linux_method", "chroot").apply()
                         updateCardStyles()
                         if (::homeContainerLabel.isInitialized) homeContainerLabel.text = ProjectPathResolver.methodLabel()
+                        refreshToolCardsForMethod()
                         Toast.makeText(this, "Switched to Chroot Mode", Toast.LENGTH_SHORT).show()
                     }
                 }
@@ -7973,6 +8146,7 @@ class MainActivity : AppCompatActivity() {
             if (::homeContainerLabel.isInitialized) {
                 homeContainerLabel.text = ProjectPathResolver.methodLabel()
             }
+            refreshToolCardsForMethod()
         }
         clearChrootInfoCache()
         applyInstantChrootStatus()
@@ -9686,6 +9860,7 @@ class MainActivity : AppCompatActivity() {
             LinuxCommandBuilder.currentMethod = method
             getSharedPreferences("nativecode_prefs", MODE_PRIVATE)
                 .edit().putString("linux_method", method).apply()
+            refreshToolCardsForMethod()
 
             if (gitUrl.isNotEmpty()) {
                 projectCreateBtn.isEnabled = false
@@ -9933,6 +10108,7 @@ class MainActivity : AppCompatActivity() {
             .putString("active_project_path", path)
             .putString("active_project_method", method)
             .apply()
+        refreshToolCardsForMethod()
 
         // Non-git create only: mkdir under the selected method (avoid empty shell over real clone)
         if (!skipEnsureDir) {
@@ -10862,6 +11038,10 @@ class MainActivity : AppCompatActivity() {
             Toast.makeText(this, "Maximum 10 tabs allowed", Toast.LENGTH_SHORT).show()
             return
         }
+        if (type == "codex" && LinuxCommandBuilder.currentMethod == "chroot") {
+            Toast.makeText(this, "Codex unavailable in chroot", Toast.LENGTH_SHORT).show()
+            return
+        }
 
         maybeToastHeavyToolLaunch(type)
         val nld = applicationInfo.nativeLibraryDir
@@ -10967,7 +11147,11 @@ class MainActivity : AppCompatActivity() {
             Pair("qwen-code", "qwen-code"),
             Pair("grok", "grok"),
             Pair("kiro", "kiro")
-        )
+        ).let { list ->
+            if (LinuxCommandBuilder.currentMethod == "chroot")
+                list.filter { it.second != "codex" }
+            else list
+        }
 
         val popupView = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -11407,121 +11591,13 @@ class MainActivity : AppCompatActivity() {
         hubInner.addView(hubHeaderRow)
         hubInner.addView(hubDivider)
 
-        data class AiToolDef(val type: String, val label: String, val desc: String, val iconUrl: String?)
-
-        val aiTools = listOf(
-            AiToolDef("opencode",    "opencode",    "Claude Agent",   "https://www.applivery.com/wp-content/uploads/2026/01/open-code.png"),
-            AiToolDef("codex",       "codex",       "OpenAI Codex",   "https://raw.githubusercontent.com/lobehub/lobe-icons/refs/heads/master/packages/static-png/dark/codex-color.png"),
-            AiToolDef("agy",         "agy",         "Antigravity",    "https://cdn.jsdelivr.net/npm/@lobehub/icons-static-png@latest/dark/antigravity-color.png"),
-            AiToolDef("claude-code", "claude-code", "Claude Code",    "https://raw.githubusercontent.com/lobehub/lobe-icons/refs/heads/master/packages/static-png/dark/claudecode-color.png"),
-            AiToolDef("qwen-code",   "qwen-code",   "Qwen Code",      "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/webp/qwen.webp"),
-            AiToolDef("grok",        "grok",        "Grok CLI",       "https://uxwing.com/wp-content/themes/uxwing/download/brands-and-social-media/grok-ai-icon.png"),
-            AiToolDef("kiro",        "kiro",        "Kiro CLI",       "https://kiro.dev/icon.svg?fe599162bb293ea0"),
-            AiToolDef("shell",       "shell",       "Debian Shell",   null)
-        )
-
-        fun makeToolCard(tool: AiToolDef): LinearLayout {
-            val card = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                gravity = Gravity.CENTER
-                background = cyberBrutalistBg(
-                    fillColor = NC.SURFACE_LOW,
-                    strokeColor = NC.OUTLINE_VAR,
-                    shadowColor = NC.SHADOW_DARK,
-                    offsetDp = 4,
-                    cornerRadiusDp = 0
-                )
-                setPadding(dp(16), dp(20), dp(16), dp(18))
-                layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f).apply {
-                    setMargins(dp(4), dp(4), dp(4), dp(4))
-                }
-                setOnClickListener { createWorkspaceTerminalTab(tool.type) }
-                setOnTouchListener { v, event ->
-                    when (event.action) {
-                        MotionEvent.ACTION_DOWN -> {
-                            v.translationX = dp(2).toFloat()
-                            v.translationY = dp(2).toFloat()
-                            v.background = cyberBrutalistBg(
-                                fillColor = NC.SURFACE_CONTAINER,
-                                strokeColor = NC.PRIMARY,
-                                shadowColor = NC.SHADOW_DARK,
-                                offsetDp = 2,
-                                cornerRadiusDp = 0
-                            )
-                        }
-                        MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                            v.translationX = 0f
-                            v.translationY = 0f
-                            v.background = cyberBrutalistBg(
-                                fillColor = NC.SURFACE_LOW,
-                                strokeColor = NC.OUTLINE_VAR,
-                                shadowColor = NC.SHADOW_DARK,
-                                offsetDp = 4,
-                                cornerRadiusDp = 0
-                            )
-                        }
-                    }
-                    false
-                }
-            }
-
-            val iconSize = dp(64)
-            val iconView = ImageView(this).apply {
-                layoutParams = LinearLayout.LayoutParams(iconSize, iconSize).apply { bottomMargin = dp(10) }
-                scaleType = ImageView.ScaleType.FIT_CENTER
-            }
-
-            val filename = if (tool.type == "qwen-code") "qwen-code.webp" else "${tool.type}.png"
-            try {
-                assets.open("images/cli/$filename").use {
-                    val bmp = android.graphics.BitmapFactory.decodeStream(it)
-                    if (bmp != null) iconView.setImageBitmap(bmp)
-                }
-            } catch (_: Exception) {
-                iconView.setImageResource(R.drawable.ic_extension)
-                iconView.setColorFilter(NC.PRIMARY)
-            }
-
-            card.addView(iconView)
-
-            val nameTv = TextView(this).apply {
-                text = tool.label
-                textSize = 14f
-                setTextColor(NC.ON_SURFACE)
-                typeface = Typeface.DEFAULT_BOLD
-                gravity = Gravity.CENTER
-            }
-            card.addView(nameTv)
-
-            val descTv = TextView(this).apply {
-                text = tool.desc
-                textSize = 11f
-                setTextColor(NC.ON_SURF_VAR)
-                typeface = Typeface.MONOSPACE
-                gravity = Gravity.CENTER
-                setPadding(0, dp(2), 0, 0)
-            }
-            card.addView(descTv)
-
-            return card
+        val hubToolsHost = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
         }
-
-        // Build rows of 2
-        aiTools.chunked(2).forEach { pair ->
-            val row = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(2) }
-            }
-            pair.forEach { tool -> row.addView(makeToolCard(tool)) }
-            if (pair.size == 1) {
-                // pad empty slot
-                val spacer = android.view.View(this).apply {
-                    layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f).apply { setMargins(dp(4), dp(4), dp(4), dp(4)) }
-                }
-                row.addView(spacer)
-            }
-            hubInner.addView(row)
-        }
+        workspaceHubToolsHost = hubToolsHost
+        populateWorkspaceHubTools(hubToolsHost)
+        hubInner.addView(hubToolsHost)
 
         centerFrame.addView(workspaceHubLayout)
         mainArea.addView(centerFrame)

@@ -1,0 +1,19 @@
+PASS P1-30 which_common
+SKIP P1-31 no_pip
+SKIP P1-32 not_installed
+SKIP P1-33 not_installed
+SKIP P1-34 not_installed
+SKIP P1-35 not_installed
+SKIP P1-36 not_installed
+SKIP P1-37 not_installed
+SKIP P1-38 no_npx
+PASS P1-39 grep
+PASS P1-40 pyjson
+SKIP P1-41 
+PASS P1-42 vim
+offline-ai-ok 4
+{"ok": true, "tool": "offline-smoke"}
+ai_offline_smoke PASS
+PASS P1-43 ai_offline
+PASS P1-44 python3=/usr/bin/python3
+SUMMARY pass=6 fail=0 skip=9

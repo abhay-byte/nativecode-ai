@@ -1,0 +1,7 @@
+{"level":"P0","id":"P0-01","name":"host_package","status":"PASS","detail":"export TERMUX_APP__PACKAGE_NAME="com.ivarna.nativecode""}
+{"level":"P0","id":"P0-02","name":"proot_binary_elf","status":"PASS","detail":"/data/data/com.ivarna.nativecode/files/usr/bin/proot: ELF shared object, 64-bit LSB arm64, dynamic (/system/bin/linker64), for Android 24, built by NDK r29 (14206865), stripped"}
+{"level":"P0","id":"P0-11","name":"distro_still_works","status":"PASS","detail":"cmd true"}
+{"level":"P0","id":"P0-12","name":"chroot_still_works","status":"PASS","detail":"chroot true"}
+{"level":"P0","id":"P0-13","name":"no_termux_default","status":"PASS","detail":"/data/data/com.ivarna.nativecode/files/usr/var/lib/proot-distro/containers/debian/rootfs"}
+{"level":"P0","id":"P0-14","name":"kill_clean","status":"PASS","detail":"proot not wrapper"}
+{"level":"P0","id":"P1-52","name":"no_drm_glmark","status":"PASS","detail":"no drm glmark in suite"}
