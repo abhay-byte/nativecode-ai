@@ -1727,13 +1727,35 @@ class MainActivity : AppCompatActivity() {
             Toast.makeText(this, "Codex unavailable in chroot", Toast.LENGTH_SHORT).show()
             return
         }
+        if (type == "shell-root" && LinuxCommandBuilder.currentMethod == "chroot") {
+            executor.execute {
+                val rootOk = RootShell.isRootAvailable()
+                mainHandler.post {
+                    if (!rootOk) {
+                        Toast.makeText(
+                            this,
+                            "Root required for rooted chroot shell",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    } else {
+                        startNewTerminalSession(type)
+                    }
+                }
+            }
+            return
+        }
+        startNewTerminalSession(type)
+    }
+
+    private fun startNewTerminalSession(type: String) {
         ensureBootstrapExtracted()
         maybeToastHeavyToolLaunch(type)
         val nld     = applicationInfo.nativeLibraryDir
         val shell   = File(nld, "libbash.so").absolutePath
         val cwd     = File(filesDir, "home").absolutePath
         val shellCmd = ChrootCommandBuilder.buildToolShellCommand(this, type, workDir = null)
-        val (args, envMap) = LinuxCommandBuilder.build(this, shellCmd)
+        val user = LinuxCommandBuilder.sessionUserForType(type)
+        val (args, envMap) = LinuxCommandBuilder.build(this, shellCmd, user = user)
         val env = envMap.map { "${it.key}=${it.value}" }.toTypedArray()
         if (!::sessionClient.isInitialized) {
             initTerminalView()
@@ -1822,6 +1844,7 @@ class MainActivity : AppCompatActivity() {
                 "qwen-code"   -> "qwen-code"
                 "grok"        -> "grok"
                 "kiro"        -> "kiro"
+                "shell-root"  -> "Debian Shell Rooted"
                 else          -> "Debian Shell"
             }
             val row = LinearLayout(this).apply {
@@ -1850,12 +1873,13 @@ class MainActivity : AppCompatActivity() {
                 }
                 scaleType = ImageView.ScaleType.FIT_CENTER
             }
-            val filename = if (type == "qwen-code") "qwen-code.webp" else "$type.png"
+            val filename = cliToolAssetFilename(type)
             try {
                 assets.open("images/cli/$filename").use { input ->
                     val bmp = android.graphics.BitmapFactory.decodeStream(input)
                     if (bmp != null) {
                         terminalIcon.setImageBitmap(bmp)
+                        // Full-color PNGs (e.g. shell.png) must not use setColorFilter — it solid-fills them
                     } else {
                         terminalIcon.setImageResource(R.drawable.ic_terminal)
                         terminalIcon.setColorFilter(if (isSelected) NC.PRIMARY else NC.ON_SURF_VAR)
@@ -1907,7 +1931,8 @@ class MainActivity : AppCompatActivity() {
         data class TermToolDef(val type: String, val label: String, val desc: String)
 
         val shellTools = listOf(
-            TermToolDef("shell", "Debian Shell", "Debian Shell")
+            TermToolDef("shell", "Debian Shell", "User: flux"),
+            TermToolDef("shell-root", "Debian Shell Rooted", "User: root")
         )
         val freeTools = listOf(
             TermToolDef("opencode", "opencode", "Claude Agent")
@@ -1949,7 +1974,7 @@ class MainActivity : AppCompatActivity() {
                 scaleType = ImageView.ScaleType.FIT_CENTER
             }
 
-            val filename = if (tool.type == "qwen-code") "qwen-code.webp" else "${tool.type}.png"
+            val filename = cliToolAssetFilename(tool.type)
             try {
                 assets.open("images/cli/$filename").use {
                     val bmp = android.graphics.BitmapFactory.decodeStream(it)
@@ -2039,9 +2064,10 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        addSection("DEBIAN SHELL", "// SYSTEM SHELL", shellTools)
+        // Order: Free → Paid → Debian Shell last (system shell under AI tools)
         addSection("FREE CLI TOOLS", "// OPEN SOURCE / FREE", freeTools)
         addSection("PAID CLI TOOLS", "// PRO / SUBSCRIPTION", paidTools)
+        addSection("DEBIAN SHELL", "// SYSTEM SHELL", shellTools)
 
         scrollView.addView(container)
         scrollView.post {
@@ -2083,20 +2109,26 @@ class MainActivity : AppCompatActivity() {
     )
 
     private fun populateWorkspaceHubTools(host: LinearLayout) {
-        val aiTools = listOf(
-            WorkspaceAiToolDef("opencode", "opencode", "Claude Agent"),
+        // Same categories + order as Terminal tool selector
+        val freeTools = listOf(
+            WorkspaceAiToolDef("opencode", "opencode", "Claude Agent")
+        )
+        val paidTools = listOf(
             WorkspaceAiToolDef("codex", "codex", "OpenAI Codex"),
             WorkspaceAiToolDef("agy", "agy", "Antigravity"),
             WorkspaceAiToolDef("claude-code", "claude-code", "Claude Code"),
             WorkspaceAiToolDef("qwen-code", "qwen-code", "Qwen Code"),
             WorkspaceAiToolDef("grok", "grok", "Grok CLI"),
-            WorkspaceAiToolDef("kiro", "kiro", "Kiro CLI"),
-            WorkspaceAiToolDef("shell", "shell", "Debian Shell")
+            WorkspaceAiToolDef("kiro", "kiro", "Kiro CLI")
         ).let { list ->
             if (LinuxCommandBuilder.currentMethod == "chroot")
                 list.filter { it.type != "codex" }
             else list
         }
+        val shellTools = listOf(
+            WorkspaceAiToolDef("shell", "Debian Shell", "User: flux"),
+            WorkspaceAiToolDef("shell-root", "Debian Shell Rooted", "User: root")
+        )
 
         fun makeToolCard(tool: WorkspaceAiToolDef): LinearLayout {
             val card = LinearLayout(this).apply {
@@ -2149,7 +2181,7 @@ class MainActivity : AppCompatActivity() {
                 scaleType = ImageView.ScaleType.FIT_CENTER
             }
 
-            val filename = if (tool.type == "qwen-code") "qwen-code.webp" else "${tool.type}.png"
+            val filename = cliToolAssetFilename(tool.type)
             try {
                 assets.open("images/cli/$filename").use {
                     val bmp = android.graphics.BitmapFactory.decodeStream(it)
@@ -2184,22 +2216,64 @@ class MainActivity : AppCompatActivity() {
             return card
         }
 
-        aiTools.chunked(2).forEach { pair ->
-            val row = LinearLayout(this).apply {
+        fun addSection(title: String, subtitle: String, tools: List<WorkspaceAiToolDef>) {
+            val headerRow = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
-                layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(2) }
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(4), dp(12), dp(4), dp(4))
             }
-            pair.forEach { tool -> row.addView(makeToolCard(tool)) }
-            if (pair.size == 1) {
-                val spacer = View(this).apply {
-                    layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f).apply {
-                        setMargins(dp(4), dp(4), dp(4), dp(4))
+            val titleTv = TextView(this).apply {
+                text = title
+                textSize = 15f
+                setTextColor(NC.PRIMARY)
+                typeface = Typeface.DEFAULT_BOLD
+                layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
+            }
+            val subTitleTv = TextView(this).apply {
+                text = subtitle
+                textSize = 10f
+                setTextColor(NC.ON_SURF_VAR)
+                typeface = Typeface.MONOSPACE
+                gravity = Gravity.END
+            }
+            headerRow.addView(titleTv)
+            headerRow.addView(subTitleTv)
+
+            val divider = View(this).apply {
+                layoutParams = LinearLayout.LayoutParams(MATCH, dp(1)).apply {
+                    bottomMargin = dp(8)
+                    topMargin = dp(2)
+                }
+                setBackgroundColor(NC.OUTLINE_VAR)
+            }
+
+            host.addView(headerRow)
+            host.addView(divider)
+
+            tools.chunked(2).forEach { rowTools ->
+                val row = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply {
+                        bottomMargin = dp(4)
                     }
                 }
-                row.addView(spacer)
+                row.addView(makeToolCard(rowTools[0]))
+                if (rowTools.size > 1) {
+                    row.addView(makeToolCard(rowTools[1]))
+                } else {
+                    row.addView(View(this).apply {
+                        layoutParams = LinearLayout.LayoutParams(0, dp(140), 1f).apply {
+                            setMargins(dp(4), dp(4), dp(4), dp(4))
+                        }
+                    })
+                }
+                host.addView(row)
             }
-            host.addView(row)
         }
+
+        addSection("FREE CLI TOOLS", "// OPEN SOURCE / FREE", freeTools)
+        addSection("PAID CLI TOOLS", "// PRO / SUBSCRIPTION", paidTools)
+        addSection("DEBIAN SHELL", "// SYSTEM SHELL", shellTools)
     }
 
     private fun refreshToolCardsForMethod() {
@@ -11522,13 +11596,36 @@ class MainActivity : AppCompatActivity() {
             Toast.makeText(this, "Codex unavailable in chroot", Toast.LENGTH_SHORT).show()
             return
         }
+        if (type == "shell-root" && LinuxCommandBuilder.currentMethod == "chroot") {
+            executor.execute {
+                val rootOk = RootShell.isRootAvailable()
+                mainHandler.post {
+                    if (!rootOk) {
+                        Toast.makeText(
+                            this,
+                            "Root required for rooted chroot shell",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    } else {
+                        startWorkspaceTerminalTab(type)
+                    }
+                }
+            }
+            return
+        }
+        startWorkspaceTerminalTab(type)
+    }
 
+    private fun startWorkspaceTerminalTab(type: String) {
         maybeToastHeavyToolLaunch(type)
         val nld = applicationInfo.nativeLibraryDir
         val shell = File(nld, "libbash.so").absolutePath
         val cwd = File(filesDir, "home").absolutePath
-        val shellCmd = ChrootCommandBuilder.buildToolShellCommand(this, type, activeProjectPath)
-        val (args, envMap) = LinuxCommandBuilder.build(this, shellCmd)
+        // shell-root: login at /root (no project cwd — avoid root-owned files under flux home)
+        val workDir = if (type == "shell-root") null else activeProjectPath
+        val shellCmd = ChrootCommandBuilder.buildToolShellCommand(this, type, workDir)
+        val user = LinuxCommandBuilder.sessionUserForType(type)
+        val (args, envMap) = LinuxCommandBuilder.build(this, shellCmd, user = user)
         val env = envMap.map { "${it.key}=${it.value}" }.toTypedArray()
 
         val sessionClient = object : TerminalSessionClient {
@@ -11620,6 +11717,7 @@ class MainActivity : AppCompatActivity() {
     private fun showNewTerminalDropdown(anchorView: View, onSelect: ((String) -> Unit)? = null) {
         val tools = listOf(
             Pair("Debian Shell", "shell"),
+            Pair("Debian Shell Rooted", "shell-root"),
             Pair("opencode", "opencode"),
             Pair("codex", "codex"),
             Pair("agy", "agy"),
@@ -11676,7 +11774,7 @@ class MainActivity : AppCompatActivity() {
                     scaleType = ImageView.ScaleType.FIT_CENTER
                 }
 
-                val filename = if (type == "qwen-code") "qwen-code.webp" else "$type.png"
+                val filename = cliToolAssetFilename(type)
                 try {
                     assets.open("images/cli/$filename").use { input ->
                         val bmp = android.graphics.BitmapFactory.decodeStream(input)
@@ -11783,7 +11881,7 @@ class MainActivity : AppCompatActivity() {
                 }
                 scaleType = ImageView.ScaleType.FIT_CENTER
             }
-            val filename = if (tabName == "qwen-code") "qwen-code.webp" else "$tabName.png"
+            val filename = cliToolAssetFilename(tabName)
             try {
                 assets.open("images/cli/$filename").use { input ->
                     val bmp = android.graphics.BitmapFactory.decodeStream(input)
@@ -11800,7 +11898,12 @@ class MainActivity : AppCompatActivity() {
             }
             
             val titleTv = TextView(this).apply {
-                text = "${i + 1}. $tabName"
+                val displayName = when (tabName) {
+                    "shell-root" -> "Debian Shell Rooted"
+                    "shell" -> "Debian Shell"
+                    else -> tabName
+                }
+                text = "${i + 1}. $displayName"
                 textSize = 12f
                 setTextColor(if (isSelected) NC.PRIMARY else NC.ON_SURFACE)
                 typeface = Typeface.MONOSPACE
@@ -12038,38 +12141,10 @@ class MainActivity : AppCompatActivity() {
 
         val hubInner = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(16), dp(12), dp(16), dp(16))
+            // Match terminal tool selector padding; section headers live in populateWorkspaceHubTools
+            setPadding(dp(16), dp(16), dp(16), dp(24))
         }
         (workspaceHubLayout as ScrollView).addView(hubInner)
-
-        // Hub header
-        val hubHeaderRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, 0, 0, dp(4))
-        }
-        val hubTitleTv = TextView(this).apply {
-            text = "SELECT AI TOOL"
-            textSize = 18f
-            setTextColor(NC.PRIMARY)
-            typeface = Typeface.DEFAULT_BOLD
-            layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
-        }
-        val hubSubTitleTv = TextView(this).apply {
-            text = "// LAUNCH WORKSPACE"
-            textSize = 10f
-            setTextColor(NC.ON_SURF_VAR)
-            typeface = Typeface.MONOSPACE
-            gravity = Gravity.END
-        }
-        hubHeaderRow.addView(hubTitleTv)
-        hubHeaderRow.addView(hubSubTitleTv)
-        val hubDivider = View(this).apply {
-            layoutParams = LinearLayout.LayoutParams(MATCH, dp(1)).apply { bottomMargin = dp(12) }
-            setBackgroundColor(NC.OUTLINE_VAR)
-        }
-        hubInner.addView(hubHeaderRow)
-        hubInner.addView(hubDivider)
 
         val hubToolsHost = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -12812,6 +12887,13 @@ class MainActivity : AppCompatActivity() {
             "Loading Codex (~250MB). If blank, run: codex login",
             Toast.LENGTH_LONG
         ).show()
+    }
+
+    /** CLI card/sidebar/dropdown asset under images/cli/. */
+    private fun cliToolAssetFilename(type: String): String = when (type) {
+        "qwen-code" -> "qwen-code.webp"
+        "shell-root" -> "shell.png"
+        else -> "$type.png"
     }
 
     private fun buildTerminalSettingsCard(): View {

@@ -61,6 +61,7 @@ class OnboardingActivity : AppCompatActivity() {
     // page 4 (Full Environment Setup: base + AI CLIs) — progress-first UI
     private lateinit var setupPercentText: TextView
     private lateinit var setupPhaseMetaText: TextView
+    private lateinit var setupElapsedText: TextView
     private lateinit var setupStepTitleText: TextView
     private lateinit var setupDetailText: TextView
     private lateinit var setupProgressTrack: FrameLayout
@@ -88,6 +89,18 @@ class OnboardingActivity : AppCompatActivity() {
     private var progressPulseAnimator: ObjectAnimator? = null
     private var percentPunchAnimator: ObjectAnimator? = null
     private var setupDisplayedPercentInt = 0
+
+    // Elapsed timer (starts with install, freezes on success/fail)
+    private var setupElapsedStartMs = 0L
+    private var setupElapsedFrozenMs = 0L
+    private var setupElapsedRunning = false
+    private val setupElapsedTicker = object : Runnable {
+        override fun run() {
+            if (!setupElapsedRunning) return
+            refreshSetupElapsedUi()
+            mainHandler.postDelayed(this, 1000L)
+        }
+    }
 
     private data class SetupPhase(val id: String, val label: String, val weight: Int)
 
@@ -1023,10 +1036,23 @@ class OnboardingActivity : AppCompatActivity() {
             typeface = Typeface.MONOSPACE
             letterSpacing = 0.06f
             gravity = Gravity.CENTER
-            setPadding(0, 0, 0, dp(12))
+            setPadding(0, 0, 0, dp(8))
             layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
         }
         progressCard.addView(setupPhaseMetaText)
+
+        setupElapsedText = TextView(this).apply {
+            text = formatSetupElapsedLabel()
+            textSize = 12f
+            setTextColor(NC.PRIMARY)
+            typeface = Typeface.MONOSPACE
+            gravity = Gravity.CENTER
+            letterSpacing = 0.04f
+            setPadding(0, 0, 0, dp(16))
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
+            contentDescription = "Elapsed install time"
+        }
+        progressCard.addView(setupElapsedText)
 
         setupPercentText = TextView(this).apply {
             text = "${setupOverallPercent}%"
@@ -1283,10 +1309,74 @@ class OnboardingActivity : AppCompatActivity() {
         setupAnimatedPercent = 0f
         setupDisplayedPercentInt = 0
         cancelSetupProgressAnimators()
+        startSetupElapsedTimer()
         mainHandler.post {
             applySetupProgressUi(animate = false)
             startProgressPulse()
         }
+    }
+
+    private fun startSetupElapsedTimer() {
+        setupElapsedStartMs = System.currentTimeMillis()
+        setupElapsedFrozenMs = 0L
+        setupElapsedRunning = true
+        mainHandler.removeCallbacks(setupElapsedTicker)
+        mainHandler.post {
+            refreshSetupElapsedUi()
+            mainHandler.postDelayed(setupElapsedTicker, 1000L)
+        }
+    }
+
+    private fun stopSetupElapsedTimer() {
+        if (setupElapsedRunning && setupElapsedStartMs > 0L) {
+            setupElapsedFrozenMs = System.currentTimeMillis() - setupElapsedStartMs
+        }
+        setupElapsedRunning = false
+        mainHandler.removeCallbacks(setupElapsedTicker)
+        mainHandler.post { refreshSetupElapsedUi() }
+    }
+
+    private fun currentSetupElapsedMs(): Long {
+        return when {
+            setupElapsedRunning && setupElapsedStartMs > 0L ->
+                System.currentTimeMillis() - setupElapsedStartMs
+            setupElapsedFrozenMs > 0L -> setupElapsedFrozenMs
+            else -> 0L
+        }
+    }
+
+    private fun formatSetupElapsed(ms: Long): String {
+        val totalSec = (ms / 1000L).coerceAtLeast(0L)
+        val h = totalSec / 3600L
+        val m = (totalSec % 3600L) / 60L
+        val s = totalSec % 60L
+        return if (h > 0L) {
+            String.format("%d:%02d:%02d", h, m, s)
+        } else {
+            String.format("%02d:%02d", m, s)
+        }
+    }
+
+    private fun formatSetupElapsedLabel(): String {
+        val t = formatSetupElapsed(currentSetupElapsedMs())
+        return when {
+            setupFinished -> "ELAPSED  $t  ·  DONE"
+            setupFailed -> "ELAPSED  $t  ·  STOPPED"
+            setupElapsedRunning || setupElapsedStartMs > 0L -> "ELAPSED  $t"
+            else -> "ELAPSED  00:00"
+        }
+    }
+
+    private fun refreshSetupElapsedUi() {
+        if (!::setupElapsedText.isInitialized) return
+        setupElapsedText.text = formatSetupElapsedLabel()
+        setupElapsedText.setTextColor(
+            when {
+                setupFinished -> NC.PRIMARY
+                setupFailed -> NC.ERROR
+                else -> NC.PRIMARY
+            }
+        )
     }
 
     /** Enter a named phase; completed weight = sum of all prior phase weights. */
@@ -1343,6 +1433,7 @@ class OnboardingActivity : AppCompatActivity() {
         setupFailed = false
         setupOverallPercent = 100
         setupPhaseFraction = 1f
+        stopSetupElapsedTimer()
         mainHandler.post {
             stopProgressPulse()
             if (::setupStepTitleText.isInitialized) {
@@ -1362,6 +1453,7 @@ class OnboardingActivity : AppCompatActivity() {
 
     private fun failSetupProgress(message: String) {
         setupFailed = true
+        stopSetupElapsedTimer()
         mainHandler.post {
             stopProgressPulse()
             if (::setupStepTitleText.isInitialized) {
@@ -1532,6 +1624,8 @@ class OnboardingActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        setupElapsedRunning = false
+        mainHandler.removeCallbacks(setupElapsedTicker)
         cancelSetupProgressAnimators()
         super.onDestroy()
     }

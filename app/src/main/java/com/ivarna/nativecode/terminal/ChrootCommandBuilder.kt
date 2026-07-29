@@ -64,7 +64,7 @@ object ChrootCommandBuilder {
         val envMap = HashMap(System.getenv())
         envMap["PATH"] = "/system/bin:/system/xbin:/sbin:" + (envMap["PATH"] ?: "")
         envMap["TERM"] = "xterm-256color"
-        envMap["HOME"] = "/home/flux"
+        envMap["HOME"] = if (user == "root") "/root" else "/home/flux"
         envMap["LANG"] = "en_US.UTF-8"
         envMap["LC_ALL"] = "en_US.UTF-8"
         envMap["XDG_RUNTIME_DIR"] = "/tmp"
@@ -189,17 +189,20 @@ exec "${'$'}@"
     /**
      * Shell command for tool/shell session.
      * Both chroot and proot use /tmp/launch_tool.sh (proot via --shared-tmp → PREFIX/tmp).
-     * @param workDir guest cwd; null = /home/flux
+     * @param workDir guest cwd; null = user home (/home/flux or /root for shell-root)
      */
     fun buildToolShellCommand(ctx: Context, type: String, workDir: String?): String {
-        val dir = workDir?.takeIf { it.isNotBlank() } ?: "/home/flux"
-        if (type == "shell") {
+        if (type == "shell" || type == "shell-root") {
+            val home = if (type == "shell-root") "/root" else "/home/flux"
+            val dir = workDir?.takeIf { it.isNotBlank() } ?: home
             return if (workDir.isNullOrBlank()) {
+                // Interactive login: builders use su -/proot --user (HOME from login)
                 "exec zsh"
             } else {
                 "mkdir -p $dir && cd $dir && exec zsh"
             }
         }
+        val dir = workDir?.takeIf { it.isNotBlank() } ?: "/home/flux"
         val tool = toolBinaryName(type)
         // Write host launch_tool; chroot copies into guest /tmp; proot --shared-tmp maps PREFIX/tmp → /tmp
         ensureLauncherScript(ctx)
