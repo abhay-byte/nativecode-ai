@@ -9,11 +9,20 @@ object ChrootCommandBuilder {
 
     const val CHROOT_PATH = "/data/local/tmp/chrootDebian13"
 
+    /** Session executable — must be a system binary (SELinux blocks exec of app-data scripts). */
+    const val SESSION_EXEC = "/system/bin/sh"
+
+    private const val LAUNCH_TOOL_VERSION = "nativecode-launch-tool v2"
+    private const val TERM_WRAPPER_VERSION = "nativecode-chroot-term-wrapper v3"
+
     fun build(
         ctx: Context,
         shellCmd: String,
         user: String = "flux"
     ): Pair<Array<String>, HashMap<String, String>> {
+        // Refresh host launch_tool before bind/copy into guest /tmp
+        ensureLauncherScript(ctx)
+
         val runScript = "/data/local/tmp/run_debian13_root.sh"
         val mountCmds = listOf(
             "busybox mount -o remount,dev,suid /data >/dev/null 2>&1 || true",
@@ -44,6 +53,12 @@ object ChrootCommandBuilder {
             "/system/bin/su -c \"$mountCmds; exec busybox chroot $CHROOT_PATH /bin/su - $user -c \\\"$escapedCmd\\\"\""
         }
 
+        // Inline WINCH trap on outer sh (mShellPid). Do NOT exec a separate wrapper script —
+        // app-data paths are not executable under SELinux; /data/local/tmp is not app-writable.
+        // Keep this shell as parent (no leading exec) so the trap stays installed.
+        val winchCmd =
+            "trap 'kill -WINCH -\$\$ 2>/dev/null; kill -WINCH 0 2>/dev/null' WINCH; $cmd"
+
         val envMap = HashMap(System.getenv())
         envMap["PATH"] = "/system/bin:/system/xbin:/sbin:" + (envMap["PATH"] ?: "")
         envMap["TERM"] = "xterm-256color"
@@ -53,63 +68,144 @@ object ChrootCommandBuilder {
         envMap["XDG_RUNTIME_DIR"] = "/tmp"
         envMap["TMPDIR"] = "/tmp"
 
-        return arrayOf("/system/bin/sh", "-c", cmd) to envMap
+        return arrayOf(SESSION_EXEC, "-c", winchCmd) to envMap
     }
 
-    /** Creates a SIGWINCH forwarding wrapper so inner zsh inside chroot receives resize signals.
-     *  Termux TerminalSession sends SIGWINCH to mShellPid (direct child). In chroot mode that child
-     *  is /system/bin/sh which ignores SIGWINCH. This wrapper catches SIGWINCH and forwards it to
-     *  the entire process group (kill -WINCH 0), reaching the inner zsh. */
+    /**
+     * Best-effort ADB mirror of WINCH wrapper under /data/local/tmp (via su).
+     * Not used as sessionExec — SELinux/path; session uses SESSION_EXEC + inline trap.
+     */
     fun ensureTermWrapper(): Boolean {
         val scriptPath = "/data/local/tmp/chroot_term_wrapper.sh"
-        if (File(scriptPath).exists() && File(scriptPath).length() > 0) return true
         val script = """#!/system/bin/sh
-# Run command in foreground (same process group) so SIGWINCH reaches all children.
-trap 'kill -WINCH 0 2>/dev/null' WINCH
+# $TERM_WRAPPER_VERSION
+# ADB/debug mirror only — app sessions use inline trap on /system/bin/sh
+trap 'kill -WINCH -${'$'}${'$'} 2>/dev/null; kill -WINCH 0 2>/dev/null' WINCH
 "${'$'}@"
+exit ${'$'}?
 """.trimIndent()
         return try {
-            val f = File(scriptPath)
-            f.writeText(script)
-            val chmodProc = Runtime.getRuntime().exec(arrayOf("/system/bin/su", "-c",
-                "chmod 755 $scriptPath"))
-            chmodProc.waitFor(5, TimeUnit.SECONDS)
-            f.exists() && f.length() > 0
-        } catch (e: Exception) {
+            val existing = try {
+                val p = Runtime.getRuntime().exec(arrayOf("/system/bin/su", "-c", "cat $scriptPath 2>/dev/null"))
+                p.inputStream.bufferedReader().readText().also {
+                    p.waitFor(3, TimeUnit.SECONDS)
+                }
+            } catch (_: Exception) {
+                ""
+            }
+            if (existing == script) return true
+            val b64 = android.util.Base64.encodeToString(script.toByteArray(), android.util.Base64.NO_WRAP)
+            val p = Runtime.getRuntime().exec(
+                arrayOf(
+                    "/system/bin/su", "-c",
+                    "echo $b64 | base64 -d > $scriptPath && chmod 755 $scriptPath"
+                )
+            )
+            p.waitFor(5, TimeUnit.SECONDS)
+            p.exitValue() == 0
+        } catch (_: Exception) {
             false
         }
     }
 
-    /** Creates AI tool launcher. Written to app usr/tmp; session mount copies it into chroot /tmp. */
+    /**
+     * AI tool launcher written to app usr/tmp; session mount copies into chroot /tmp.
+     * Always rewrites when content differs (stale short-PATH scripts fixed).
+     */
     fun ensureLauncherScript(ctx: Context): Boolean {
         val scriptPath = "${ctx.filesDir}/usr/tmp/launch_tool.sh"
-        if (File(scriptPath).exists() && File(scriptPath).length() > 0) return true
         val script = """#!/bin/zsh
-export PATH=/home/flux/.local/bin:/opt/nodejs/bin:/usr/local/bin:/usr/bin:/bin:/sbin:/usr/local/sbin
+# $LAUNCH_TOOL_VERSION
 export HOME=/home/flux
-export TERM=xterm-256color
+export TERM="${'$'}{TERM:-xterm-256color}"
 export LANG=en_US.UTF-8
 export LC_ALL=en_US.UTF-8
 export XDG_RUNTIME_DIR=/tmp
 export TMPDIR=/tmp
-export ZSH=${'$'}HOME/.oh-my-zsh
-ZSH_THEME=agnosterzak
-DISABLE_UPDATE_PROMPT=true
-DISABLE_AUTO_UPDATE=true
-ZSH_DISABLE_COMPFIX=true
-plugins=(git zsh-autosuggestions zsh-syntax-highlighting)
-source ${'$'}ZSH/oh-my-zsh.sh
+export NVM_DIR="${'$'}{NVM_DIR:-${'$'}HOME/.nvm}"
+
+export PATH="${'$'}HOME/.local/bin:${'$'}HOME/bin:${'$'}HOME/.cargo/bin:/opt/nodejs/bin:/usr/local/bin:/usr/bin:/bin:/sbin"
+
+# SSOT: same env as interactive setup_cli_tools
+if [ -f "${'$'}HOME/.config/fluxlinux/cli-tools.env" ]; then
+  . "${'$'}HOME/.config/fluxlinux/cli-tools.env"
+fi
+
+# Fallback if cli-tools.env missing: latest nvm node bin
+if [ -d "${'$'}NVM_DIR/versions/node" ]; then
+  _n=${'$'}(ls -1d "${'$'}NVM_DIR/versions/node"/v* 2>/dev/null | sort -V | tail -1)
+  [ -n "${'$'}_n" ] && [ -d "${'$'}_n/bin" ] && export PATH="${'$'}_n/bin:${'$'}PATH"
+  unset _n
+fi
+
+if [ ${'$'}# -lt 1 ]; then
+  echo "launch_tool: missing command" >&2
+  exit 127
+fi
+if ! command -v "${'$'}1" >/dev/null 2>&1; then
+  echo "launch_tool: command not found: ${'$'}1 (PATH=${'$'}PATH)" >&2
+  exit 127
+fi
 exec "${'$'}@"
 """.trimIndent()
         return try {
             val f = File(scriptPath)
+            f.parentFile?.mkdirs()
+            if (f.exists() && f.readText() == script) return true
             f.writeText(script)
-            val chmodProc = Runtime.getRuntime().exec(arrayOf("/system/bin/su", "-c",
-                "chmod 755 $scriptPath"))
-            chmodProc.waitFor(5, TimeUnit.SECONDS)
-            f.exists() && f.length() > 0
-        } catch (e: Exception) {
+            f.setExecutable(true, false)
+            true
+        } catch (_: Exception) {
             false
+        }
+    }
+
+    /**
+     * Guest shell env one-liner (proot tools + shared PATH SSOT).
+     * No double-quotes — ProotCommandBuilder wraps shellCmd in zsh -c "...".
+     */
+    fun toolEnvInit(): String =
+        "[ -f \$HOME/.config/fluxlinux/cli-tools.env ] && . \$HOME/.config/fluxlinux/cli-tools.env; " +
+            "export PATH=\$HOME/.local/bin:\$HOME/bin:\$HOME/.cargo/bin:\$PATH; " +
+            "export NVM_DIR=\${NVM_DIR:-\$HOME/.nvm}; " +
+            "for _n in \$NVM_DIR/versions/node/v*/bin; do " +
+            "[ -d \$_n ] && export PATH=\$_n:\$PATH; done; unset _n"
+
+    fun toolBinaryName(type: String): String = when (type) {
+        "opencode" -> "opencode"
+        "codex" -> "codex"
+        "agy" -> "agy"
+        "claude-code" -> "claude"
+        "qwen-code" -> "qwen"
+        "grok" -> "grok"
+        "kiro" -> "kiro-cli"
+        else -> "zsh"
+    }
+
+    /**
+     * Shell command for tool/shell session (chroot uses launch_tool; proot uses env init + exec).
+     * @param workDir guest cwd; null = /home/flux
+     */
+    fun buildToolShellCommand(ctx: Context, type: String, workDir: String?): String {
+        val dir = workDir?.takeIf { it.isNotBlank() } ?: "/home/flux"
+        if (type == "shell") {
+            return if (workDir.isNullOrBlank()) {
+                "exec zsh"
+            } else {
+                "mkdir -p $dir && cd $dir && exec zsh"
+            }
+        }
+        val tool = toolBinaryName(type)
+        return if (LinuxCommandBuilder.currentMethod == "chroot") {
+            ensureLauncherScript(ctx)
+            if (workDir.isNullOrBlank()) {
+                "/tmp/launch_tool.sh $tool"
+            } else {
+                "mkdir -p $dir && cd $dir && /tmp/launch_tool.sh $tool"
+            }
+        } else {
+            val env = toolEnvInit()
+            "export HOME=/home/flux; $env; mkdir -p $dir && cd $dir && exec $tool"
         }
     }
 }

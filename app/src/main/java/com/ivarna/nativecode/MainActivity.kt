@@ -2,6 +2,7 @@ package com.ivarna.nativecode
 
 import android.animation.ObjectAnimator
 import android.system.Os
+import android.system.OsConstants
 import java.io.InputStream
 import android.animation.ValueAnimator
 import android.content.Intent
@@ -506,6 +507,11 @@ class MainActivity : AppCompatActivity() {
                     bottomNavContainer.setPadding(0, 0, 0, 0)
                     contentFrame.setPadding(0, 0, 0, if (isKeyboardOpen) ime.bottom else bars.bottom)
                 }
+            }
+            if (currentPage == ID_TERMINAL) {
+                forceTerminalResize(if (::terminalView.isInitialized) terminalView else null)
+            } else if (currentPage == ID_PROJECT_WORKSPACE) {
+                forceTerminalResize(if (::workspaceTerminalView.isInitialized) workspaceTerminalView else null)
             }
             insets
         }
@@ -1702,58 +1708,18 @@ class MainActivity : AppCompatActivity() {
             return
         }
         ensureBootstrapExtracted()
+        maybeToastHeavyToolLaunch(type)
         val nld     = applicationInfo.nativeLibraryDir
         val shell   = File(nld, "libbash.so").absolutePath
         val cwd     = File(filesDir, "home").absolutePath
-        val envInit = "export PATH=/home/flux/.local/bin:/home/flux/bin:/home/flux/.cargo/bin:/home/flux/.nvm/versions/node/v26.*/bin:/usr/local/bin:/usr/bin:/bin:\\\$PATH && export NVM_DIR=/home/flux/.nvm && [ -s /home/flux/.nvm/nvm.sh ] && . /home/flux/.nvm/nvm.sh"
-        val workDir = "/home/flux"
-
-        val toolCmd = when (type) {
-            "opencode"    -> "$envInit && cd $workDir && exec opencode"
-            "codex"       -> "$envInit && cd $workDir && exec codex"
-            "agy"         -> "$envInit && cd $workDir && exec agy"
-            "claude-code" -> "$envInit && cd $workDir && exec claude"
-            "qwen-code"   -> "$envInit && cd $workDir && exec qwen"
-            "grok"        -> "$envInit && cd $workDir && exec grok"
-            "kiro"        -> "$envInit && cd $workDir && exec kiro-cli"
-            else          -> "exec zsh"
-        }
-
-        val isChrootTool = LinuxCommandBuilder.currentMethod == "chroot" && type != "shell"
-        val shellCmd = if (type == "shell") {
-            "exec zsh"
-        } else if (isChrootTool) {
-            // For chroot tools, use the wrapper script that sets PATH, TMPDIR, etc.
-            val toolName = when (type) {
-                "opencode"    -> "opencode"
-                "codex"       -> "codex"
-                "agy"         -> "agy"
-                "claude-code" -> "claude"
-                "qwen-code"   -> "qwen"
-                "grok"        -> "grok"
-                "kiro"        -> "kiro-cli"
-                else          -> "zsh"
-            }
-            ChrootCommandBuilder.ensureLauncherScript(this)
-            "/tmp/launch_tool.sh $toolName"
-        } else {
-            toolCmd
-        }
+        val shellCmd = ChrootCommandBuilder.buildToolShellCommand(this, type, workDir = null)
         val (args, envMap) = LinuxCommandBuilder.build(this, shellCmd)
         val env = envMap.map { "${it.key}=${it.value}" }.toTypedArray()
         if (!::sessionClient.isInitialized) {
             initTerminalView()
         }
         val isChroot = LinuxCommandBuilder.currentMethod == "chroot"
-        val sessionExec = if (isChroot) {
-            if (ChrootCommandBuilder.ensureTermWrapper()) {
-                "/data/local/tmp/chroot_term_wrapper.sh"
-            } else {
-                "/system/bin/sh"
-            }
-        } else {
-            shell
-        }
+        val sessionExec = if (isChroot) ChrootCommandBuilder.SESSION_EXEC else shell
         val session = TerminalSession(sessionExec, cwd, args, env, 10000, sessionClient)
         sessionsList.add(session)
         terminalSessionTypes.add(type)
@@ -1786,6 +1752,7 @@ class MainActivity : AppCompatActivity() {
             terminalView.isFocusable = true
             terminalView.isFocusableInTouchMode = true
             terminalView.requestFocus()
+            forceTerminalResize(terminalView)
             updateSidebarTerminalsList()
         }
     }
@@ -3134,10 +3101,7 @@ class MainActivity : AppCompatActivity() {
         registerForContextMenu(terminalView)
         terminalViewContainer.addView(terminalView)
         terminalViewContainer.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
-            if (::terminalView.isInitialized) {
-                terminalView.requestLayout()
-                terminalView.invalidate()
-            }
+            forceTerminalResize(if (::terminalView.isInitialized) terminalView else null)
         }
         terminalWorkspaceLayout.addView(terminalViewContainer)
 
@@ -10899,39 +10863,11 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
+        maybeToastHeavyToolLaunch(type)
         val nld = applicationInfo.nativeLibraryDir
         val shell = File(nld, "libbash.so").absolutePath
         val cwd = File(filesDir, "home").absolutePath
-        
-        val envInit = "export PATH=/home/flux/.local/bin:/home/flux/bin:/home/flux/.cargo/bin:/home/flux/.nvm/versions/node/v26.*/bin:/usr/local/bin:/usr/bin:/bin:\\\$PATH && export NVM_DIR=/home/flux/.nvm && [ -s /home/flux/.nvm/nvm.sh ] && . /home/flux/.nvm/nvm.sh"
-        val toolCmd = when (type) {
-            "opencode"    -> "$envInit && mkdir -p $activeProjectPath && cd $activeProjectPath && exec opencode"
-            "codex"       -> "$envInit && mkdir -p $activeProjectPath && cd $activeProjectPath && exec codex"
-            "agy"         -> "$envInit && mkdir -p $activeProjectPath && cd $activeProjectPath && exec agy"
-            "claude-code" -> "$envInit && mkdir -p $activeProjectPath && cd $activeProjectPath && exec claude"
-            "qwen-code"   -> "$envInit && mkdir -p $activeProjectPath && cd $activeProjectPath && exec qwen"
-            "grok"        -> "$envInit && mkdir -p $activeProjectPath && cd $activeProjectPath && exec grok"
-            "kiro"        -> "$envInit && mkdir -p $activeProjectPath && cd $activeProjectPath && exec kiro-cli"
-            else          -> "mkdir -p $activeProjectPath && cd $activeProjectPath && exec zsh"
-        }
-
-        val isChrootTool = LinuxCommandBuilder.currentMethod == "chroot" && type != "shell"
-        val shellCmd = if (isChrootTool) {
-            val toolName = when (type) {
-                "opencode"    -> "opencode"
-                "codex"       -> "codex"
-                "agy"         -> "agy"
-                "claude-code" -> "claude"
-                "qwen-code"   -> "qwen"
-                "grok"        -> "grok"
-                "kiro"        -> "kiro-cli"
-                else          -> "zsh"
-            }
-            ChrootCommandBuilder.ensureLauncherScript(this)
-            "cd $activeProjectPath && /tmp/launch_tool.sh $toolName"
-        } else {
-            toolCmd
-        }
+        val shellCmd = ChrootCommandBuilder.buildToolShellCommand(this, type, activeProjectPath)
         val (args, envMap) = LinuxCommandBuilder.build(this, shellCmd)
         val env = envMap.map { "${it.key}=${it.value}" }.toTypedArray()
 
@@ -10972,15 +10908,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         val isChroot = LinuxCommandBuilder.currentMethod == "chroot"
-        val sessionExec = if (isChroot) {
-            if (ChrootCommandBuilder.ensureTermWrapper()) {
-                "/data/local/tmp/chroot_term_wrapper.sh"
-            } else {
-                "/system/bin/sh"
-            }
-        } else {
-            shell
-        }
+        val sessionExec = if (isChroot) ChrootCommandBuilder.SESSION_EXEC else shell
         val session = TerminalSession(sessionExec, cwd, args, env, 10000, sessionClient)
         workspaceSessions.add(session)
         workspaceTabNames.add(type)
@@ -11004,6 +10932,7 @@ class MainActivity : AppCompatActivity() {
         workspaceTerminalView.attachSession(session)
         workspaceTerminalView.onScreenUpdated()
         workspaceTerminalView.requestFocus()
+        forceTerminalResize(workspaceTerminalView)
         saveActiveProjectSessions()
         rebuildWorkspaceTabs()
     }
@@ -11419,10 +11348,7 @@ class MainActivity : AppCompatActivity() {
         workspaceTerminalView.setTerminalViewClient(workspaceViewClient)
         termViewContainer.addView(workspaceTerminalView)
         termViewContainer.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
-            if (::workspaceTerminalView.isInitialized) {
-                workspaceTerminalView.requestLayout()
-                workspaceTerminalView.invalidate()
-            }
+            forceTerminalResize(if (::workspaceTerminalView.isInitialized) workspaceTerminalView else null)
         }
         workspaceTerminalContainer.addView(termViewContainer)
 
@@ -12282,6 +12208,8 @@ class MainActivity : AppCompatActivity() {
         if (::scriptInstallTerminalView.isInitialized) {
             scriptInstallTerminalView.setTextSize(clamped)
         }
+        forceTerminalResize(if (::terminalView.isInitialized) terminalView else null)
+        forceTerminalResize(if (::workspaceTerminalView.isInitialized) workspaceTerminalView else null)
     }
 
     private fun setExtraKeysEnabled(enabled: Boolean) {
@@ -12295,6 +12223,39 @@ class MainActivity : AppCompatActivity() {
         if (::workspaceKeyboardToolbar.isInitialized) {
             workspaceKeyboardToolbar.visibility = if (enabled) View.VISIBLE else View.GONE
         }
+        forceTerminalResize(if (::terminalView.isInitialized) terminalView else null)
+        forceTerminalResize(if (::workspaceTerminalView.isInitialized) workspaceTerminalView else null)
+    }
+
+    /** Push view size to PTY and SIGWINCH session pid (chroot WINCH trap forwards to guest). */
+    private fun forceTerminalResize(tv: TerminalView?) {
+        tv ?: return
+        tv.post {
+            try {
+                if (tv.width <= 0 || tv.height <= 0) return@post
+                tv.updateSize()
+                tv.onScreenUpdated()
+                val session = tv.currentSession ?: return@post
+                if (!session.isRunning) return@post
+                val pid = session.pid
+                if (pid > 0) {
+                    try {
+                        Os.kill(pid, OsConstants.SIGWINCH)
+                    } catch (_: Exception) {
+                    }
+                }
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+    private fun maybeToastHeavyToolLaunch(type: String) {
+        if (type != "codex") return
+        Toast.makeText(
+            this,
+            "Loading Codex (~250MB). If blank, run: codex login",
+            Toast.LENGTH_LONG
+        ).show()
     }
 
     private fun buildTerminalSettingsCard(): View {
