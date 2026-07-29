@@ -135,6 +135,14 @@ class MainActivity : AppCompatActivity() {
     private lateinit var diffViewerContainer: LinearLayout
     private lateinit var scriptsScrollView: ScrollView
     private lateinit var scriptsLayout: LinearLayout
+    /** Repairs page: host | guest | chroot */
+    private var repairsSelectedTab: String = "host"
+    private var repairsRootOk: Boolean? = null
+    private var repairsListContainer: LinearLayout? = null
+    private var repairsTabHostBtn: TextView? = null
+    private var repairsTabGuestBtn: TextView? = null
+    private var repairsTabChrootBtn: TextView? = null
+    private var repairsRootBadge: TextView? = null
     private lateinit var prootSettingsScrollView: ScrollView
     private lateinit var chrootSettingsScrollView: ScrollView
 
@@ -906,6 +914,7 @@ class MainActivity : AppCompatActivity() {
             ID_SCRIPTS -> {
                 if (::scriptsScrollView.isInitialized) {
                     scriptsScrollView.visibility = View.VISIBLE
+                    refreshRepairsPage()
                 }
             }
             ID_SCRIPT_INSTALL -> {
@@ -2878,23 +2887,145 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /** App terminal → global method; workspace → active project method. */
+    private fun resolveAttachMethod(isWorkspace: Boolean): String {
+        return if (isWorkspace) {
+            activeProjectMethod.ifBlank { LinuxCommandBuilder.currentMethod }
+        } else {
+            LinuxCommandBuilder.currentMethod
+        }
+    }
+
+    private fun mimeToImageExt(mime: String?): String {
+        val m = mime?.lowercase(Locale.US) ?: return "jpg"
+        return when {
+            m.contains("png") -> "png"
+            m.contains("webp") -> "webp"
+            m.contains("gif") -> "gif"
+            m.contains("jpeg") || m.contains("jpg") -> "jpg"
+            m.startsWith("image/") -> m.substringAfterLast('/').substringBefore(';').ifBlank { "jpg" }
+            else -> "jpg"
+        }
+    }
+
+    private fun setImagePathClipboard(guestPath: String) {
+        val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        cm.setPrimaryClip(ClipData.newPlainText("image_path", guestPath))
+    }
+
+    /**
+     * Stage under app UID, then install into proot rootfs (direct) or chroot (root cp).
+     * Guest clipboard path is always a Debian path when verified.
+     */
     private fun handleImageAttachment(uri: Uri, isWorkspace: Boolean) {
-        try {
-            val ext = contentResolver.getType(uri)?.substringAfterLast('/')?.substringBefore(';') ?: "jpg"
-            val fname = "attach_${System.currentTimeMillis()}.$ext"
-            val guestHomeDir = ProjectPathResolver.guestHomeDir(this)
-            val targetDir = if (guestHomeDir.exists() && guestHomeDir.isDirectory) guestHomeDir else File(filesDir, "home").also { it.mkdirs() }
-            val destFile = File(targetDir, fname)
-            contentResolver.openInputStream(uri)?.use { inp ->
-                FileOutputStream(destFile).use { out -> inp.copyTo(out) }
+        val method = resolveAttachMethod(isWorkspace)
+        val mime = contentResolver.getType(uri)
+        if (mime != null && !mime.startsWith("image/")) {
+            Toast.makeText(this, "Not an image", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val ext = mimeToImageExt(mime)
+        val fname = "attach_${System.currentTimeMillis()}.$ext"
+        val guestPath = if (isWorkspace && activeProjectPath.isNotBlank()) {
+            "${activeProjectPath.trimEnd('/')}/$fname"
+        } else {
+            "/home/flux/$fname"
+        }
+
+        executor.execute {
+            try {
+                val stageDir = ProjectPathResolver.stageAttachDir(this@MainActivity)
+                val stageFile = File(stageDir, fname)
+                contentResolver.openInputStream(uri)?.use { inp ->
+                    FileOutputStream(stageFile).use { out -> inp.copyTo(out) }
+                } ?: run {
+                    mainHandler.post {
+                        Toast.makeText(this@MainActivity, "Failed to read image", Toast.LENGTH_SHORT).show()
+                    }
+                    return@execute
+                }
+                if (!stageFile.isFile || stageFile.length() <= 0L) {
+                    mainHandler.post {
+                        Toast.makeText(this@MainActivity, "Image copy empty", Toast.LENGTH_SHORT).show()
+                    }
+                    return@execute
+                }
+
+                val finalGuestPath: String
+                if (method == "chroot") {
+                    if (!RootShell.isRootAvailable()) {
+                        finalGuestPath = ProjectPathResolver.stageAttachGuestPath(fname)
+                        Log.w(
+                            "ImageAttach",
+                            "chroot no root; bind fallback path=$finalGuestPath stage=${stageFile.absolutePath}"
+                        )
+                        mainHandler.post {
+                            setImagePathClipboard(finalGuestPath)
+                            Toast.makeText(
+                                this@MainActivity,
+                                "No root for /home/flux — using $finalGuestPath",
+                                Toast.LENGTH_LONG
+                            ).show()
+                        }
+                        return@execute
+                    }
+                    val result = RootShell.copyIntoChroot(
+                        hostSrc = stageFile,
+                        guestAbsPath = guestPath,
+                        chrootPath = ChrootCommandBuilder.CHROOT_PATH
+                    )
+                    if (result.exitCode != 0) {
+                        Log.e(
+                            "ImageAttach",
+                            "chroot cp fail code=${result.exitCode} out=${result.stdout.take(200)}"
+                        )
+                        mainHandler.post {
+                            Toast.makeText(
+                                this@MainActivity,
+                                "Chroot copy failed (exit ${result.exitCode})",
+                                Toast.LENGTH_LONG
+                            ).show()
+                        }
+                        return@execute
+                    }
+                    stageFile.delete()
+                    finalGuestPath = guestPath
+                } else {
+                    val hostTarget = ProjectPathResolver.resolve(this@MainActivity, guestPath, method)
+                    hostTarget.parentFile?.mkdirs()
+                    stageFile.copyTo(hostTarget, overwrite = true)
+                    if (!hostTarget.isFile || hostTarget.length() <= 0L) {
+                        mainHandler.post {
+                            Toast.makeText(this@MainActivity, "Proot write failed", Toast.LENGTH_SHORT).show()
+                        }
+                        return@execute
+                    }
+                    stageFile.delete()
+                    finalGuestPath = guestPath
+                }
+
+                Log.i(
+                    "ImageAttach",
+                    "ok method=$method workspace=$isWorkspace guest=$finalGuestPath"
+                )
+                mainHandler.post {
+                    setImagePathClipboard(finalGuestPath)
+                    Toast.makeText(
+                        this@MainActivity,
+                        "Copied: $finalGuestPath",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+            } catch (e: Exception) {
+                Log.e("ImageAttach", "Failed to copy image", e)
+                mainHandler.post {
+                    Toast.makeText(
+                        this@MainActivity,
+                        "Attach failed: ${e.message}",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
             }
-            // If saved to host files/home fallback, guest path maps via bound host path
-            val guestPath = if (targetDir == guestHomeDir) "/home/flux/$fname" else "/data/data/com.ivarna.nativecode/files/home/$fname"
-            val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-            cm.setPrimaryClip(ClipData.newPlainText("image_path", guestPath))
-            Toast.makeText(this@MainActivity, "Image path copied", Toast.LENGTH_SHORT).show()
-        } catch (e: Exception) {
-            Log.e("ImageAttach", "Failed to copy image", e)
         }
     }
 
@@ -3404,7 +3535,7 @@ class MainActivity : AppCompatActivity() {
         settingsHubLayout.addView(buildChrootSettingsSectionButton())
         settingsHubLayout.addView(spacer(16))
 
-        // System Scripts
+        // Repairs (host / guest / chroot fix scripts)
         settingsHubLayout.addView(buildScriptsSectionButton())
         settingsHubLayout.addView(spacer(16))
 
@@ -3460,7 +3591,7 @@ class MainActivity : AppCompatActivity() {
             }
             
             val icon = ImageView(this@MainActivity).apply {
-                setImageResource(R.drawable.ic_history)
+                setImageResource(R.drawable.ic_build)
                 setColorFilter(NC.PRIMARY)
                 layoutParams = LinearLayout.LayoutParams(dp(24), dp(24)).apply { rightMargin = dp(12) }
             }
@@ -3469,13 +3600,13 @@ class MainActivity : AppCompatActivity() {
                 layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
             }
             val name = TextView(this@MainActivity).apply {
-                text = "SYSTEM SCRIPTS"
+                text = "REPAIRS"
                 textSize = 15f
                 setTextColor(Color.WHITE)
                 typeface = Typeface.DEFAULT_BOLD
             }
             val sub = TextView(this@MainActivity).apply {
-                text = "Run installation, configuration, or control scripts"
+                text = "Re-run host, guest, and chroot fix scripts"
                 textSize = 11f
                 setTextColor(NC.ON_SURF_VAR)
                 typeface = Typeface.MONOSPACE
@@ -3740,154 +3871,503 @@ class MainActivity : AppCompatActivity() {
         scriptsScrollView = ScrollView(this).apply {
             layoutParams = FrameLayout.LayoutParams(MATCH, MATCH)
             visibility = View.GONE
+            setBackgroundColor(NC.BG)
         }
         scriptsLayout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(16))
+            setPadding(dp(16), dp(16), dp(16), dp(24))
         }
         scriptsScrollView.addView(scriptsLayout)
 
-        val header = TextView(this).apply {
-            text = "System Scripts"
-            textSize = 20f
+        // Header: back + icon + title (match chroot settings)
+        val headerCol = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, 0, 0, dp(12))
+        }
+        val headerTitleRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val pageBackBtn = ImageView(this).apply {
+            setImageResource(R.drawable.ic_arrow_back)
+            setColorFilter(NC.PRIMARY)
+            setPadding(dp(4), dp(4), dp(4), dp(4))
+            layoutParams = LinearLayout.LayoutParams(dp(36), dp(36)).apply { rightMargin = dp(8) }
+            contentDescription = "Back"
+            setOnClickListener {
+                if (pageStack.isNotEmpty() && pageStack.peek() == ID_SCRIPTS) {
+                    pageStack.pop()
+                }
+                navigateToPage(ID_SETTINGS, false)
+            }
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                setColor(NC.SURFACE_CONTAINER)
+                setStroke(dp(1), NC.OUTLINE_VAR)
+            }
+        }
+        val headerIcon = ImageView(this).apply {
+            setImageResource(R.drawable.ic_build)
+            setColorFilter(NC.PRIMARY)
+            layoutParams = LinearLayout.LayoutParams(dp(26), dp(26)).apply { rightMargin = dp(10) }
+        }
+        val titleTv = TextView(this).apply {
+            text = "REPAIRS"
+            textSize = 22f
             setTextColor(NC.PRIMARY)
             typeface = Typeface.DEFAULT_BOLD
-            setPadding(0, 0, 0, dp(16))
+            layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
         }
-        scriptsLayout.addView(header)
-
-        // --- Host Scripts Section ---
-        val hostHeader = TextView(this).apply {
-            text = "Host (Native Termux) Scripts"
-            textSize = 14f
-            setTextColor(NC.ON_SURFACE)
-            typeface = Typeface.DEFAULT_BOLD
-            setPadding(0, dp(8), 0, dp(8))
-        }
-        scriptsLayout.addView(hostHeader)
-
-        val hostScripts = arrayOf(
-            "setup_termux.sh" to "Setup basic environment and directories on host.",
-            "flux_install.sh" to "One-click: install Debian proot + setup_debian_family (user/xfce/vnc).",
-            "start_gui.sh" to "Start desktop environment and display services on host.",
-            "stop_gui.sh" to "Terminate running GUI sessions safely on host."
-        )
-
-        for ((name, desc) in hostScripts) {
-            scriptsLayout.addView(buildScriptCard(name, desc, listOf("RUN ON HOST" to "host")))
-        }
-
-        scriptsLayout.addView(spacer(16))
-
-        // --- Guest (Debian) Scripts Section ---
-        val guestHeader = TextView(this).apply {
-            text = "Guest (Debian Container) Scripts"
-            textSize = 14f
-            setTextColor(NC.ON_SURFACE)
-            typeface = Typeface.DEFAULT_BOLD
-            setPadding(0, dp(8), 0, dp(8))
-        }
-        scriptsLayout.addView(guestHeader)
-
-        val guestSubHeader = TextView(this).apply {
-            text = "These scripts configure Debian environment and run on both PRoot and Chroot."
+        headerTitleRow.addView(pageBackBtn)
+        headerTitleRow.addView(headerIcon)
+        headerTitleRow.addView(titleTv)
+        val subTitleTv = TextView(this).apply {
+            text = "// RE-RUN SETUP & FIX SCRIPTS"
             textSize = 11f
             setTextColor(NC.ON_SURF_VAR)
             typeface = Typeface.MONOSPACE
-            setPadding(0, 0, 0, dp(8))
+            setPadding(0, dp(4), 0, dp(8))
         }
-        scriptsLayout.addView(guestSubHeader)
-
-        val guestScripts = arrayOf(
-            "setup_debian_family.sh" to "Create users and VNC startup configurations in guest.",
-            "setup_customization_debian.sh" to "Apply dark themes and custom packages inside Debian guest.",
-            "setup_hw_accel_debian.sh" to "Configure GPU accel: Turnip (Snapdragon/Adreno) or VirGL (others).",
-            "setup_cli_tools.sh" to "Install Node.js/NVM and AI CLI tools (Aider, Claude, Cline) in guest."
-        )
-
-        for ((name, desc) in guestScripts) {
-            scriptsLayout.addView(buildScriptCard(name, desc, listOf("RUN IN PROOT" to "proot", "RUN IN CHROOT" to "chroot_guest")))
+        val divider = View(this).apply {
+            layoutParams = LinearLayout.LayoutParams(MATCH, dp(1)).apply { bottomMargin = dp(12) }
+            setBackgroundColor(NC.OUTLINE_VAR)
         }
+        headerCol.addView(headerTitleRow)
+        headerCol.addView(subTitleTv)
+        headerCol.addView(divider)
+        scriptsLayout.addView(headerCol)
 
-        scriptsLayout.addView(spacer(16))
+        // Root probe badge
+        repairsRootBadge = TextView(this).apply {
+            text = "ROOT …"
+            textSize = 10f
+            typeface = Typeface.MONOSPACE
+            setTextColor(NC.ON_SURF_VAR)
+            setPadding(dp(10), dp(6), dp(10), dp(6))
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                setColor(NC.SURFACE_LOWEST)
+                setStroke(dp(1), NC.OUTLINE_VAR)
+            }
+            layoutParams = LinearLayout.LayoutParams(WRAP, WRAP).apply { bottomMargin = dp(12) }
+        }
+        scriptsLayout.addView(repairsRootBadge)
 
-        // --- Chroot Host Scripts Section ---
-        val chrootHeader = TextView(this).apply {
-            text = "Chroot (KernelSU / Magisk Root) Scripts"
-            textSize = 14f
-            setTextColor(NC.SECONDARY)
+        // Segment tabs: HOST | GUEST | CHROOT*
+        val tabsRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(16) }
+        }
+        repairsTabHostBtn = makeRepairsTabBtn("HOST") {
+            repairsSelectedTab = "host"
+            applyRepairsTabStyles()
+            populateRepairsList()
+        }
+        repairsTabGuestBtn = makeRepairsTabBtn("GUEST") {
+            repairsSelectedTab = "guest"
+            applyRepairsTabStyles()
+            populateRepairsList()
+        }
+        repairsTabChrootBtn = makeRepairsTabBtn("CHROOT") {
+            repairsSelectedTab = "chroot"
+            applyRepairsTabStyles()
+            populateRepairsList()
+        }
+        tabsRow.addView(repairsTabHostBtn, LinearLayout.LayoutParams(0, WRAP, 1f).apply { rightMargin = dp(6) })
+        tabsRow.addView(repairsTabGuestBtn, LinearLayout.LayoutParams(0, WRAP, 1f).apply { rightMargin = dp(6) })
+        tabsRow.addView(repairsTabChrootBtn, LinearLayout.LayoutParams(0, WRAP, 1f))
+        scriptsLayout.addView(tabsRow)
+
+        repairsListContainer = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
+        }
+        scriptsLayout.addView(repairsListContainer)
+
+        applyRepairsTabStyles()
+        populateRepairsList()
+    }
+
+    private fun makeRepairsTabBtn(label: String, onClick: () -> Unit): TextView {
+        return TextView(this).apply {
+            text = label
+            textSize = 12f
             typeface = Typeface.DEFAULT_BOLD
-            setPadding(0, dp(8), 0, dp(8))
+            gravity = Gravity.CENTER
+            setPadding(dp(10), dp(12), dp(10), dp(12))
+            setOnClickListener { onClick() }
         }
-        scriptsLayout.addView(chrootHeader)
+    }
 
-        val chrootScripts = arrayOf(
-            "setup_debian13_chroot.sh" to "Install Debian 13 (Trixie) Chroot environment (Requires Root).",
-            "uninstall_debian13_chroot.sh" to "Uninstall Debian 13 Chroot environment and unmount all filesystems."
-        )
-
-        for ((name, desc) in chrootScripts) {
-            scriptsLayout.addView(buildScriptCard(name, desc, listOf("RUN CHROOT SCRIPT (ROOT)" to "chroot_host")))
+    private fun applyRepairsTabStyles() {
+        fun style(btn: TextView?, selected: Boolean) {
+            btn ?: return
+            btn.setTextColor(if (selected) NC.ON_PRIMARY else NC.ON_SURF_VAR)
+            btn.background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                setColor(if (selected) NC.PRIMARY else NC.SURFACE_LOW)
+                setStroke(dp(1), if (selected) NC.PRIMARY else NC.OUTLINE_VAR)
+            }
         }
+        style(repairsTabHostBtn, repairsSelectedTab == "host")
+        style(repairsTabGuestBtn, repairsSelectedTab == "guest")
+        style(repairsTabChrootBtn, repairsSelectedTab == "chroot")
+        val chrootOk = repairsRootOk == true
+        repairsTabChrootBtn?.visibility = if (chrootOk) View.VISIBLE else View.GONE
+        if (!chrootOk && repairsSelectedTab == "chroot") {
+            repairsSelectedTab = "host"
+            style(repairsTabHostBtn, true)
+            style(repairsTabChrootBtn, false)
+        }
+    }
+
+    private fun refreshRepairsPage() {
+        repairsRootBadge?.text = "ROOT …"
+        repairsRootBadge?.setTextColor(NC.ON_SURF_VAR)
+        executor.execute {
+            val ok = try {
+                RootShell.isRootAvailable()
+            } catch (_: Exception) {
+                false
+            }
+            mainHandler.post {
+                repairsRootOk = ok
+                repairsRootBadge?.text = if (ok) "ROOT OK" else "ROOT UNAVAILABLE"
+                repairsRootBadge?.setTextColor(if (ok) NC.PRIMARY else NC.SECONDARY)
+                applyRepairsTabStyles()
+                populateRepairsList()
+            }
+        }
+    }
+
+    private fun populateRepairsList() {
+        val list = repairsListContainer ?: return
+        list.removeAllViews()
+
+        when (repairsSelectedTab) {
+            "host" -> {
+                // setup only — start/stop GUI live elsewhere (home / tools)
+                val hostScripts = arrayOf(
+                    "setup_termux.sh" to "Setup basic environment and directories on host.",
+                    "flux_install.sh" to "One-click: install Debian proot + setup_debian_family (user/xfce/vnc)."
+                )
+                for ((name, desc) in hostScripts) {
+                    list.addView(
+                        buildScriptCard(
+                            name = name,
+                            desc = desc,
+                            badge = "HOST",
+                            runLabel = "RUN",
+                            onRun = { runScriptInTerminal(name, "host") }
+                        )
+                    )
+                }
+            }
+            "guest" -> {
+                val rootOk = repairsRootOk == true
+                val hint = TextView(this).apply {
+                    text = if (rootOk) {
+                        "// DEBIAN GUEST — RUN ASKS PROOT OR CHROOT"
+                    } else {
+                        "// DEBIAN GUEST — PROOT ONLY (NO ROOT)"
+                    }
+                    textSize = 10f
+                    setTextColor(NC.ON_SURF_VAR)
+                    typeface = Typeface.MONOSPACE
+                    setPadding(0, 0, 0, dp(10))
+                }
+                list.addView(hint)
+                val guestScripts = arrayOf(
+                    "setup_debian_family.sh" to "Create users and VNC startup configurations in guest.",
+                    "setup_customization_debian.sh" to "Apply dark themes and custom packages inside Debian guest.",
+                    "setup_hw_accel_debian.sh" to "Configure GPU accel: Turnip (Snapdragon/Adreno) or VirGL (others).",
+                    "setup_cli_tools.sh" to "Install Node.js/NVM and AI CLI tools (Aider, Claude, Cline) in guest."
+                )
+                for ((name, desc) in guestScripts) {
+                    list.addView(
+                        buildScriptCard(
+                            name = name,
+                            desc = desc,
+                            badge = "GUEST",
+                            runLabel = "RUN",
+                            onRun = { runGuestRepairScript(name) }
+                        )
+                    )
+                }
+            }
+            "chroot" -> {
+                if (repairsRootOk != true) {
+                    val msg = TextView(this).apply {
+                        text = "Root required for chroot install script."
+                        textSize = 12f
+                        setTextColor(NC.SECONDARY)
+                        typeface = Typeface.MONOSPACE
+                    }
+                    list.addView(msg)
+                    return
+                }
+                // install only — uninstall stays on Chroot Settings
+                list.addView(
+                    buildScriptCard(
+                        name = "setup_debian13_chroot.sh",
+                        desc = "Install Debian 13 (Trixie) Chroot environment (Requires Root).",
+                        badge = "ROOT",
+                        runLabel = "RUN",
+                        onRun = { runScriptInTerminal("setup_debian13_chroot.sh", "chroot_host") }
+                    )
+                )
+            }
+        }
+    }
+
+    /**
+     * Guest Debian scripts run on proot and/or chroot.
+     * With root: pick target. Without root: proot only.
+     */
+    private fun runGuestRepairScript(scriptName: String) {
+        if (repairsRootOk == true) {
+            showGuestRunTargetDialog(scriptName)
+        } else {
+            runScriptInTerminal(scriptName, "proot")
+        }
+    }
+
+    /** Brutalist picker: PROOT vs CHROOT for guest repair scripts. */
+    private fun showGuestRunTargetDialog(scriptName: String) {
+        val dialog = android.app.Dialog(this, android.R.style.Theme_Translucent_NoTitleBar)
+        dialog.setCancelable(true)
+
+        val scrim = FrameLayout(this).apply {
+            setBackgroundColor(Color.parseColor("#CC0A0A0A"))
+            layoutParams = ViewGroup.LayoutParams(MATCH, MATCH)
+            setOnClickListener { dialog.dismiss() }
+        }
+
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = cyberBrutalistBg(
+                fillColor = NC.SURFACE_LOW,
+                strokeColor = NC.OUTLINE_VAR,
+                shadowColor = NC.SHADOW_DARK,
+                offsetDp = 6,
+                cornerRadiusDp = 0,
+                rightFaceColor = Color.parseColor("#3C4A3F")
+            )
+            setPadding(dp(20), dp(20), dp(20), dp(20))
+            layoutParams = FrameLayout.LayoutParams(MATCH, WRAP).apply {
+                gravity = Gravity.CENTER
+                leftMargin = dp(24)
+                rightMargin = dp(24)
+            }
+            isClickable = true
+        }
+
+        card.addView(TextView(this).apply {
+            text = "RUN WHERE?"
+            textSize = 16f
+            setTextColor(Color.WHITE)
+            typeface = Typeface.MONOSPACE
+            paint.isFakeBoldText = true
+            setPadding(0, 0, 0, dp(8))
+        })
+        card.addView(View(this).apply {
+            layoutParams = LinearLayout.LayoutParams(MATCH, dp(1)).apply { bottomMargin = dp(12) }
+            setBackgroundColor(NC.OUTLINE_VAR)
+        })
+        card.addView(TextView(this).apply {
+            text = scriptName
+            textSize = 12f
+            setTextColor(NC.PRIMARY)
+            typeface = Typeface.MONOSPACE
+            setPadding(0, 0, 0, dp(6))
+        })
+        card.addView(TextView(this).apply {
+            text = "Debian guest scripts work on proot and chroot."
+            textSize = 12f
+            setTextColor(NC.ON_SURF_VAR)
+            typeface = Typeface.MONOSPACE
+            setPadding(0, 0, 0, dp(16))
+        })
+
+        fun targetBtn(
+            label: String,
+            fill: Int,
+            textColor: Int,
+            mode: String,
+            endMargin: Int
+        ): TextView {
+            return TextView(this).apply {
+                text = label
+                textSize = 12f
+                setTextColor(textColor)
+                typeface = Typeface.DEFAULT_BOLD
+                gravity = Gravity.CENTER
+                background = cyberBrutalistBg(
+                    fillColor = fill,
+                    strokeColor = NC.OUTLINE_VAR,
+                    shadowColor = NC.SHADOW_DARK,
+                    offsetDp = 4,
+                    cornerRadiusDp = 0
+                )
+                setPadding(dp(12), dp(14), dp(12), dp(14))
+                layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f).apply {
+                    if (endMargin > 0) rightMargin = endMargin
+                }
+                setOnClickListener {
+                    dialog.dismiss()
+                    runScriptInTerminal(scriptName, mode)
+                }
+            }
+        }
+
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            addView(
+                targetBtn(
+                    "PROOT",
+                    NC.PRIMARY,
+                    NC.ON_PRIMARY,
+                    "proot",
+                    dp(10)
+                )
+            )
+            addView(
+                targetBtn(
+                    "CHROOT",
+                    NC.SURFACE_CONTAINER,
+                    Color.WHITE,
+                    "chroot_guest",
+                    0
+                )
+            )
+        }
+        card.addView(row)
+
+        card.addView(TextView(this).apply {
+            text = "CANCEL"
+            textSize = 11f
+            setTextColor(NC.ON_SURF_VAR)
+            typeface = Typeface.MONOSPACE
+            gravity = Gravity.CENTER
+            setPadding(0, dp(16), 0, 0)
+            setOnClickListener { dialog.dismiss() }
+        })
+
+        scrim.addView(card)
+        dialog.setContentView(scrim)
+        dialog.show()
     }
 
     private fun buildScriptCard(
         name: String,
         desc: String,
-        actions: List<Pair<String, String>>
+        badge: String,
+        runLabel: String,
+        onRun: () -> Unit,
+        destructive: Boolean = false
     ): View {
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            background = roundedBg(NC.SURFACE, NC.BORDER, dp(12))
-            setPadding(dp(16))
+            background = cyberBrutalistBg(
+                fillColor = NC.SURFACE_LOW,
+                strokeColor = if (destructive) NC.ERROR else NC.OUTLINE_VAR,
+                shadowColor = NC.SHADOW_DARK,
+                offsetDp = 6,
+                cornerRadiusDp = 0,
+                rightFaceColor = NC.OUTLINE_VAR
+            )
+            setPadding(dp(16), dp(14), dp(16), dp(14))
             layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply {
-                bottomMargin = dp(12)
+                bottomMargin = dp(14)
             }
 
+            val titleRow = LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+            }
             val title = TextView(this@MainActivity).apply {
                 text = name
-                textSize = 15f
-                setTextColor(NC.SECONDARY)
+                textSize = 14f
+                setTextColor(NC.ON_SURFACE)
                 typeface = Typeface.MONOSPACE
-                setPadding(0, 0, 0, dp(4))
+                layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
             }
+            val badgeTv = TextView(this@MainActivity).apply {
+                text = badge
+                textSize = 10f
+                typeface = Typeface.MONOSPACE
+                setTextColor(if (destructive) NC.ERROR else NC.PRIMARY)
+                setPadding(dp(8), dp(2), dp(8), dp(2))
+                background = GradientDrawable().apply {
+                    shape = GradientDrawable.RECTANGLE
+                    setColor(NC.SURFACE_LOWEST)
+                    setStroke(dp(1), if (destructive) NC.ERROR else NC.OUTLINE_VAR)
+                }
+            }
+            titleRow.addView(title)
+            titleRow.addView(badgeTv)
+
             val descTv = TextView(this@MainActivity).apply {
                 text = desc
-                textSize = 12f
+                textSize = 11f
                 setTextColor(NC.ON_SURF_VAR)
-                setPadding(0, 0, 0, dp(10))
+                typeface = Typeface.MONOSPACE
+                setPadding(0, dp(6), 0, dp(12))
             }
-            addView(title)
-            addView(descTv)
 
-            val actionRow = LinearLayout(this@MainActivity).apply {
-                orientation = LinearLayout.HORIZONTAL
-            }
-            for ((label, mode) in actions) {
-                val btn = TextView(this@MainActivity).apply {
-                    text = label
-                    textSize = 11f
-                    setTextColor(Color.WHITE)
-                    typeface = Typeface.DEFAULT_BOLD
-                    gravity = Gravity.CENTER
-                    background = cyberBrutalistBg(
-                        fillColor = if (mode.contains("chroot")) NC.SURFACE_CONTAINER else NC.PRIMARY,
-                        strokeColor = NC.OUTLINE_VAR,
-                        shadowColor = NC.SHADOW_DARK,
-                        offsetDp = 3,
-                        cornerRadiusDp = 4
-                    )
-                    setPadding(dp(12), dp(6), dp(12), dp(6))
-                    layoutParams = LinearLayout.LayoutParams(WRAP, WRAP).apply {
-                        rightMargin = dp(10)
-                    }
-                    setOnClickListener {
-                        runScriptInTerminal(name, mode)
-                    }
+            val btnFill = if (destructive) NC.ERROR_CON else NC.PRIMARY
+            val btnText = if (destructive) NC.ON_ERROR_CON else NC.ON_PRIMARY
+            val btnStroke = if (destructive) NC.ERROR else NC.OUTLINE_VAR
+            val runBtn = TextView(this@MainActivity).apply {
+                text = runLabel
+                textSize = 12f
+                setTextColor(btnText)
+                typeface = Typeface.DEFAULT_BOLD
+                gravity = Gravity.CENTER
+                background = cyberBrutalistBg(
+                    fillColor = btnFill,
+                    strokeColor = btnStroke,
+                    shadowColor = NC.SHADOW_DARK,
+                    offsetDp = 4,
+                    cornerRadiusDp = 0
+                )
+                setPadding(dp(16), dp(10), dp(16), dp(10))
+                layoutParams = LinearLayout.LayoutParams(WRAP, WRAP).apply {
+                    gravity = Gravity.END
                 }
-                actionRow.addView(btn)
+                setOnClickListener { onRun() }
+                setOnTouchListener { v, event ->
+                    when (event.action) {
+                        MotionEvent.ACTION_DOWN -> {
+                            v.translationX = dp(3).toFloat()
+                            v.translationY = dp(3).toFloat()
+                            v.background = cyberBrutalistBg(
+                                fillColor = btnFill,
+                                strokeColor = btnStroke,
+                                shadowColor = NC.SHADOW_DARK,
+                                offsetDp = 2,
+                                cornerRadiusDp = 0
+                            )
+                        }
+                        MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                            v.translationX = 0f
+                            v.translationY = 0f
+                            v.background = cyberBrutalistBg(
+                                fillColor = btnFill,
+                                strokeColor = btnStroke,
+                                shadowColor = NC.SHADOW_DARK,
+                                offsetDp = 4,
+                                cornerRadiusDp = 0
+                            )
+                        }
+                    }
+                    false
+                }
             }
-            addView(actionRow)
+
+            addView(titleRow)
+            addView(descTv)
+            addView(runBtn)
         }
     }
 
@@ -7502,7 +7982,7 @@ class MainActivity : AppCompatActivity() {
         val intent = Intent(this, OnboardingActivity::class.java).apply {
             putExtra("force_onboarding", true)
             putExtra("preferred_isolation", "chroot")
-            putExtra("target_page", 3) // Environment Setup (full install log)
+            putExtra("target_page", 4) // Environment Setup (full install log)
             putExtra("auto_start_setup", true)
         }
         startActivity(intent)

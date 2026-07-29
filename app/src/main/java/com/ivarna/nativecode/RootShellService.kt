@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import com.ivarna.nativecode.terminal.ChrootCommandBuilder
 import java.io.BufferedReader
 import java.io.File
 import java.io.FileOutputStream
@@ -107,6 +108,41 @@ object RootShell {
             Log.w(TAG, "capture failed: ${e.message}")
             CaptureResult(-1, "")
         }
+    }
+
+    /**
+     * Copy [hostSrc] into the Debian chroot at [guestAbsPath] (e.g. `/home/flux/attach_x.png`).
+     * mkdir -p parent, cp -f, chown flux, chmod 644, verify file exists.
+     * Background thread only.
+     */
+    fun copyIntoChroot(
+        hostSrc: File,
+        guestAbsPath: String,
+        chrootPath: String = ChrootCommandBuilder.CHROOT_PATH,
+        timeoutMs: Long = 30_000L
+    ): CaptureResult {
+        if (!hostSrc.isFile || hostSrc.length() <= 0L) {
+            return CaptureResult(-1, "missing or empty source")
+        }
+        val rel = guestAbsPath.removePrefix("/").trim()
+        if (rel.isEmpty() || rel.contains("..")) {
+            return CaptureResult(-1, "invalid guest path")
+        }
+        val dest = "$chrootPath/$rel"
+        fun shEsc(s: String): String = s.replace("'", "'\\''")
+        val parent = dest.substringBeforeLast('/', missingDelimiterValue = chrootPath)
+        val cmd = buildString {
+            append("mkdir -p '").append(shEsc(parent)).append("' && ")
+            append("cp -f '").append(shEsc(hostSrc.absolutePath)).append("' '").append(shEsc(dest)).append("' && ")
+            append("(chown flux:flux '").append(shEsc(dest)).append("' 2>/dev/null || ")
+            append("chown 1000:1000 '").append(shEsc(dest)).append("' 2>/dev/null || true) && ")
+            append("chmod 644 '").append(shEsc(dest)).append("' && ")
+            append("test -f '").append(shEsc(dest)).append("' && ")
+            append("stat -c %s '").append(shEsc(dest)).append("' 2>/dev/null || ")
+            append("wc -c < '").append(shEsc(dest)).append("'")
+        }
+        Log.i(TAG, "copyIntoChroot src=${hostSrc.absolutePath} dest=$dest")
+        return captureResult(cmd, timeoutMs)
     }
 
     /**

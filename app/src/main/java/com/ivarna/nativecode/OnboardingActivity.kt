@@ -41,7 +41,7 @@ class OnboardingActivity : AppCompatActivity() {
     private lateinit var rootLayout: FrameLayout
     private lateinit var pageContainer: FrameLayout
 
-    // Onboarding page index (0..4): intro → slideshow → isolation → full setup → complete
+    // Onboarding pages: 0 intro → 1 slideshow → 2 requirements → 3 isolation → 4 full setup → 5 complete
     private var currentPageIndex = 0
 
     private val executor = Executors.newCachedThreadPool()
@@ -55,14 +55,14 @@ class OnboardingActivity : AppCompatActivity() {
     // "proot" (default, rootless) or "chroot" (requires KernelSU/Magisk root)
     private var selectedIsolationMethod = "proot"
 
-    // page 3 (Full Environment Setup: base + AI CLIs) views
+    // page 4 (Full Environment Setup: base + AI CLIs) views
     private lateinit var baseStatusText: TextView
     private lateinit var baseProgressBar: ProgressBar
     private lateinit var baseLogText: TextView
     private lateinit var baseLogScroll: ScrollView
     private lateinit var baseNextBtn: View
 
-    // page 4 (Complete) views
+    // page 5 (Complete) views
     private lateinit var completeText: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -121,7 +121,7 @@ class OnboardingActivity : AppCompatActivity() {
         showPage(startPage)
 
         // Jump straight into Environment Setup and run full install chain
-        if (intent.getBooleanExtra("auto_start_setup", false) && startPage == 3) {
+        if (intent.getBooleanExtra("auto_start_setup", false) && startPage == 4) {
             if (!isDebianBaseSetupStarted) {
                 isDebianBaseSetupStarted = true
                 runDebianBaseSetup()
@@ -136,9 +136,10 @@ class OnboardingActivity : AppCompatActivity() {
         val view = when (index) {
             0 -> buildIntroPage()
             1 -> buildSlideshowPage()
-            2 -> buildIsolationPage()
-            3 -> buildDebianBasePage()
-            4, 5 -> buildCompletePage() // 5 = legacy target_page after AI-tools page removed
+            2 -> buildRequirementsPage()
+            3 -> buildIsolationPage()
+            4 -> buildDebianBasePage()
+            5, 6 -> buildCompletePage() // 6 = legacy target_page after page insert
             else -> buildIntroPage()
         }
 
@@ -234,9 +235,11 @@ class OnboardingActivity : AppCompatActivity() {
 
     // ── Page 2: Feature Slideshow ─────────────────────────────────────────────
     private fun buildSlideshowPage(): View {
+        val shadowOff = 6
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(20), dp(20), dp(20))
+            // margin-mobile 16px (ui_design.md)
+            setPadding(dp(16), dp(16), dp(16), dp(16))
             layoutParams = FrameLayout.LayoutParams(MATCH, MATCH)
         }
 
@@ -244,9 +247,12 @@ class OnboardingActivity : AppCompatActivity() {
 
         val contentFrame = FrameLayout(this).apply {
             layoutParams = LinearLayout.LayoutParams(MATCH, 0, 1f).apply {
-                topMargin = dp(12)
-                bottomMargin = dp(16)
+                topMargin = dp(8)
+                // Bottom gap leaves room for card's 6dp extrusion + breathing room
+                bottomMargin = dp(12 + shadowOff)
             }
+            clipChildren = false
+            clipToPadding = false
         }
         root.addView(contentFrame)
 
@@ -296,122 +302,118 @@ class OnboardingActivity : AppCompatActivity() {
         )
 
         var activeSlide = 0
-        var autoRunnable: Runnable? = null
 
-        fun renderMockup(type: PreviewType): View {
-            val box = FrameLayout(this).apply {
-                background = cyberBrutalistBg(
-                    fillColor = Color.parseColor("#121212"),
-                    strokeColor = NC.BORDER,
-                    shadowColor = NC.SURFACE_BRIGHT,
-                    offsetDp = 6,
-                    cornerRadiusDp = 0,
-                    rightFaceColor = NC.OUTLINE_VAR
-                )
-                setPadding(dp(4), dp(4), dp(4), dp(4))
-                layoutParams = LinearLayout.LayoutParams(MATCH, dp(200)).apply {
-                    bottomMargin = dp(14)
-                }
-            }
-
-            val imgRes = when (type) {
-                PreviewType.PROJECT_TREE -> R.drawable.img_slide_workspace
-                PreviewType.AI_CLI -> R.drawable.img_slide_ai
-                PreviewType.DEV_SUITE -> R.drawable.img_slide_dev
-                PreviewType.XFCE_GUI -> R.drawable.img_slide_xfce
-                PreviewType.DEBIAN_ENV -> R.drawable.img_slide_debian
-                PreviewType.GIT_DIFF -> R.drawable.img_slide_git
-            }
-
-            val iv = ImageView(this).apply {
-                setImageResource(imgRes)
-                scaleType = ImageView.ScaleType.FIT_CENTER
-                layoutParams = FrameLayout.LayoutParams(MATCH, MATCH)
-            }
-            box.addView(iv)
-            return box
+        fun slideImageRes(type: PreviewType): Int = when (type) {
+            PreviewType.PROJECT_TREE -> R.drawable.img_slide_workspace
+            PreviewType.AI_CLI -> R.drawable.img_slide_ai
+            PreviewType.DEV_SUITE -> R.drawable.img_slide_dev
+            PreviewType.XFCE_GUI -> R.drawable.img_slide_xfce
+            PreviewType.DEBIAN_ENV -> R.drawable.img_slide_debian
+            PreviewType.GIT_DIFF -> R.drawable.img_slide_git
         }
 
         fun renderSlideCard(slideIdx: Int): View {
             val slide = slides[slideIdx]
-            val container = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                layoutParams = FrameLayout.LayoutParams(MATCH, WRAP).apply {
-                    gravity = Gravity.CENTER
-                }
-            }
-
-            // Top Card 1: Nexus Style Image Preview Card
-            container.addView(renderMockup(slide.type))
-
-            // Bottom Card 2: Capability Info & Text Card
-            val textCard = LinearLayout(this).apply {
+            // Single stacked card: hero graphic fills free height, meta pinned bottom
+            val card = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 background = cyberBrutalistBg(
-                    fillColor = NC.SURFACE_CONTAINER,
+                    fillColor = Color.parseColor("#121212"),
                     strokeColor = NC.BORDER,
                     shadowColor = NC.SURFACE_BRIGHT,
-                    offsetDp = 6,
+                    offsetDp = shadowOff,
                     cornerRadiusDp = 0,
                     rightFaceColor = NC.OUTLINE_VAR
                 )
-                setPadding(dp(18), dp(16), dp(18), dp(16))
-                layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
+                // Keep children inside front face (LayerDrawable reserves right/bottom for shadow)
+                setPadding(dp(10), dp(10), dp(10 + shadowOff), dp(10 + shadowOff))
+                layoutParams = FrameLayout.LayoutParams(MATCH, MATCH)
+                clipChildren = true
+                clipToPadding = true
             }
 
-            // Slide Index Tag
+            // Hero image zone — expands to fill remaining vertical space
+            val imageFrame = FrameLayout(this).apply {
+                layoutParams = LinearLayout.LayoutParams(MATCH, 0, 1f)
+                background = GradientDrawable().apply {
+                    shape = GradientDrawable.RECTANGLE
+                    setColor(NC.SURFACE_LOWEST)
+                    setStroke(dp(1), NC.BORDER)
+                }
+                clipChildren = true
+                clipToPadding = true
+            }
+
+            val iv = ImageView(this).apply {
+                setImageResource(slideImageRes(slide.type))
+                // CENTER_CROP: portrait assets fill hero; landscape slides crop until redone
+                scaleType = ImageView.ScaleType.CENTER_CROP
+                adjustViewBounds = false
+                layoutParams = FrameLayout.LayoutParams(MATCH, MATCH)
+            }
+            imageFrame.addView(iv)
+            card.addView(imageFrame)
+
+            // Meta strip (category / title / desc)
+            val meta = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply {
+                    topMargin = dp(12)
+                }
+                setPadding(dp(4), 0, dp(4), 0)
+            }
+
             val tagTv = TextView(this).apply {
-                text = "[ ${slide.category} — 0${slideIdx + 1} / 0${slides.size} ]"
-                textSize = 10f
+                text = "[ ${slide.category} — ${String.format("%02d", slideIdx + 1)} / ${String.format("%02d", slides.size)} ]"
+                textSize = 11f
                 setTextColor(NC.PRIMARY)
                 typeface = Typeface.MONOSPACE
                 setPadding(0, 0, 0, dp(8))
             }
-            textCard.addView(tagTv)
+            meta.addView(tagTv)
 
-            // Slide Header (Icon + Title)
             val headerRow = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
-                setPadding(0, 0, 0, dp(6))
+                setPadding(0, 0, 0, dp(8))
             }
             val iconIv = ImageView(this).apply {
                 setImageResource(slide.iconResId)
                 setColorFilter(NC.PRIMARY)
-                layoutParams = LinearLayout.LayoutParams(dp(22), dp(22)).apply {
-                    rightMargin = dp(8)
+                layoutParams = LinearLayout.LayoutParams(dp(24), dp(24)).apply {
+                    rightMargin = dp(10)
                 }
             }
             val titleTv = TextView(this).apply {
                 text = slide.title
-                textSize = 16f
+                textSize = 18f
                 setTextColor(NC.ON_SURFACE)
                 typeface = Typeface.DEFAULT_BOLD
             }
             headerRow.addView(iconIv)
             headerRow.addView(titleTv)
-            textCard.addView(headerRow)
+            meta.addView(headerRow)
 
             val descTv = TextView(this).apply {
                 text = slide.desc
-                textSize = 12f
+                textSize = 14f
                 setTextColor(NC.ON_SURF_VAR)
-                setLineSpacing(dp(2).toFloat(), 1.2f)
+                setLineSpacing(0f, 1.35f)
             }
-            textCard.addView(descTv)
+            meta.addView(descTv)
 
-            container.addView(textCard)
-            return container
+            card.addView(meta)
+            return card
         }
 
         contentFrame.addView(renderSlideCard(0))
 
-        // Progress Dots Row
+        // Progress Dots Row — sharp rectangles (no radius)
         val dotsRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
             layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply {
-                bottomMargin = dp(20)
+                bottomMargin = dp(16)
             }
         }
         val dotViews = mutableListOf<View>()
@@ -419,9 +421,10 @@ class OnboardingActivity : AppCompatActivity() {
         fun updateDots(selectedIdx: Int) {
             for (i in dotViews.indices) {
                 val isSelected = (i == selectedIdx)
-                val widthDp = if (isSelected) 24 else 8
+                val widthDp = if (isSelected) 28 else 8
                 val params = dotViews[i].layoutParams as LinearLayout.LayoutParams
                 params.width = dp(widthDp)
+                params.height = dp(8)
                 dotViews[i].layoutParams = params
                 dotViews[i].background = roundedBg(
                     if (isSelected) NC.PRIMARY else NC.SURFACE_HIGHEST,
@@ -454,7 +457,7 @@ class OnboardingActivity : AppCompatActivity() {
         for (i in slides.indices) {
             val isSelected = (i == 0)
             val dot = View(this).apply {
-                val widthDp = if (isSelected) 24 else 8
+                val widthDp = if (isSelected) 28 else 8
                 layoutParams = LinearLayout.LayoutParams(dp(widthDp), dp(8)).apply {
                     leftMargin = dp(4)
                     rightMargin = dp(4)
@@ -465,16 +468,14 @@ class OnboardingActivity : AppCompatActivity() {
                     0
                 )
                 isClickable = true
-                setOnClickListener {
-                    switchSlide(i)
-                }
+                setOnClickListener { switchSlide(i) }
             }
             dotsRow.addView(dot)
             dotViews.add(dot)
         }
         root.addView(dotsRow)
 
-        // Swipe gesture handler on contentFrame
+        // Manual swipe only (no auto-advance)
         var downX = 0f
         contentFrame.setOnTouchListener { _, event ->
             when (event.action) {
@@ -484,12 +485,10 @@ class OnboardingActivity : AppCompatActivity() {
                 }
                 MotionEvent.ACTION_UP -> {
                     val deltaX = event.x - downX
-                    if (deltaX < -90) { // Swipe left -> Next
-                        val next = (activeSlide + 1) % slides.size
-                        switchSlide(next)
-                    } else if (deltaX > 90) { // Swipe right -> Prev
-                        val prev = if (activeSlide > 0) activeSlide - 1 else slides.size - 1
-                        switchSlide(prev)
+                    if (deltaX < -90) {
+                        switchSlide((activeSlide + 1) % slides.size)
+                    } else if (deltaX > 90) {
+                        switchSlide(if (activeSlide > 0) activeSlide - 1 else slides.size - 1)
                     }
                     true
                 }
@@ -497,20 +496,10 @@ class OnboardingActivity : AppCompatActivity() {
             }
         }
 
-        // Auto-advance timer (4 seconds)
-        autoRunnable = object : Runnable {
-            override fun run() {
-                if (currentPageIndex != 1) return // Stop if navigated away
-                val next = (activeSlide + 1) % slides.size
-                switchSlide(next)
-                mainHandler.postDelayed(this, 4000)
-            }
-        }
-        mainHandler.postDelayed(autoRunnable!!, 4000)
-
-        // Navigation Action Buttons
         val btnRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
+            // Reserve shadow extrusion under buttons
+            setPadding(0, 0, 0, dp(shadowOff))
         }
         val prevBtn = secondaryButton("Back") {
             if (activeSlide > 0) {
@@ -554,8 +543,206 @@ class OnboardingActivity : AppCompatActivity() {
         GIT_DIFF
     }
 
-    // ── Page 3: Method ────────────────────────────────────────────────────────
+
+    // ── Page 3: Requirements (hard storage gate + soft RAM/swap/SoC) ──────────
+    private fun buildRequirementsPage(): View {
+        val shadowOff = 6
+        val snap = DeviceRequirements.evaluate(this)
+
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(16), dp(16), dp(16))
+            layoutParams = FrameLayout.LayoutParams(MATCH, MATCH)
+        }
+
+        root.addView(smallHeader("Requirements", R.drawable.ic_dns_thick))
+
+        val subtitle = TextView(this).apply {
+            text = "Device checks before install. Storage is a hard gate."
+            textSize = 12f
+            setTextColor(NC.ON_SURF_VAR)
+            typeface = Typeface.MONOSPACE
+            setPadding(0, 0, 0, dp(12))
+        }
+        root.addView(subtitle)
+
+        val scroll = ScrollView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(MATCH, 0, 1f)
+            isFillViewport = true
+            overScrollMode = View.OVER_SCROLL_NEVER
+        }
+        val list = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            // room for card 6dp extrusion on last item
+            setPadding(0, 0, 0, dp(shadowOff + 8))
+        }
+
+        for ((i, check) in snap.checks.withIndex()) {
+            list.addView(requirementCheckCard(check).apply {
+                layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply {
+                    if (i < snap.checks.lastIndex) bottomMargin = dp(12)
+                }
+            })
+        }
+
+        // Summary banner
+        val summary = TextView(this).apply {
+            typeface = Typeface.MONOSPACE
+            textSize = 11f
+            setPadding(dp(14), dp(12), dp(14), dp(12))
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply {
+                topMargin = dp(16)
+            }
+            when {
+                snap.hardBlocked -> {
+                    text = "BLOCKED — free more than 10 GB storage to continue."
+                    setTextColor(NC.ERROR)
+                    background = roundedBg(NC.ERROR_CON, NC.ERROR, 0)
+                }
+                snap.hasSoftWarnings -> {
+                    text = "You can continue, but performance may not be smooth below recommended RAM / swap / SoC."
+                    setTextColor(NC.TERTIARY)
+                    background = roundedBg(NC.SURFACE_CONTAINER, NC.TERTIARY_CON, 0)
+                }
+                else -> {
+                    text = "All checks look good. Ready for method selection."
+                    setTextColor(NC.PRIMARY)
+                    background = roundedBg(NC.SURFACE_CONTAINER, NC.PRIMARY, 0)
+                }
+            }
+        }
+        list.addView(summary)
+        scroll.addView(list)
+        root.addView(scroll)
+
+        val btnRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(0, dp(12), 0, dp(shadowOff))
+        }
+        val prevBtn = secondaryButton("Back") { showPage(1) }
+        prevBtn.layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f).apply { rightMargin = dp(8) }
+
+        val nextLabel = if (snap.hardBlocked) "Storage required" else "Continue"
+        val nextBtn = primaryButton(nextLabel, if (snap.hardBlocked) null else R.drawable.ic_arrow_right) {
+            if (!snap.hardBlocked) showPage(3)
+        }
+        nextBtn.layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
+        if (snap.hardBlocked) {
+            nextBtn.isEnabled = false
+            nextBtn.alpha = 0.4f
+            nextBtn.isClickable = false
+        }
+        btnRow.addView(prevBtn)
+        btnRow.addView(nextBtn)
+        root.addView(btnRow)
+
+        return root
+    }
+
+    private fun requirementCheckCard(check: DeviceRequirements.CheckResult): LinearLayout {
+        val stroke: Int
+        val badgeBg: Int
+        val badgeFg: Int
+        val badgeText: String
+        when (check.status) {
+            DeviceRequirements.Status.PASS -> {
+                stroke = NC.PRIMARY
+                badgeBg = NC.PRIMARY_CON
+                badgeFg = NC.ON_PRIMARY_CON
+                badgeText = "PASS"
+            }
+            DeviceRequirements.Status.FAIL -> {
+                stroke = NC.ERROR
+                badgeBg = NC.ERROR_CON
+                badgeFg = NC.ON_ERROR_CON
+                badgeText = "FAIL"
+            }
+            DeviceRequirements.Status.WARN -> {
+                stroke = NC.TERTIARY_CON
+                badgeBg = NC.SURFACE_HIGHEST
+                badgeFg = NC.TERTIARY
+                badgeText = "WARN"
+            }
+            DeviceRequirements.Status.UNKNOWN -> {
+                stroke = NC.OUTLINE
+                badgeBg = NC.SURFACE_HIGHEST
+                badgeFg = NC.SECONDARY
+                badgeText = "UNKNOWN"
+            }
+        }
+        val severityLabel = if (check.severity == DeviceRequirements.Severity.HARD) "HARD" else "SOFT"
+
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = cyberBrutalistBg(
+                fillColor = NC.SURFACE_CONTAINER,
+                strokeColor = stroke,
+                shadowColor = NC.SURFACE_BRIGHT,
+                offsetDp = 6,
+                cornerRadiusDp = 0,
+                rightFaceColor = NC.OUTLINE_VAR
+            )
+            // pad right/bottom so content stays out of shadow extrusion
+            setPadding(dp(16), dp(14), dp(16 + 6), dp(14 + 6))
+        }
+
+        val top = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val title = TextView(this).apply {
+            text = check.title.uppercase()
+            textSize = 14f
+            setTextColor(NC.ON_SURFACE)
+            typeface = Typeface.DEFAULT_BOLD
+            layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
+        }
+        top.addView(title)
+        top.addView(textBadge(severityLabel, NC.SURFACE_HIGHEST, NC.ON_SURF_VAR).apply {
+            layoutParams = LinearLayout.LayoutParams(WRAP, WRAP).apply { rightMargin = dp(6) }
+        })
+        top.addView(textBadge(badgeText, badgeBg, badgeFg))
+        card.addView(top)
+
+        val measured = TextView(this).apply {
+            text = check.measured
+            textSize = 18f
+            setTextColor(
+                when (check.status) {
+                    DeviceRequirements.Status.PASS -> NC.PRIMARY
+                    DeviceRequirements.Status.FAIL -> NC.ERROR
+                    DeviceRequirements.Status.WARN -> NC.TERTIARY
+                    DeviceRequirements.Status.UNKNOWN -> NC.SECONDARY
+                }
+            )
+            typeface = Typeface.MONOSPACE
+            setPadding(0, dp(8), 0, dp(2))
+        }
+        card.addView(measured)
+
+        val req = TextView(this).apply {
+            text = "need  ${check.requirement}"
+            textSize = 11f
+            setTextColor(NC.ON_SURF_VAR)
+            typeface = Typeface.MONOSPACE
+        }
+        card.addView(req)
+
+        val detail = TextView(this).apply {
+            text = check.detail
+            textSize = 12f
+            setTextColor(NC.ON_SURFACE)
+            setLineSpacing(dp(2).toFloat(), 1.2f)
+            setPadding(0, dp(8), 0, 0)
+        }
+        card.addView(detail)
+
+        return card
+    }
+
+    // ── Page 4: Method ────────────────────────────────────────────────────────
     private fun buildIsolationPage(): View {
+
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(20), dp(20), dp(20), dp(20))
@@ -754,10 +941,10 @@ class OnboardingActivity : AppCompatActivity() {
 
         // Buttons
         val btnRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        val prevBtn = secondaryButton("Back") { showPage(1) }
+        val prevBtn = secondaryButton("Back") { showPage(2) }
         prevBtn.layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f).apply { rightMargin = dp(8) }
         val nextBtn = primaryButton("Configure & Install", R.drawable.ic_arrow_right) {
-            showPage(3)
+            showPage(4)
             if (!isDebianBaseSetupStarted) {
                 isDebianBaseSetupStarted = true
                 runDebianBaseSetup()
@@ -770,7 +957,7 @@ class OnboardingActivity : AppCompatActivity() {
         return root
     }
 
-    // ── Page 3: Full Environment Setup (base + AI CLIs) ────────────────────────
+    // ── Page 5: Full Environment Setup (base + AI CLIs) ────────────────────────
     private fun buildDebianBasePage(): View {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -862,7 +1049,7 @@ class OnboardingActivity : AppCompatActivity() {
 
         // Next Button (initially disabled) — full setup (base + AI CLIs) must finish first
         baseNextBtn = primaryButton("Next: Complete Setup", R.drawable.ic_arrow_right) {
-            showPage(4)
+            showPage(5)
         }
         baseNextBtn.isEnabled = false
         baseNextBtn.alpha = 0.45f
@@ -1271,7 +1458,7 @@ class OnboardingActivity : AppCompatActivity() {
         }
     }
 
-    // ── Page 4: Complete ──────────────────────────────────────────────────────
+    // ── Page 6: Complete ──────────────────────────────────────────────────────
     private fun buildCompletePage(): View {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL

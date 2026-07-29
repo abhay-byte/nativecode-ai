@@ -63,6 +63,17 @@ object ProjectPathResolver {
         }
     }
 
+    /**
+     * App-writable staging dir for image attach (under host-tmp bind parent).
+     * Chroot sessions bind [Context.getFilesDir]/usr/tmp → /mnt/host-tmp.
+     */
+    fun stageAttachDir(ctx: Context): File =
+        File(ctx.filesDir, "usr/tmp/nativecode_attach").also { it.mkdirs() }
+
+    /** Guest path for staged attach when no-root chroot bind fallback is used. */
+    fun stageAttachGuestPath(fileName: String): String =
+        "/mnt/host-tmp/nativecode_attach/$fileName"
+
     /** True if chroot is installed (marker file exists). */
     fun isChrootInstalled(): Boolean {
         return File("${ChrootCommandBuilder.CHROOT_PATH}/.flux_configured").exists()
