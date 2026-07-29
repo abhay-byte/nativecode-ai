@@ -23,10 +23,11 @@ object ChrootCommandBuilder {
             "busybox mount -t devpts devpts $CHROOT_PATH/dev/pts >/dev/null 2>&1 || true",
             "mkdir -p $CHROOT_PATH/dev/shm && busybox mount -t tmpfs -o size=512M tmpfs $CHROOT_PATH/dev/shm >/dev/null 2>&1 || true",
             // Sticky disk /tmp for apt; never bind app usr/tmp onto /tmp
-            "mkdir -p $CHROOT_PATH/tmp $CHROOT_PATH/mnt/termux-tmp",
+            "mkdir -p $CHROOT_PATH/tmp $CHROOT_PATH/mnt/host-tmp",
             "busybox umount $CHROOT_PATH/tmp >/dev/null 2>&1 || true",
+            "busybox umount $CHROOT_PATH/mnt/termux-tmp >/dev/null 2>&1 || true",
             "chmod 1777 $CHROOT_PATH/tmp >/dev/null 2>&1 || true",
-            "busybox mount --bind ${ctx.filesDir}/usr/tmp $CHROOT_PATH/mnt/termux-tmp >/dev/null 2>&1 || true",
+            "busybox mount --bind ${ctx.filesDir}/usr/tmp $CHROOT_PATH/mnt/host-tmp >/dev/null 2>&1 || true",
             "cp -f ${ctx.filesDir}/usr/tmp/launch_tool.sh $CHROOT_PATH/tmp/launch_tool.sh >/dev/null 2>&1 || true",
             "chmod 755 $CHROOT_PATH/tmp/launch_tool.sh >/dev/null 2>&1 || true",
             "chmod 755 $CHROOT_PATH/home/flux >/dev/null 2>&1 || true"

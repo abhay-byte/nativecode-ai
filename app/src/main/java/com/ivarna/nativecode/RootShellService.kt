@@ -9,6 +9,7 @@ import java.io.File
 import java.io.FileOutputStream
 import java.io.InputStreamReader
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 /**
  * RootShell — Singleton for executing commands as root via KernelSU / Magisk su.
@@ -48,21 +49,63 @@ object RootShell {
      */
     fun isRootAvailable(): Boolean = resolveSuInvocation() != null
 
+    /** Result of a blocking root capture (exit code + stdout). */
+    data class CaptureResult(val exitCode: Int, val stdout: String)
+
     /**
      * Capture stdout of a root command (blocking). Empty string on failure.
-     * Background thread only.
+     * Background thread only. [timeoutMs] > 0 aborts hung su (exit -2).
      */
-    fun capture(cmd: String): String {
-        val inv = resolveSuInvocation() ?: return ""
+    fun capture(cmd: String, timeoutMs: Long = 0L): String =
+        captureResult(cmd, timeoutMs).stdout
+
+    /**
+     * Capture stdout + exit code of a root command (blocking).
+     * Background thread only.
+     *
+     * @param timeoutMs 0 = wait forever; >0 kills process after timeout (exitCode -2).
+     * @return [CaptureResult] with exitCode -1 if no su / exception, -2 on timeout.
+     */
+    fun captureResult(cmd: String, timeoutMs: Long = 0L): CaptureResult {
+        val inv = resolveSuInvocation() ?: return CaptureResult(-1, "")
         return try {
             val args = buildSuArgs(inv, cmd)
             val pb = ProcessBuilder(args).redirectErrorStream(true).start()
-            val out = pb.inputStream.bufferedReader().readText()
-            pb.waitFor()
-            out
+            // Read on side thread so waitFor(timeout) cannot deadlock on full pipe.
+            val outFuture = executor.submit<String> {
+                pb.inputStream.bufferedReader().use { it.readText() }
+            }
+            val finished = if (timeoutMs > 0L) {
+                pb.waitFor(timeoutMs, TimeUnit.MILLISECONDS)
+            } else {
+                pb.waitFor()
+                true
+            }
+            if (!finished) {
+                pb.destroyForcibly()
+                val partial = try {
+                    outFuture.get(500, TimeUnit.MILLISECONDS)
+                } catch (_: Exception) {
+                    ""
+                }
+                Log.w(TAG, "capture timeout after ${timeoutMs}ms cmd=${cmd.take(80)}")
+                return CaptureResult(-2, partial)
+            }
+            val out = try {
+                outFuture.get(5, TimeUnit.SECONDS)
+            } catch (e: Exception) {
+                Log.w(TAG, "capture read failed: ${e.message}")
+                ""
+            }
+            val code = try {
+                pb.exitValue()
+            } catch (_: Exception) {
+                -1
+            }
+            CaptureResult(code, out)
         } catch (e: Exception) {
             Log.w(TAG, "capture failed: ${e.message}")
-            ""
+            CaptureResult(-1, "")
         }
     }
 
@@ -187,7 +230,7 @@ object RootShell {
     /**
      * Run a command inside the Debian 13 chroot as [user].
      * Mount policy matches ChrootCommandBuilder / setup script:
-     * sticky disk /tmp (no app-tmp bind onto /tmp), optional /mnt/termux-tmp bridge.
+     * sticky disk /tmp (no app-tmp bind onto /tmp), optional /mnt/host-tmp bridge.
      */
     fun executeInChroot(
         cmd: String,
@@ -205,7 +248,7 @@ object RootShell {
             "busybox mount -t proc proc $chrootPath/proc 2>/dev/null || true",
             "busybox mount -t devpts devpts $chrootPath/dev/pts 2>/dev/null || true",
             "mkdir -p $chrootPath/dev/shm && busybox mount -t tmpfs -o size=512M,mode=1777 tmpfs $chrootPath/dev/shm 2>/dev/null || true",
-            "mkdir -p $chrootPath/tmp $chrootPath/mnt/termux-tmp $chrootPath/sdcard",
+            "mkdir -p $chrootPath/tmp $chrootPath/mnt/host-tmp $chrootPath/sdcard",
             "busybox umount $chrootPath/tmp 2>/dev/null || true",
             "chmod 1777 $chrootPath/tmp 2>/dev/null || true",
             "busybox mount --bind /sdcard $chrootPath/sdcard 2>/dev/null || true"
@@ -273,8 +316,12 @@ object RootShell {
         }
     }
 
-    /** Copies an asset to app files directory, sets executable, returns absolute path or null. */
-    private fun stageAsset(context: Context, assetName: String): String? {
+    /**
+     * Copy an asset to [filesDir]/staged_scripts/, make executable, return absolute path or null.
+     * Public so callers (e.g. ChrootProcessManager) can stage helpers then [capture] them.
+     * Background thread only when followed by root I/O.
+     */
+    fun stageAsset(context: Context, assetName: String): String? {
         return try {
             val dir = File(context.filesDir, "staged_scripts")
             dir.mkdirs()

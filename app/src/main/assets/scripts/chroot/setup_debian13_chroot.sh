@@ -35,6 +35,7 @@ error() {
 cleanup_mounts() {
     printf "\033[1;36m[+] Safety Check: Unmounting filesystems...\033[0m\n"
     $BB umount "$DEBIANPATH/sdcard" 2>/dev/null || true
+    $BB umount "$DEBIANPATH/mnt/host-tmp" 2>/dev/null || true
     $BB umount "$DEBIANPATH/mnt/termux-tmp" 2>/dev/null || true
     $BB umount "$DEBIANPATH/dev/shm" 2>/dev/null || true
     $BB umount "$DEBIANPATH/dev/pts" 2>/dev/null || true
@@ -160,11 +161,11 @@ extract_file() {
 
 # Sticky disk-backed /tmp for apt (_apt). Host stages scripts at
 # $DEBIANPATH/tmp (same path as chroot /tmp) — no tmpfs overlay.
-# NEVER bind Termux files/usr/tmp onto /tmp (app_data perms/SELinux break mkstemp).
-# Host app tmp is bridged at /mnt/termux-tmp only.
+# NEVER bind app files/usr/tmp onto /tmp (app_data perms/SELinux break mkstemp).
+# Host app tmp is bridged at /mnt/host-tmp only.
 ensure_chroot_tmp() {
     HOST_TMP="/data/data/com.ivarna.nativecode/files/usr/tmp"
-    mkdir -p "$DEBIANPATH/tmp" "$HOST_TMP" "$DEBIANPATH/mnt/termux-tmp" "$DEBIANPATH/var/tmp"
+    mkdir -p "$DEBIANPATH/tmp" "$HOST_TMP" "$DEBIANPATH/mnt/host-tmp" "$DEBIANPATH/var/tmp"
 
     # Drop previous bad bind/tmpfs on /tmp if present
     if grep -q " $DEBIANPATH/tmp " /proc/mounts 2>/dev/null; then
@@ -176,7 +177,7 @@ ensure_chroot_tmp() {
     progress "Sticky /tmp ready at $DEBIANPATH/tmp (mode 1777, no host bind)"
 
     chmod 1777 "$HOST_TMP" 2>/dev/null || true
-    $BB mount --bind "$HOST_TMP" "$DEBIANPATH/mnt/termux-tmp" 2>/dev/null || true
+    $BB mount --bind "$HOST_TMP" "$DEBIANPATH/mnt/host-tmp" 2>/dev/null || true
 
     if [ -f "$HOST_TMP/launch_tool.sh" ]; then
         cp -f "$HOST_TMP/launch_tool.sh" "$DEBIANPATH/tmp/launch_tool.sh" 2>/dev/null || true
@@ -310,13 +311,13 @@ export LD_LIBRARY_PATH=$LD_LIBRARY_PATH
 mkdir -p \$DEBIANPATH/dev/shm
 \$BB mount -t tmpfs -o size=512M,mode=1777 tmpfs \$DEBIANPATH/dev/shm
 
-mkdir -p \$DEBIANPATH/tmp \$DEBIANPATH/mnt/termux-tmp
+mkdir -p \$DEBIANPATH/tmp \$DEBIANPATH/mnt/host-tmp
 # Unmount bad /tmp bind from older installs; keep disk-backed sticky /tmp
 if grep -q " \$DEBIANPATH/tmp " /proc/mounts 2>/dev/null; then
     \$BB umount \$DEBIANPATH/tmp 2>/dev/null || \$BB umount -l \$DEBIANPATH/tmp 2>/dev/null || true
 fi
 chmod 1777 \$DEBIANPATH/tmp 2>/dev/null || true
-\$BB mount --bind /data/data/com.ivarna.nativecode/files/usr/tmp \$DEBIANPATH/mnt/termux-tmp 2>/dev/null || true
+\$BB mount --bind /data/data/com.ivarna.nativecode/files/usr/tmp \$DEBIANPATH/mnt/host-tmp 2>/dev/null || true
 if [ -f /data/data/com.ivarna.nativecode/files/usr/tmp/launch_tool.sh ]; then
     cp -f /data/data/com.ivarna.nativecode/files/usr/tmp/launch_tool.sh \$DEBIANPATH/tmp/launch_tool.sh 2>/dev/null || true
     chmod 755 \$DEBIANPATH/tmp/launch_tool.sh 2>/dev/null || true
@@ -376,13 +377,13 @@ export LD_LIBRARY_PATH=$LD_LIBRARY_PATH
 \$BB mount -t devpts devpts \$DEBIANPATH/dev/pts >/dev/null 2>&1
 mkdir -p \$DEBIANPATH/dev/shm
 \$BB mount -t tmpfs -o size=512M,mode=1777 tmpfs \$DEBIANPATH/dev/shm >/dev/null 2>&1
-mkdir -p \$DEBIANPATH/tmp \$DEBIANPATH/mnt/termux-tmp
+mkdir -p \$DEBIANPATH/tmp \$DEBIANPATH/mnt/host-tmp
 # Unmount bad /tmp bind from older installs; keep disk-backed sticky /tmp
 if grep -q " \$DEBIANPATH/tmp " /proc/mounts 2>/dev/null; then
     \$BB umount \$DEBIANPATH/tmp 2>/dev/null || \$BB umount -l \$DEBIANPATH/tmp 2>/dev/null || true
 fi
 chmod 1777 \$DEBIANPATH/tmp 2>/dev/null || true
-\$BB mount --bind /data/data/com.ivarna.nativecode/files/usr/tmp \$DEBIANPATH/mnt/termux-tmp 2>/dev/null || true
+\$BB mount --bind /data/data/com.ivarna.nativecode/files/usr/tmp \$DEBIANPATH/mnt/host-tmp 2>/dev/null || true
 if [ -f /data/data/com.ivarna.nativecode/files/usr/tmp/launch_tool.sh ]; then
     cp -f /data/data/com.ivarna.nativecode/files/usr/tmp/launch_tool.sh \$DEBIANPATH/tmp/launch_tool.sh 2>/dev/null || true
     chmod 755 \$DEBIANPATH/tmp/launch_tool.sh 2>/dev/null || true
@@ -423,13 +424,13 @@ export LD_LIBRARY_PATH=$LD_LIBRARY_PATH
 mkdir -p \$DEBIANPATH/dev/shm
 \$BB mount -t tmpfs -o size=512M,mode=1777 tmpfs \$DEBIANPATH/dev/shm 2>/dev/null
 
-mkdir -p \$DEBIANPATH/tmp \$DEBIANPATH/mnt/termux-tmp
+mkdir -p \$DEBIANPATH/tmp \$DEBIANPATH/mnt/host-tmp
 # Unmount bad /tmp bind from older installs; keep disk-backed sticky /tmp
 if grep -q " \$DEBIANPATH/tmp " /proc/mounts 2>/dev/null; then
     \$BB umount \$DEBIANPATH/tmp 2>/dev/null || \$BB umount -l \$DEBIANPATH/tmp 2>/dev/null || true
 fi
 chmod 1777 \$DEBIANPATH/tmp 2>/dev/null || true
-\$BB mount --bind /data/data/com.ivarna.nativecode/files/usr/tmp \$DEBIANPATH/mnt/termux-tmp 2>/dev/null || true
+\$BB mount --bind /data/data/com.ivarna.nativecode/files/usr/tmp \$DEBIANPATH/mnt/host-tmp 2>/dev/null || true
 if [ -f /data/data/com.ivarna.nativecode/files/usr/tmp/launch_tool.sh ]; then
     cp -f /data/data/com.ivarna.nativecode/files/usr/tmp/launch_tool.sh \$DEBIANPATH/tmp/launch_tool.sh 2>/dev/null || true
     chmod 755 \$DEBIANPATH/tmp/launch_tool.sh 2>/dev/null || true
@@ -465,13 +466,13 @@ export LD_LIBRARY_PATH=$LD_LIBRARY_PATH
 mkdir -p \$DEBIANPATH/dev/shm
 \$BB mount -t tmpfs -o size=512M,mode=1777 tmpfs \$DEBIANPATH/dev/shm 2>/dev/null
 
-mkdir -p \$DEBIANPATH/tmp \$DEBIANPATH/mnt/termux-tmp
+mkdir -p \$DEBIANPATH/tmp \$DEBIANPATH/mnt/host-tmp
 # Unmount bad /tmp bind from older installs; keep disk-backed sticky /tmp
 if grep -q " \$DEBIANPATH/tmp " /proc/mounts 2>/dev/null; then
     \$BB umount \$DEBIANPATH/tmp 2>/dev/null || \$BB umount -l \$DEBIANPATH/tmp 2>/dev/null || true
 fi
 chmod 1777 \$DEBIANPATH/tmp 2>/dev/null || true
-\$BB mount --bind /data/data/com.ivarna.nativecode/files/usr/tmp \$DEBIANPATH/mnt/termux-tmp 2>/dev/null || true
+\$BB mount --bind /data/data/com.ivarna.nativecode/files/usr/tmp \$DEBIANPATH/mnt/host-tmp 2>/dev/null || true
 if [ -f /data/data/com.ivarna.nativecode/files/usr/tmp/launch_tool.sh ]; then
     cp -f /data/data/com.ivarna.nativecode/files/usr/tmp/launch_tool.sh \$DEBIANPATH/tmp/launch_tool.sh 2>/dev/null || true
     chmod 755 \$DEBIANPATH/tmp/launch_tool.sh 2>/dev/null || true

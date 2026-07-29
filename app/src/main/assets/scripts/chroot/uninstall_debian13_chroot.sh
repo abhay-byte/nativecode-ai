@@ -35,18 +35,25 @@ else
     BB=""
 fi
 
-# 1. Kill Stale Processes
+# 1. Kill Stale Processes (prefer shared SSOT helper)
 progress "Checking for stalled processes..."
-for pid_dir in /proc/[0-9]*; do
-    if [ -d "$pid_dir" ]; then
-        PID=$(basename "$pid_dir")
-        ROOT=$(readlink "$pid_dir/root" 2>/dev/null)
-        if [ "$ROOT" = "$DEBIANPATH" ]; then
-            progress "Killing stuck process $PID..."
-            kill -9 "$PID" 2>/dev/null
+HELPER="$(dirname "$0")/chroot_processes.sh"
+if [ -f "$HELPER" ]; then
+    progress "Killing chroot processes via chroot_processes.sh..."
+    sh "$HELPER" kill "$DEBIANPATH" || true
+else
+    # Fallback: inline loop for standalone adb runs without helper staged
+    for pid_dir in /proc/[0-9]*; do
+        if [ -d "$pid_dir" ]; then
+            PID=$(basename "$pid_dir")
+            ROOT=$(readlink "$pid_dir/root" 2>/dev/null)
+            if [ "$ROOT" = "$DEBIANPATH" ]; then
+                progress "Killing stuck process $PID..."
+                kill -9 "$PID" 2>/dev/null
+            fi
         fi
-    fi
-done
+    done
+fi
 
 # 2. Dynamic Unmount (Deepest First)
 progress "Unmounting any filesystems under $DEBIANPATH..."

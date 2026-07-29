@@ -134,6 +134,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var diffViewerContainer: LinearLayout
     private lateinit var scriptsScrollView: ScrollView
     private lateinit var scriptsLayout: LinearLayout
+    private lateinit var prootSettingsScrollView: ScrollView
     private lateinit var chrootSettingsScrollView: ScrollView
 
     private lateinit var scriptInstallLayout: LinearLayout
@@ -162,6 +163,16 @@ class MainActivity : AppCompatActivity() {
     private val composeSwapTotalState = androidx.compose.runtime.mutableLongStateOf(0L)
     private val composeDiskState = androidx.compose.runtime.mutableIntStateOf(0)
 
+    // Proot Settings page — size-only (app storage rootfs)
+    private var prootSizeValueTv: TextView? = null
+    private var prootSizeUnitTv: TextView? = null
+    private var prootSizeHintTv: TextView? = null
+    private var prootRefreshBtn: TextView? = null
+    private var prootLoadingRow: LinearLayout? = null
+    private var prootProgressBar: ProgressBar? = null
+    private var prootPathTv: TextView? = null
+    private var prootMeasuring = false
+
     // Chroot Settings page — live labels for async refresh
     private var chrootStatusBadge: TextView? = null
     private var chrootRootBadge: TextView? = null
@@ -179,13 +190,31 @@ class MainActivity : AppCompatActivity() {
     private var chrootMeasuring = false
     private var pendingChrootUninstall = false
 
+    // Chroot Settings — Processes card (detect / kill / verify)
+    private var chrootProcCountTv: TextView? = null
+    private var chrootProcUnitTv: TextView? = null
+    private var chrootProcHintTv: TextView? = null
+    private var chrootProcSampleBox: LinearLayout? = null
+    private var chrootProcScanBtn: TextView? = null
+    private var chrootProcKillBtn: TextView? = null
+    private var chrootProcLoadingRow: LinearLayout? = null
+    private var chrootProcStatusTv: TextView? = null
+    private var chrootProcMeasuring = false
+    private var chrootProcKilling = false
+    private var chrootProcLastCount = -1
+
     companion object {
+        private const val PREF_PROOT_BYTES = "proot_size_bytes"
+        private const val PREF_PROOT_DIR = "proot_dir_present"
+        private const val PREF_PROOT_LAST_MS = "proot_last_check_ms"
         private const val PREF_CHROOT_INSTALLED = "chroot_installed"
         private const val PREF_CHROOT_DIR = "chroot_dir_present"
         private const val PREF_CHROOT_BYTES = "chroot_size_bytes"
         private const val PREF_CHROOT_ROOT_OK = "chroot_root_ok"
         private const val PREF_CHROOT_SIZE_VIA_ROOT = "chroot_size_via_root"
         private const val PREF_CHROOT_LAST_MS = "chroot_last_check_ms"
+        private const val PREF_CHROOT_PROC_COUNT = "chroot_proc_count"
+        private const val PREF_CHROOT_PROC_LAST_MS = "chroot_proc_last_ms"
     }
 
     private val executor = Executors.newCachedThreadPool()
@@ -205,6 +234,7 @@ class MainActivity : AppCompatActivity() {
     private val ID_PROJECT_DIR_TREE = 12
     private val ID_PROJECT_GIT_DIFF = 13
     private val ID_CHROOT_SETTINGS = 14
+    private val ID_PROOT_SETTINGS = 15
     
     private var fileViewerBackPage = ID_FILES
     private var diffViewerBackPage = ID_GIT
@@ -690,6 +720,9 @@ class MainActivity : AppCompatActivity() {
         if (::scriptsScrollView.isInitialized) {
             scriptsScrollView.visibility = View.GONE
         }
+        if (::prootSettingsScrollView.isInitialized) {
+            prootSettingsScrollView.visibility = View.GONE
+        }
         if (::chrootSettingsScrollView.isInitialized) {
             chrootSettingsScrollView.visibility = View.GONE
         }
@@ -788,13 +821,22 @@ class MainActivity : AppCompatActivity() {
             ID_SETTINGS -> {
                 settingsHubScrollView.visibility = View.VISIBLE
             }
+            ID_PROOT_SETTINGS -> {
+                if (::prootSettingsScrollView.isInitialized) {
+                    prootSettingsScrollView.visibility = View.VISIBLE
+                }
+                applyCachedProotInfo()
+                refreshProotSettingsCard(force = false)
+            }
             ID_CHROOT_SETTINGS -> {
                 if (::chrootSettingsScrollView.isInitialized) {
                     chrootSettingsScrollView.visibility = View.VISIBLE
                 }
                 applyInstantChrootStatus()
                 applyCachedChrootInfo()
-                refreshChrootSettingsCard(force = false)
+                applyCachedChrootProcInfo()
+                // Sequential root work: size then processes (no concurrent su race)
+                refreshChrootSettingsPage(force = false)
             }
             ID_SCRIPTS -> {
                 if (::scriptsScrollView.isInitialized) {
@@ -923,10 +965,20 @@ class MainActivity : AppCompatActivity() {
         if (::scriptInstallLayout.isInitialized && scriptInstallLayout.visibility == View.VISIBLE) {
             if (isScriptRunning) {
                 return
-            } else {
-                navigateToPage(ID_SCRIPTS)
-                return
             }
+            // Return to launcher page (Chroot Settings after uninstall, Scripts hub, etc.)
+            if (pageStack.size > 1 && pageStack.peek() == ID_SCRIPT_INSTALL) {
+                pageStack.pop()
+                navigateToPage(pageStack.peek(), false)
+            } else {
+                navigateToPage(ID_SCRIPTS, false)
+            }
+            return
+        }
+
+        if (::prootSettingsScrollView.isInitialized && prootSettingsScrollView.visibility == View.VISIBLE) {
+            navigateToPage(ID_SETTINGS)
+            return
         }
 
         if (::chrootSettingsScrollView.isInitialized && chrootSettingsScrollView.visibility == View.VISIBLE) {
@@ -975,7 +1027,9 @@ class MainActivity : AppCompatActivity() {
             showProjectNav = true
         }
         
-        if (id == ID_SCRIPTS || id == ID_SCRIPT_INSTALL || id == ID_PROJECT_CREATE || id == ID_CHROOT_SETTINGS) {
+        if (id == ID_SCRIPTS || id == ID_SCRIPT_INSTALL || id == ID_PROJECT_CREATE ||
+            id == ID_CHROOT_SETTINGS || id == ID_PROOT_SETTINGS
+        ) {
             showGlobalNav = false
             showProjectNav = false
         }
@@ -1430,6 +1484,7 @@ class MainActivity : AppCompatActivity() {
         buildFileViewerLayout()
         buildDiffViewerLayout()
         buildScriptsLayout()
+        buildProotSettingsPage()
         buildChrootSettingsPage()
         buildScriptInstallLayout()
         buildProjectCreateLayout()
@@ -1448,6 +1503,7 @@ class MainActivity : AppCompatActivity() {
         contentFrame.addView(fileViewerRootContainer)
         contentFrame.addView(diffViewerRootContainer)
         contentFrame.addView(scriptsScrollView)
+        contentFrame.addView(prootSettingsScrollView)
         contentFrame.addView(chrootSettingsScrollView)
         contentFrame.addView(scriptInstallLayout)
         contentFrame.addView(projectCreateScrollView)
@@ -3148,6 +3204,10 @@ class MainActivity : AppCompatActivity() {
         settingsHubLayout.addView(buildEnvironmentCard())
         settingsHubLayout.addView(spacer(16))
 
+        // Proot Settings — size-only (app storage rootfs); above chroot
+        settingsHubLayout.addView(buildProotSettingsSectionButton())
+        settingsHubLayout.addView(spacer(16))
+
         // Chroot Settings — opens dedicated page (size / root / uninstall)
         settingsHubLayout.addView(buildChrootSettingsSectionButton())
         settingsHubLayout.addView(spacer(16))
@@ -3224,6 +3284,87 @@ class MainActivity : AppCompatActivity() {
             }
             val sub = TextView(this@MainActivity).apply {
                 text = "Run installation, configuration, or control scripts"
+                textSize = 11f
+                setTextColor(NC.ON_SURF_VAR)
+                typeface = Typeface.MONOSPACE
+            }
+            details.addView(name)
+            details.addView(sub)
+            val arrow = ImageView(this@MainActivity).apply {
+                setImageResource(R.drawable.ic_chevron_right)
+                setColorFilter(NC.PRIMARY)
+                layoutParams = LinearLayout.LayoutParams(dp(20), dp(20))
+            }
+            addView(icon)
+            addView(details)
+            addView(arrow)
+        }
+    }
+
+    private fun buildProotSettingsSectionButton(): View {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            background = cyberBrutalistBg(
+                fillColor = NC.SURFACE_LOW,
+                strokeColor = NC.OUTLINE_VAR,
+                shadowColor = NC.SHADOW_DARK,
+                offsetDp = 6,
+                cornerRadiusDp = 0
+            )
+            setPadding(dp(16), dp(16), dp(16), dp(16))
+            setOnClickListener {
+                if (pageStack.isEmpty() || pageStack.peek() != ID_PROOT_SETTINGS) {
+                    pageStack.push(ID_PROOT_SETTINGS)
+                }
+                navigateToPage(ID_PROOT_SETTINGS)
+            }
+
+            setOnTouchListener { v, event ->
+                when (event.action) {
+                    MotionEvent.ACTION_DOWN -> {
+                        v.translationX = dp(4).toFloat()
+                        v.translationY = dp(4).toFloat()
+                        v.background = cyberBrutalistBg(
+                            fillColor = NC.SURFACE_LOW,
+                            strokeColor = NC.OUTLINE_VAR,
+                            shadowColor = NC.SHADOW_DARK,
+                            offsetDp = 2,
+                            cornerRadiusDp = 0
+                        )
+                    }
+                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                        v.translationX = 0f
+                        v.translationY = 0f
+                        v.background = cyberBrutalistBg(
+                            fillColor = NC.SURFACE_LOW,
+                            strokeColor = NC.OUTLINE_VAR,
+                            shadowColor = NC.SHADOW_DARK,
+                            offsetDp = 6,
+                            cornerRadiusDp = 0
+                        )
+                    }
+                }
+                false
+            }
+
+            val icon = ImageView(this@MainActivity).apply {
+                setImageResource(R.drawable.ic_storage)
+                setColorFilter(NC.PRIMARY)
+                layoutParams = LinearLayout.LayoutParams(dp(24), dp(24)).apply { rightMargin = dp(12) }
+            }
+            val details = LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
+            }
+            val name = TextView(this@MainActivity).apply {
+                text = "PROOT SETTINGS"
+                textSize = 15f
+                setTextColor(Color.WHITE)
+                typeface = Typeface.DEFAULT_BOLD
+            }
+            val sub = TextView(this@MainActivity).apply {
+                text = "Debian rootfs size (app storage)"
                 textSize = 11f
                 setTextColor(NC.ON_SURF_VAR)
                 typeface = Typeface.MONOSPACE
@@ -3895,6 +4036,9 @@ class MainActivity : AppCompatActivity() {
         terminalWorkspaceLayout.visibility = View.GONE
         gitOperationsScrollView.visibility = View.GONE
         settingsHubScrollView.visibility = View.GONE
+        if (::prootSettingsScrollView.isInitialized) {
+            prootSettingsScrollView.visibility = View.GONE
+        }
         if (::chrootSettingsScrollView.isInitialized) {
             chrootSettingsScrollView.visibility = View.GONE
         }
@@ -5928,6 +6072,361 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
+     * Dedicated Proot Settings page (Settings Hub → this).
+     * Size-only: Debian proot rootfs under app filesDir + REFRESH + path.
+     */
+    private fun buildProotSettingsPage() {
+        prootSettingsScrollView = ScrollView(this).apply {
+            layoutParams = FrameLayout.LayoutParams(MATCH, MATCH)
+            visibility = View.GONE
+            clipToPadding = false
+            setPadding(0, 0, 0, dp(80))
+            setBackgroundColor(NC.BG)
+        }
+        val pageLayout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(16), dp(16), dp(16))
+        }
+        prootSettingsScrollView.addView(pageLayout)
+
+        val headerCol = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, 0, 0, dp(16))
+        }
+        val headerTitleRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val pageBackBtn = ImageView(this).apply {
+            setImageResource(R.drawable.ic_arrow_back)
+            setColorFilter(NC.PRIMARY)
+            setPadding(dp(4), dp(4), dp(4), dp(4))
+            layoutParams = LinearLayout.LayoutParams(dp(36), dp(36)).apply { rightMargin = dp(8) }
+            contentDescription = "Back"
+            setOnClickListener {
+                if (pageStack.isNotEmpty() && pageStack.peek() == ID_PROOT_SETTINGS) {
+                    pageStack.pop()
+                }
+                navigateToPage(ID_SETTINGS, false)
+            }
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                setColor(NC.SURFACE_CONTAINER)
+                setStroke(dp(1), NC.OUTLINE_VAR)
+            }
+        }
+        val headerIcon = ImageView(this).apply {
+            setImageResource(R.drawable.ic_storage)
+            setColorFilter(NC.PRIMARY)
+            layoutParams = LinearLayout.LayoutParams(dp(26), dp(26)).apply { rightMargin = dp(10) }
+        }
+        val titleTv = TextView(this).apply {
+            text = "PROOT SETTINGS"
+            textSize = 22f
+            setTextColor(NC.PRIMARY)
+            typeface = Typeface.DEFAULT_BOLD
+            layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
+        }
+        headerTitleRow.addView(pageBackBtn)
+        headerTitleRow.addView(headerIcon)
+        headerTitleRow.addView(titleTv)
+        val subTitleTv = TextView(this).apply {
+            text = "// DEBIAN PROOT — APP STORAGE"
+            textSize = 11f
+            setTextColor(NC.ON_SURF_VAR)
+            typeface = Typeface.MONOSPACE
+            setPadding(0, dp(4), 0, dp(12))
+        }
+        val divider = View(this).apply {
+            layoutParams = LinearLayout.LayoutParams(MATCH, dp(1)).apply { bottomMargin = dp(8) }
+            setBackgroundColor(NC.OUTLINE_VAR)
+        }
+        headerCol.addView(headerTitleRow)
+        headerCol.addView(subTitleTv)
+        headerCol.addView(divider)
+        pageLayout.addView(headerCol)
+        pageLayout.addView(buildProotSettingsContentCard())
+    }
+
+    /** Proot detail card — rootfs size + host path only (no install/root). */
+    private fun buildProotSettingsContentCard(): LinearLayout {
+        val card = glassCard()
+        card.addView(sectionHeader(R.drawable.ic_storage, "Storage", NC.PRIMARY))
+
+        val subTv = TextView(this).apply {
+            text = "// DEBIAN PROOT ROOTFS — MEASURED IN-APP"
+            textSize = 10f
+            setTextColor(NC.ON_SURF_VAR)
+            typeface = Typeface.MONOSPACE
+            setPadding(0, 0, 0, dp(10))
+        }
+        card.addView(subTv)
+
+        val sizePanel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                setColor(NC.SURFACE_LOWEST)
+                setStroke(dp(1), NC.OUTLINE_VAR)
+            }
+            setPadding(dp(12), dp(12), dp(12), dp(12))
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(10) }
+        }
+        val sizeHeader = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val sizeTitle = TextView(this).apply {
+            text = "LINUX STORAGE"
+            textSize = 11f
+            setTextColor(NC.ON_SURF_VAR)
+            typeface = Typeface.MONOSPACE
+            layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
+        }
+        prootRefreshBtn = TextView(this).apply {
+            text = " REFRESH"
+            textSize = 10f
+            setTextColor(NC.PRIMARY)
+            typeface = Typeface.MONOSPACE
+            setCompoundDrawablesWithIntrinsicBounds(R.drawable.ic_refresh, 0, 0, 0)
+            compoundDrawableTintList = android.content.res.ColorStateList.valueOf(NC.PRIMARY)
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                setColor(NC.SURFACE_CONTAINER)
+                setStroke(dp(1), NC.OUTLINE_VAR)
+            }
+            setPadding(dp(8), dp(4), dp(10), dp(4))
+            setOnClickListener { refreshProotSettingsCard(force = true) }
+        }
+        sizeHeader.addView(sizeTitle)
+        sizeHeader.addView(prootRefreshBtn)
+        sizePanel.addView(sizeHeader)
+
+        prootLoadingRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            visibility = View.GONE
+            setPadding(0, dp(10), 0, dp(4))
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
+        }
+        prootProgressBar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
+            isIndeterminate = true
+            layoutParams = LinearLayout.LayoutParams(0, dp(4), 1f)
+            indeterminateTintList = android.content.res.ColorStateList.valueOf(NC.PRIMARY)
+        }
+        val loadingLabel = TextView(this).apply {
+            text = " SCANNING"
+            textSize = 10f
+            setTextColor(NC.PRIMARY)
+            typeface = Typeface.MONOSPACE
+            setPadding(dp(8), 0, 0, 0)
+        }
+        prootLoadingRow?.addView(prootProgressBar)
+        prootLoadingRow?.addView(loadingLabel)
+        sizePanel.addView(prootLoadingRow)
+
+        val sizeValRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.BOTTOM
+            setPadding(0, dp(8), 0, 0)
+        }
+        prootSizeValueTv = TextView(this).apply {
+            text = "—"
+            textSize = 32f
+            setTextColor(NC.PRIMARY)
+            typeface = Typeface.MONOSPACE
+            paint.isFakeBoldText = true
+            layoutParams = LinearLayout.LayoutParams(WRAP, WRAP)
+        }
+        prootSizeUnitTv = TextView(this).apply {
+            text = ""
+            textSize = 14f
+            setTextColor(NC.ON_SURF_VAR)
+            typeface = Typeface.MONOSPACE
+            setPadding(dp(6), 0, 0, dp(6))
+        }
+        sizeValRow.addView(prootSizeValueTv)
+        sizeValRow.addView(prootSizeUnitTv)
+        sizePanel.addView(sizeValRow)
+
+        prootSizeHintTv = TextView(this).apply {
+            text = "…"
+            textSize = 10f
+            setTextColor(NC.ON_SURF_VAR)
+            typeface = Typeface.MONOSPACE
+            setPadding(0, dp(4), 0, 0)
+        }
+        sizePanel.addView(prootSizeHintTv)
+        card.addView(sizePanel)
+
+        val pathRow = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                setColor(NC.SURFACE_LOWEST)
+                setStroke(dp(1), NC.OUTLINE_VAR)
+            }
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(4) }
+        }
+        pathRow.addView(TextView(this).apply {
+            text = "HOST PATH"
+            textSize = 10f
+            setTextColor(NC.ON_SURF_VAR)
+            typeface = Typeface.MONOSPACE
+            setPadding(0, 0, 0, dp(4))
+        })
+        prootPathTv = TextView(this).apply {
+            text = ProjectPathResolver.prootRootfsDir(this@MainActivity).absolutePath
+            textSize = 12f
+            setTextColor(Color.WHITE)
+            typeface = Typeface.MONOSPACE
+            setTextIsSelectable(true)
+        }
+        pathRow.addView(prootPathTv)
+        card.addView(pathRow)
+
+        applyCachedProotInfo()
+        refreshProotSettingsCard(force = false)
+        return card
+    }
+
+    private fun applyCachedProotInfo() {
+        val prefs = getSharedPreferences("nativecode_prefs", MODE_PRIVATE)
+        if (!prefs.contains(PREF_PROOT_LAST_MS)) return
+
+        val bytes = prefs.getLong(PREF_PROOT_BYTES, -1L).takeIf { it >= 0L }
+        val dirOk = prefs.getBoolean(PREF_PROOT_DIR, false)
+        val lastMs = prefs.getLong(PREF_PROOT_LAST_MS, 0L)
+
+        if (bytes != null) {
+            val (v, u) = formatStorageBytes(bytes)
+            prootSizeValueTv?.text = v
+            prootSizeUnitTv?.text = u
+            prootSizeValueTv?.alpha = 0.85f
+            prootSizeHintTv?.text = formatProotCacheHint(lastMs)
+            prootSizeHintTv?.setTextColor(NC.ON_SURF_VAR)
+        } else if (!dirOk) {
+            prootSizeValueTv?.text = "—"
+            prootSizeUnitTv?.text = ""
+            prootSizeHintTv?.text = "Proot rootfs not found"
+            prootSizeHintTv?.setTextColor(NC.SECONDARY)
+        }
+    }
+
+    private fun formatProotCacheHint(lastMs: Long): String {
+        val age = if (lastMs > 0L) {
+            val mins = ((System.currentTimeMillis() - lastMs) / 60000L).coerceAtLeast(0L)
+            when {
+                mins < 1 -> "just now"
+                mins < 60 -> "${mins}m ago"
+                mins < 1440 -> "${mins / 60}h ago"
+                else -> "${mins / 1440}d ago"
+            }
+        } else "unknown"
+        return "Cached · Debian proot rootfs · $age"
+    }
+
+    private fun saveProotInfo(dirPresent: Boolean, bytes: Long?) {
+        getSharedPreferences("nativecode_prefs", MODE_PRIVATE).edit()
+            .putBoolean(PREF_PROOT_DIR, dirPresent)
+            .putLong(PREF_PROOT_BYTES, bytes ?: -1L)
+            .putLong(PREF_PROOT_LAST_MS, System.currentTimeMillis())
+            .apply()
+    }
+
+    private fun setProotLoading(loading: Boolean) {
+        prootMeasuring = loading
+        prootLoadingRow?.visibility = if (loading) View.VISIBLE else View.GONE
+        prootRefreshBtn?.isEnabled = !loading
+        prootRefreshBtn?.alpha = if (loading) 0.45f else 1f
+        if (loading) {
+            prootSizeHintTv?.text = "Measuring Debian proot rootfs…"
+            prootSizeHintTv?.setTextColor(NC.PRIMARY)
+            prootSizeValueTv?.alpha = 0.45f
+        } else {
+            prootSizeValueTv?.alpha = 1f
+        }
+    }
+
+    /**
+     * Measure complete proot rootfs under app filesDir (no root / no excludes).
+     * Prefers `du -sb`; falls back to Java walk.
+     */
+    private fun refreshProotSettingsCard(force: Boolean = true) {
+        if (prootSizeValueTv == null) return
+        if (prootMeasuring) return
+
+        val rootfs = ProjectPathResolver.prootRootfsDir(this)
+        prootPathTv?.text = rootfs.absolutePath
+
+        setProotLoading(true)
+        executor.execute {
+            val dirPresent = rootfs.isDirectory
+            var bytes: Long? = null
+            var measureNote: String
+
+            if (!dirPresent) {
+                measureNote = "Proot rootfs not found"
+            } else {
+                bytes = measureProotRootfsBytes(rootfs)
+                measureNote = if (bytes != null) {
+                    "Debian proot rootfs · measured in-app"
+                } else {
+                    "Size probe failed"
+                }
+            }
+
+            saveProotInfo(dirPresent, bytes)
+            val (valStr, unitStr) = formatStorageBytes(bytes)
+            Log.d(
+                "ProotSettings",
+                "path=${rootfs.absolutePath} present=$dirPresent bytes=$bytes"
+            )
+
+            mainHandler.post {
+                setProotLoading(false)
+                prootSizeValueTv?.text = valStr
+                prootSizeUnitTv?.text = unitStr
+                prootSizeHintTv?.text = measureNote
+                prootSizeHintTv?.setTextColor(
+                    if (dirPresent && bytes != null) NC.ON_SURF_VAR else NC.SECONDARY
+                )
+            }
+        }
+    }
+
+    /** `du -sb` on own filesDir; Java walk fallback. No bind excludes (plain tree). */
+    private fun measureProotRootfsBytes(rootfs: File): Long? {
+        val path = rootfs.absolutePath
+        try {
+            val pb = ProcessBuilder("du", "-sb", path)
+            pb.redirectErrorStream(true)
+            val proc = pb.start()
+            val out = proc.inputStream.bufferedReader().use { it.readText() }
+            val ok = proc.waitFor() == 0
+            val parsed = out.trim().lines()
+                .mapNotNull { line ->
+                    line.trim().split(Regex("\\s+")).firstOrNull()?.toLongOrNull()
+                }
+                .firstOrNull()
+            if (ok && parsed != null && parsed >= 0L) return parsed
+            if (parsed != null && parsed >= 0L) return parsed
+        } catch (_: Exception) {
+            // fall through to walk
+        }
+        return try {
+            var total = 0L
+            rootfs.walkTopDown().forEach { f ->
+                if (f.isFile) total += f.length()
+            }
+            total
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /**
      * Dedicated Chroot Settings page (Settings Hub → this).
      * Hub only shows a nav row; full status/size/root/uninstall lives here.
      */
@@ -6003,6 +6502,8 @@ class MainActivity : AppCompatActivity() {
         headerCol.addView(divider)
         pageLayout.addView(headerCol)
         pageLayout.addView(buildChrootSettingsContentCard())
+        pageLayout.addView(spacer(16))
+        pageLayout.addView(buildChrootProcessesCard())
     }
 
     /**
@@ -6313,10 +6814,9 @@ class MainActivity : AppCompatActivity() {
         }
         card.addView(chrootInstallBtn)
 
-        // 1) Instant status from local marker/dir  2) paint cache  3) async root+size
+        // Instant status + cache only; live probe runs on page enter (sequential size→proc)
         applyInstantChrootStatus()
         applyCachedChrootInfo()
-        refreshChrootSettingsCard(force = false)
         return card
     }
 
@@ -6388,16 +6888,19 @@ class MainActivity : AppCompatActivity() {
         chrootSizeHintTv?.setTextColor(NC.ON_SURF_VAR)
     }
 
+    private fun formatCacheAge(lastMs: Long): String {
+        if (lastMs <= 0L) return "unknown"
+        val mins = ((System.currentTimeMillis() - lastMs) / 60000L).coerceAtLeast(0L)
+        return when {
+            mins < 1 -> "just now"
+            mins < 60 -> "${mins}m ago"
+            mins < 1440 -> "${mins / 60}h ago"
+            else -> "${mins / 1440}d ago"
+        }
+    }
+
     private fun formatChrootCacheHint(lastMs: Long, viaRoot: Boolean, rootOk: Boolean): String {
-        val age = if (lastMs > 0L) {
-            val mins = ((System.currentTimeMillis() - lastMs) / 60000L).coerceAtLeast(0L)
-            when {
-                mins < 1 -> "just now"
-                mins < 60 -> "${mins}m ago"
-                mins < 1440 -> "${mins / 60}h ago"
-                else -> "${mins / 1440}d ago"
-            }
-        } else "unknown"
+        val age = formatCacheAge(lastMs)
         val how = when {
             viaRoot -> "root du"
             rootOk -> "root"
@@ -6406,6 +6909,11 @@ class MainActivity : AppCompatActivity() {
         return "Cached · $how · $age"
     }
 
+    /**
+     * Persist chroot card state. **Does not poison size cache on probe fail:**
+     * when [bytes] is null and dir still present with a prior good size, leave
+     * `chroot_size_bytes` + last-measure time alone so UI can show dimmed cache age.
+     */
     private fun saveChrootInfo(
         installed: Boolean,
         dirExists: Boolean,
@@ -6413,14 +6921,43 @@ class MainActivity : AppCompatActivity() {
         rootOk: Boolean,
         viaRoot: Boolean
     ) {
-        getSharedPreferences("nativecode_prefs", MODE_PRIVATE).edit()
+        val prefs = getSharedPreferences("nativecode_prefs", MODE_PRIVATE)
+        val edit = prefs.edit()
             .putBoolean(PREF_CHROOT_INSTALLED, installed)
             .putBoolean(PREF_CHROOT_DIR, dirExists)
-            .putLong(PREF_CHROOT_BYTES, bytes ?: -1L)
             .putBoolean(PREF_CHROOT_ROOT_OK, rootOk)
-            .putBoolean(PREF_CHROOT_SIZE_VIA_ROOT, viaRoot)
-            .putLong(PREF_CHROOT_LAST_MS, System.currentTimeMillis())
-            .apply()
+
+        when {
+            bytes != null && bytes >= 0L -> {
+                edit.putLong(PREF_CHROOT_BYTES, bytes)
+                edit.putBoolean(PREF_CHROOT_SIZE_VIA_ROOT, viaRoot)
+                edit.putLong(PREF_CHROOT_LAST_MS, System.currentTimeMillis())
+            }
+            !rootOk || !dirExists -> {
+                // Gone / no root — clear size
+                edit.putLong(PREF_CHROOT_BYTES, -1L)
+                edit.putBoolean(PREF_CHROOT_SIZE_VIA_ROOT, false)
+                edit.putLong(PREF_CHROOT_LAST_MS, System.currentTimeMillis())
+            }
+            // else: probe failed but dir still there — keep previous good bytes + LAST_MS
+            else -> {
+                if (!prefs.contains(PREF_CHROOT_LAST_MS)) {
+                    edit.putLong(PREF_CHROOT_LAST_MS, System.currentTimeMillis())
+                }
+            }
+        }
+        edit.apply()
+    }
+
+    /** Last good size from prefs, or null. */
+    private fun cachedChrootBytes(): Long? {
+        val prefs = getSharedPreferences("nativecode_prefs", MODE_PRIVATE)
+        return prefs.getLong(PREF_CHROOT_BYTES, -1L).takeIf { it >= 0L }
+    }
+
+    private fun cachedChrootLastMs(): Long {
+        return getSharedPreferences("nativecode_prefs", MODE_PRIVATE)
+            .getLong(PREF_CHROOT_LAST_MS, 0L)
     }
 
     private fun clearChrootInfoCache() {
@@ -6431,7 +6968,10 @@ class MainActivity : AppCompatActivity() {
             .remove(PREF_CHROOT_ROOT_OK)
             .remove(PREF_CHROOT_SIZE_VIA_ROOT)
             .remove(PREF_CHROOT_LAST_MS)
+            .remove(PREF_CHROOT_PROC_COUNT)
+            .remove(PREF_CHROOT_PROC_LAST_MS)
             .apply()
+        chrootProcLastCount = -1
     }
 
     private fun setChrootLoading(loading: Boolean) {
@@ -6458,92 +6998,178 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
-     * @param force true = user tapped REFRESH (clear su cache + re-probe).
-     *
-     * Flow:
-     *  1. Loading + ROOT=CHECKING (status stays until root known)
-     *  2. BG: RootShell su discovery (no File.exists skip) → if no root → NOT INSTALLED only
-     *  3. If root: dir/du via root → full card; save prefs
+     * Page-level sequential refresh: size probe **then** process list on one BG
+     * thread so two RootShell.capture never race on enter (F1).
      */
-    private fun refreshChrootSettingsCard(force: Boolean = true) {
+    private fun refreshChrootSettingsPage(force: Boolean = false) {
         if (chrootSizeValueTv == null) return
-        if (chrootMeasuring) return
+        if (chrootMeasuring || chrootProcMeasuring || chrootProcKilling) return
 
         setChrootLoading(true)
-        // While checking, keep root row visible as CHECKING
         chrootRootRowView?.visibility = View.VISIBLE
         chrootSizePanelView?.visibility = View.VISIBLE
         chrootPathRowView?.visibility = View.VISIBLE
+        // Block process SCAN/KILL while size runs
+        setChrootProcKillEnabled(false)
+        chrootProcScanBtn?.isEnabled = false
+        chrootProcScanBtn?.alpha = 0.45f
 
+        val appCtx = applicationContext
         executor.execute {
             if (force) RootShell.clearSuCache()
-
-            val path = ChrootCommandBuilder.CHROOT_PATH
-            val rootOk = RootShell.isRootAvailable()
-
-            if (!rootOk) {
-                // No app root access → card is NOT INSTALLED only (no DENIED / no partial GB)
-                saveChrootInfo(
-                    installed = false,
-                    dirExists = false,
-                    bytes = null,
-                    rootOk = false,
-                    viaRoot = false
-                )
+            runChrootSizeProbeOnBg(appCtx)
+            // Sequential: processes after size (same executor job)
+            if (chrootProcCountTv != null) {
+                mainHandler.post { setChrootProcLoading(loading = true) }
+                val procResult = ChrootProcessManager.list(appCtx)
                 mainHandler.post {
-                    setChrootLoading(false)
-                    applyNoRootChrootCardUi()
-                }
-                return@execute
-            }
-
-            // Root granted — full management UI (install/uninstall set after dir probe)
-            mainHandler.post {
-                chrootRootRowView?.visibility = View.VISIBLE
-                chrootSizePanelView?.visibility = View.VISIBLE
-                chrootPathRowView?.visibility = View.VISIBLE
-                applyChrootRootBadge(chrootRootBadge, rootOk = true, checking = false)
-            }
-
-            val markerOk = ProjectPathResolver.isChrootInstalled()
-            var dirExists = ProjectPathResolver.isChrootRootfsPresent() || markerOk
-            var bytes: Long? = null
-            var viaRoot = false
-            var measureNote: String
-
-            val existsOut = RootShell.capture("if [ -d '$path' ]; then echo YES; else echo NO; fi")
-            when (existsOut.trim().lines().lastOrNull()?.trim()) {
-                "YES" -> dirExists = true
-                "NO" -> dirExists = false
-            }
-
-            if (dirExists) {
-                val duOut = RootShell.capture("du -sb '$path' 2>/dev/null | cut -f1")
-                bytes = duOut.trim().lines().mapNotNull { it.trim().toLongOrNull() }.firstOrNull()
-                viaRoot = bytes != null
-                measureNote = if (viaRoot) {
-                    "Host rootfs · measured with root"
-                } else {
-                    "Root OK · size probe failed"
+                    setChrootProcLoading(loading = false)
+                    applyChrootProcessListUi(procResult)
+                    chrootProcScanBtn?.isEnabled = true
+                    chrootProcScanBtn?.alpha = 1f
                 }
             } else {
-                measureNote = "No chroot rootfs on host"
+                mainHandler.post {
+                    chrootProcScanBtn?.isEnabled = true
+                    chrootProcScanBtn?.alpha = 1f
+                }
             }
+        }
+    }
 
-            val installed = markerOk || dirExists
-            saveChrootInfo(installed, dirExists, bytes, rootOk = true, viaRoot)
-            val (valStr, unitStr) = formatStorageBytes(bytes)
+    /**
+     * @param force true = user tapped REFRESH (clear su cache + re-probe).
+     * Size only — does not start process list (use [refreshChrootSettingsPage] on enter).
+     */
+    private fun refreshChrootSettingsCard(force: Boolean = true) {
+        if (chrootSizeValueTv == null) return
+        if (chrootMeasuring || chrootProcMeasuring || chrootProcKilling) return
 
+        setChrootLoading(true)
+        chrootRootRowView?.visibility = View.VISIBLE
+        chrootSizePanelView?.visibility = View.VISIBLE
+        chrootPathRowView?.visibility = View.VISIBLE
+        setChrootProcKillEnabled(false)
+        chrootProcScanBtn?.isEnabled = false
+        chrootProcScanBtn?.alpha = 0.45f
+
+        val appCtx = applicationContext
+        executor.execute {
+            if (force) RootShell.clearSuCache()
+            runChrootSizeProbeOnBg(appCtx)
+            mainHandler.post {
+                chrootProcScanBtn?.isEnabled = true
+                chrootProcScanBtn?.alpha = 1f
+                // Re-enable kill if processes were known running
+                if (chrootProcLastCount > 0 && !chrootProcMeasuring && !chrootProcKilling) {
+                    setChrootProcKillEnabled(true)
+                }
+            }
+        }
+    }
+
+    /**
+     * BG: root probe + staged size helper. Posts UI. Must run on executor only.
+     * Keeps good size cache on fail (F2); paints dimmed cache + fail hint.
+     */
+    private fun runChrootSizeProbeOnBg(appCtx: Context) {
+        val rootOk = RootShell.isRootAvailable()
+
+        if (!rootOk) {
+            saveChrootInfo(
+                installed = false,
+                dirExists = false,
+                bytes = null,
+                rootOk = false,
+                viaRoot = false
+            )
             mainHandler.post {
                 setChrootLoading(false)
-                applyChrootStatusBadge(chrootStatusBadge, installed, markerOk, dirExists)
-                applyChrootRootBadge(chrootRootBadge, rootOk = true, checking = false)
-                chrootSizeValueTv?.text = valStr
-                chrootSizeUnitTv?.text = unitStr
-                chrootSizeHintTv?.text = measureNote
-                chrootSizeHintTv?.setTextColor(if (installed) NC.ON_SURF_VAR else NC.SECONDARY)
-                applyChrootInstallUninstallVisibility(installed)
+                applyNoRootChrootCardUi()
             }
+            return
+        }
+
+        mainHandler.post {
+            chrootRootRowView?.visibility = View.VISIBLE
+            chrootSizePanelView?.visibility = View.VISIBLE
+            chrootPathRowView?.visibility = View.VISIBLE
+            applyChrootRootBadge(chrootRootBadge, rootOk = true, checking = false)
+        }
+
+        val markerOk = ProjectPathResolver.isChrootInstalled()
+        val measure = ChrootSizeManager.measure(appCtx)
+        var dirExists = measure.dirExists
+        if (measure.error == "no_dir") {
+            dirExists = false
+        } else if (measure.bytes != null || measure.error == null) {
+            dirExists = true
+        } else {
+            // Soft-fail: keep local marker/dir hints
+            dirExists = ProjectPathResolver.isChrootRootfsPresent() || markerOk || dirExists
+        }
+
+        val liveBytes = measure.bytes
+        val viaRoot = measure.viaRoot
+        val priorBytes = cachedChrootBytes()
+        val priorMs = cachedChrootLastMs()
+
+        val measureNote: String
+        val displayBytes: Long?
+        val dimmedCache: Boolean
+
+        when {
+            liveBytes != null -> {
+                displayBytes = liveBytes
+                dimmedCache = false
+                measureNote = "Debian rootfs · binds excluded (sdcard/mnt/dev)"
+            }
+            !dirExists -> {
+                displayBytes = null
+                dimmedCache = false
+                measureNote = "No chroot rootfs on host"
+            }
+            priorBytes != null -> {
+                // F2 fix: keep last good size on probe fail
+                displayBytes = priorBytes
+                dimmedCache = true
+                val age = formatCacheAge(priorMs)
+                val why = when (measure.error) {
+                    "timeout" -> "timeout"
+                    "empty_output" -> "empty"
+                    else -> "probe failed"
+                }
+                measureNote = "Size $why · showing cache · $age"
+                Log.w("ChrootSize", "probe fail keep cache err=${measure.error} raw=${measure.raw.take(400)}")
+            }
+            else -> {
+                displayBytes = null
+                dimmedCache = false
+                measureNote = "Root OK · size probe failed"
+                Log.w("ChrootSize", "probe fail no cache err=${measure.error} raw=${measure.raw.take(400)}")
+            }
+        }
+
+        val installed = markerOk || dirExists
+        saveChrootInfo(installed, dirExists, liveBytes, rootOk = true, viaRoot)
+        val (valStr, unitStr) = formatStorageBytes(displayBytes)
+
+        mainHandler.post {
+            setChrootLoading(false)
+            applyChrootStatusBadge(chrootStatusBadge, installed, markerOk, dirExists)
+            applyChrootRootBadge(chrootRootBadge, rootOk = true, checking = false)
+            chrootSizeValueTv?.text = valStr
+            chrootSizeUnitTv?.text = unitStr
+            chrootSizeValueTv?.alpha = if (dimmedCache) 0.75f else 1f
+            chrootSizeHintTv?.text = measureNote
+            chrootSizeHintTv?.setTextColor(
+                when {
+                    dimmedCache -> NC.TERTIARY
+                    installed -> NC.ON_SURF_VAR
+                    else -> NC.SECONDARY
+                }
+            )
+            applyChrootInstallUninstallVisibility(installed)
         }
     }
 
@@ -6703,6 +7329,426 @@ class MainActivity : AppCompatActivity() {
             onConfirm = {
                 pendingChrootUninstall = true
                 runScriptInTerminal("uninstall_debian13_chroot.sh", "chroot_host")
+            }
+        )
+    }
+
+    // ── Chroot Processes card (detect → kill → verify) ───────────────────────
+
+    private fun buildChrootProcessesCard(): LinearLayout {
+        val card = glassCard()
+        card.addView(sectionHeader(R.drawable.ic_stop_thick, "Processes", NC.ERROR))
+
+        val subTv = TextView(this).apply {
+            text = "// orphans survive app close (unlike proot). Kill before uninstall if stuck."
+            textSize = 10f
+            setTextColor(NC.ON_SURF_VAR)
+            typeface = Typeface.MONOSPACE
+            setPadding(0, 0, 0, dp(10))
+        }
+        card.addView(subTv)
+
+        val panel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                setColor(NC.SURFACE_LOWEST)
+                setStroke(dp(1), NC.OUTLINE_VAR)
+            }
+            setPadding(dp(12), dp(12), dp(12), dp(12))
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(12) }
+        }
+
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val title = TextView(this).apply {
+            text = "CHROOT PROCESSES"
+            textSize = 11f
+            setTextColor(NC.ON_SURF_VAR)
+            typeface = Typeface.MONOSPACE
+            layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
+        }
+        chrootProcScanBtn = TextView(this).apply {
+            text = " SCAN"
+            textSize = 10f
+            setTextColor(NC.PRIMARY)
+            typeface = Typeface.MONOSPACE
+            setCompoundDrawablesWithIntrinsicBounds(R.drawable.ic_refresh, 0, 0, 0)
+            compoundDrawableTintList = android.content.res.ColorStateList.valueOf(NC.PRIMARY)
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                setColor(NC.SURFACE_CONTAINER)
+                setStroke(dp(1), NC.OUTLINE_VAR)
+            }
+            setPadding(dp(8), dp(4), dp(10), dp(4))
+            setOnClickListener { refreshChrootProcessesCard(force = true) }
+        }
+        header.addView(title)
+        header.addView(chrootProcScanBtn)
+        panel.addView(header)
+
+        chrootProcLoadingRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            visibility = View.GONE
+            setPadding(0, dp(10), 0, dp(4))
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
+        }
+        val progress = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
+            isIndeterminate = true
+            layoutParams = LinearLayout.LayoutParams(0, dp(4), 1f)
+            indeterminateTintList = android.content.res.ColorStateList.valueOf(NC.ERROR)
+        }
+        val loadingLabel = TextView(this).apply {
+            text = " SCANNING"
+            textSize = 10f
+            setTextColor(NC.ERROR)
+            typeface = Typeface.MONOSPACE
+            setPadding(dp(8), 0, 0, 0)
+        }
+        chrootProcLoadingRow?.addView(progress)
+        chrootProcLoadingRow?.addView(loadingLabel)
+        panel.addView(chrootProcLoadingRow)
+
+        val countRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.BOTTOM
+            setPadding(0, dp(8), 0, 0)
+        }
+        chrootProcCountTv = TextView(this).apply {
+            text = "—"
+            textSize = 32f
+            setTextColor(NC.ERROR)
+            typeface = Typeface.MONOSPACE
+            paint.isFakeBoldText = true
+            layoutParams = LinearLayout.LayoutParams(WRAP, WRAP)
+        }
+        chrootProcUnitTv = TextView(this).apply {
+            text = "running"
+            textSize = 14f
+            setTextColor(NC.ON_SURF_VAR)
+            typeface = Typeface.MONOSPACE
+            setPadding(dp(8), 0, 0, dp(6))
+        }
+        countRow.addView(chrootProcCountTv)
+        countRow.addView(chrootProcUnitTv)
+        panel.addView(countRow)
+
+        panel.addView(TextView(this).apply {
+            text = "root=${ChrootCommandBuilder.CHROOT_PATH}"
+            textSize = 10f
+            setTextColor(NC.ON_SURF_VAR)
+            typeface = Typeface.MONOSPACE
+            setPadding(0, dp(4), 0, dp(6))
+            setTextIsSelectable(true)
+        })
+
+        chrootProcHintTv = TextView(this).apply {
+            text = "…"
+            textSize = 10f
+            setTextColor(NC.ON_SURF_VAR)
+            typeface = Typeface.MONOSPACE
+            setPadding(0, 0, 0, dp(6))
+        }
+        panel.addView(chrootProcHintTv)
+
+        chrootProcSampleBox = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            visibility = View.GONE
+            setPadding(0, dp(4), 0, dp(4))
+        }
+        panel.addView(chrootProcSampleBox)
+        card.addView(panel)
+
+        chrootProcKillBtn = TextView(this).apply {
+            text = "KILL ALL CHROOT PROCESSES"
+            textSize = 13f
+            setTextColor(NC.ERROR)
+            typeface = Typeface.MONOSPACE
+            gravity = Gravity.CENTER
+            background = cyberBrutalistBg(
+                fillColor = Color.parseColor("#1E1212"),
+                strokeColor = NC.ERROR,
+                shadowColor = NC.SHADOW_DARK,
+                offsetDp = 6,
+                cornerRadiusDp = 0,
+                rightFaceColor = Color.parseColor("#3C4A3F")
+            )
+            setPadding(dp(16), dp(12), dp(16), dp(12))
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
+            isEnabled = false
+            alpha = 0.4f
+            setOnClickListener { confirmAndKillChrootProcesses() }
+            setOnTouchListener { v, event ->
+                if (!v.isEnabled) return@setOnTouchListener false
+                when (event.action) {
+                    MotionEvent.ACTION_DOWN -> {
+                        v.translationX = dp(4).toFloat()
+                        v.translationY = dp(4).toFloat()
+                        v.background = cyberBrutalistBg(
+                            fillColor = Color.parseColor("#1E1212"),
+                            strokeColor = NC.ERROR,
+                            shadowColor = NC.SHADOW_DARK,
+                            offsetDp = 2,
+                            cornerRadiusDp = 0,
+                            rightFaceColor = Color.parseColor("#3C4A3F")
+                        )
+                    }
+                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                        v.translationX = 0f
+                        v.translationY = 0f
+                        v.background = cyberBrutalistBg(
+                            fillColor = Color.parseColor("#1E1212"),
+                            strokeColor = NC.ERROR,
+                            shadowColor = NC.SHADOW_DARK,
+                            offsetDp = 6,
+                            cornerRadiusDp = 0,
+                            rightFaceColor = Color.parseColor("#3C4A3F")
+                        )
+                    }
+                }
+                false
+            }
+        }
+        card.addView(chrootProcKillBtn)
+
+        chrootProcStatusTv = TextView(this).apply {
+            text = ""
+            textSize = 10f
+            setTextColor(NC.ON_SURF_VAR)
+            typeface = Typeface.MONOSPACE
+            setPadding(0, dp(10), 0, 0)
+            visibility = View.GONE
+        }
+        card.addView(chrootProcStatusTv)
+
+        applyCachedChrootProcInfo()
+        return card
+    }
+
+    private fun applyCachedChrootProcInfo() {
+        if (chrootProcCountTv == null) return
+        val prefs = getSharedPreferences("nativecode_prefs", MODE_PRIVATE)
+        if (!prefs.contains(PREF_CHROOT_PROC_LAST_MS)) return
+        val count = prefs.getInt(PREF_CHROOT_PROC_COUNT, -1)
+        val lastMs = prefs.getLong(PREF_CHROOT_PROC_LAST_MS, 0L)
+        if (count < 0) return
+        chrootProcLastCount = count
+        chrootProcCountTv?.text = count.toString()
+        chrootProcCountTv?.alpha = 0.75f
+        chrootProcUnitTv?.text = if (count == 1) "running" else "running"
+        val age = if (lastMs > 0L) {
+            val mins = ((System.currentTimeMillis() - lastMs) / 60000L).coerceAtLeast(0L)
+            when {
+                mins < 1 -> "just now"
+                mins < 60 -> "${mins}m ago"
+                else -> "${mins / 60}h ago"
+            }
+        } else "unknown"
+        chrootProcHintTv?.text = "Cached · $age"
+        chrootProcHintTv?.setTextColor(NC.ON_SURF_VAR)
+        setChrootProcKillEnabled(count > 0 && !chrootProcMeasuring && !chrootProcKilling)
+    }
+
+    private fun saveChrootProcInfo(count: Int) {
+        getSharedPreferences("nativecode_prefs", MODE_PRIVATE).edit()
+            .putInt(PREF_CHROOT_PROC_COUNT, count)
+            .putLong(PREF_CHROOT_PROC_LAST_MS, System.currentTimeMillis())
+            .apply()
+        chrootProcLastCount = count
+    }
+
+    private fun setChrootProcLoading(loading: Boolean, killing: Boolean = false) {
+        chrootProcMeasuring = loading && !killing
+        chrootProcKilling = killing
+        chrootProcLoadingRow?.visibility = if (loading || killing) View.VISIBLE else View.GONE
+        // Update loading label text
+        (chrootProcLoadingRow?.getChildAt(1) as? TextView)?.text =
+            if (killing) " KILLING" else " SCANNING"
+        chrootProcScanBtn?.isEnabled = !loading && !killing
+        chrootProcScanBtn?.alpha = if (loading || killing) 0.45f else 1f
+        if (loading || killing) {
+            chrootProcCountTv?.alpha = 0.45f
+            chrootProcHintTv?.text = if (killing) "Sending SIGKILL…" else "Scanning /proc for chroot root…"
+            chrootProcHintTv?.setTextColor(if (killing) NC.ERROR else NC.PRIMARY)
+            setChrootProcKillEnabled(false)
+        } else {
+            chrootProcCountTv?.alpha = 1f
+        }
+    }
+
+    private fun setChrootProcKillEnabled(enabled: Boolean) {
+        chrootProcKillBtn?.isEnabled = enabled
+        chrootProcKillBtn?.alpha = if (enabled) 1f else 0.4f
+    }
+
+    private fun refreshChrootProcessesCard(force: Boolean = true) {
+        if (chrootProcCountTv == null) return
+        // P3: do not race size measure / concurrent su
+        if (chrootMeasuring || chrootProcMeasuring || chrootProcKilling) return
+
+        setChrootProcLoading(loading = true)
+        val appCtx = applicationContext
+        executor.execute {
+            if (force) RootShell.clearSuCache()
+            val result = ChrootProcessManager.list(appCtx)
+            mainHandler.post {
+                setChrootProcLoading(loading = false)
+                applyChrootProcessListUi(result)
+            }
+        }
+    }
+
+    private fun applyChrootProcessListUi(result: ChrootProcessManager.ListResult) {
+        if (!result.rootOk || result.error == "root_required") {
+            chrootProcCountTv?.text = "—"
+            chrootProcUnitTv?.text = ""
+            chrootProcHintTv?.text = "Root required"
+            chrootProcHintTv?.setTextColor(NC.SECONDARY)
+            chrootProcSampleBox?.removeAllViews()
+            chrootProcSampleBox?.visibility = View.GONE
+            setChrootProcKillEnabled(false)
+            chrootProcStatusTv?.visibility = View.GONE
+            return
+        }
+        if (result.error == "stage_failed") {
+            chrootProcCountTv?.text = "—"
+            chrootProcHintTv?.text = "Failed to stage helper script"
+            chrootProcHintTv?.setTextColor(NC.ERROR)
+            setChrootProcKillEnabled(false)
+            return
+        }
+
+        val n = result.processes.size
+        saveChrootProcInfo(n)
+        chrootProcCountTv?.text = n.toString()
+        chrootProcCountTv?.alpha = 1f
+        chrootProcCountTv?.setTextColor(if (n > 0) NC.ERROR else NC.PRIMARY)
+        chrootProcUnitTv?.text = "running"
+
+        chrootProcHintTv?.text = when {
+            n == 0 -> "No chroot processes"
+            n == 1 -> "1 process uses chroot root"
+            else -> "$n processes use chroot root"
+        }
+        chrootProcHintTv?.setTextColor(if (n > 0) NC.TERTIARY else NC.ON_SURF_VAR)
+
+        fillChrootProcSample(result.processes)
+        setChrootProcKillEnabled(n > 0)
+    }
+
+    private fun fillChrootProcSample(procs: List<ChrootProcessManager.Proc>) {
+        val box = chrootProcSampleBox ?: return
+        box.removeAllViews()
+        if (procs.isEmpty()) {
+            box.visibility = View.GONE
+            return
+        }
+        box.visibility = View.VISIBLE
+        box.addView(TextView(this).apply {
+            text = "SAMPLE"
+            textSize = 10f
+            setTextColor(NC.ON_SURF_VAR)
+            typeface = Typeface.MONOSPACE
+            setPadding(0, 0, 0, dp(4))
+        })
+        val show = procs.take(5)
+        for (p in show) {
+            box.addView(TextView(this).apply {
+                text = "${p.pid}  ${p.comm}"
+                textSize = 11f
+                setTextColor(Color.WHITE)
+                typeface = Typeface.MONOSPACE
+                setPadding(0, dp(2), 0, dp(2))
+            })
+        }
+        val more = procs.size - show.size
+        if (more > 0) {
+            box.addView(TextView(this).apply {
+                text = "+$more more"
+                textSize = 10f
+                setTextColor(NC.ON_SURF_VAR)
+                typeface = Typeface.MONOSPACE
+                setPadding(0, dp(2), 0, 0)
+            })
+        }
+    }
+
+    private fun applyChrootProcessKillUi(result: ChrootProcessManager.KillResult) {
+        if (!result.rootOk || result.error == "root_required") {
+            chrootProcHintTv?.text = "Root required"
+            chrootProcHintTv?.setTextColor(NC.SECONDARY)
+            setChrootProcKillEnabled(false)
+            Toast.makeText(this, "Root required to kill chroot processes", Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (result.error == "stage_failed") {
+            chrootProcHintTv?.text = "Failed to stage helper script"
+            chrootProcHintTv?.setTextColor(NC.ERROR)
+            Toast.makeText(this, "Could not stage kill helper", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val rem = result.remaining.size
+        saveChrootProcInfo(rem)
+        chrootProcCountTv?.text = rem.toString()
+        chrootProcCountTv?.alpha = 1f
+        chrootProcCountTv?.setTextColor(if (rem > 0) NC.ERROR else NC.PRIMARY)
+        chrootProcUnitTv?.text = "running"
+        fillChrootProcSample(result.remaining)
+        setChrootProcKillEnabled(rem > 0)
+
+        val status = if (result.verifiedClean) {
+            "last: killed ${result.killed} · verified 0 remaining"
+        } else {
+            "last: killed ${result.killed} · ${rem} still alive — retry"
+        }
+        chrootProcStatusTv?.text = status
+        chrootProcStatusTv?.visibility = View.VISIBLE
+        chrootProcStatusTv?.setTextColor(if (result.verifiedClean) NC.PRIMARY else NC.ERROR)
+
+        chrootProcHintTv?.text = if (result.verifiedClean) {
+            "No chroot processes"
+        } else {
+            "$rem process(es) still use chroot root"
+        }
+        chrootProcHintTv?.setTextColor(if (result.verifiedClean) NC.ON_SURF_VAR else NC.TERTIARY)
+
+        Toast.makeText(
+            this,
+            if (result.verifiedClean) "Killed ${result.killed} · clean" else "Killed ${result.killed} · $rem remaining",
+            Toast.LENGTH_SHORT
+        ).show()
+    }
+
+    private fun confirmAndKillChrootProcesses() {
+        if (chrootProcKillBtn?.isEnabled != true) return
+        if (chrootMeasuring) return // P3: no concurrent su with size probe
+        val n = chrootProcLastCount.coerceAtLeast(0)
+        showBrutalistConfirmDialog(
+            title = "KILL CHROOT PROCESSES?",
+            message =
+                "Sends SIGKILL to every process whose root is ${ChrootCommandBuilder.CHROOT_PATH}.\n\n" +
+                    "Open chroot shells and guest daemons will die. Host Android processes are not targeted.\n\n" +
+                    "Rootfs and mounts stay (use Uninstall to remove)." +
+                    if (n > 0) "\n\nDetected: $n process(es)." else "",
+            confirmLabel = "KILL ALL",
+            cancelLabel = "CANCEL",
+            destructive = true,
+            onConfirm = {
+                if (!chrootMeasuring) {
+                    setChrootProcLoading(loading = true, killing = true)
+                    val appCtx = applicationContext
+                    executor.execute {
+                        val result = ChrootProcessManager.killAll(appCtx)
+                        mainHandler.post {
+                            setChrootProcLoading(loading = false, killing = false)
+                            applyChrootProcessKillUi(result)
+                        }
+                    }
+                }
             }
         )
     }
@@ -6910,7 +7956,13 @@ class MainActivity : AppCompatActivity() {
         chrootSizeUnitTv?.text = ""
         chrootSizeHintTv?.text = "Uninstalled"
         applyChrootRootBadge(chrootRootBadge, rootOk = false, checking = false)
-        refreshChrootSettingsCard(force = true)
+        chrootProcCountTv?.text = "0"
+        chrootProcHintTv?.text = "No chroot processes"
+        chrootProcSampleBox?.removeAllViews()
+        chrootProcSampleBox?.visibility = View.GONE
+        chrootProcStatusTv?.visibility = View.GONE
+        setChrootProcKillEnabled(false)
+        refreshChrootSettingsPage(force = true)
         val msg = if (fromCallback) {
             "Chroot uninstalled — switched to PRoot if needed"
         } else {
@@ -7050,7 +8102,8 @@ class MainActivity : AppCompatActivity() {
                 "setup_hw_accel_debian.sh",
                 "setup_cli_tools.sh",
                 "setup_debian13_chroot.sh",
-                "uninstall_debian13_chroot.sh"
+                "uninstall_debian13_chroot.sh",
+                "chroot_processes.sh"
             )
             for (script in scripts) {
                 val assetPath = when {

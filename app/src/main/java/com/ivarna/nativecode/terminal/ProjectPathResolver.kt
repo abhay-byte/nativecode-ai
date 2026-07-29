@@ -8,6 +8,19 @@ import java.io.File
  *  Works for both proot (Termux-style) and chroot (KernelSU/Magisk) installations. */
 object ProjectPathResolver {
 
+    /** Relative path under [Context.getFilesDir] for Debian proot rootfs (SSOT). */
+    const val PROOT_ROOTFS_REL = "usr/var/lib/proot-distro/containers/debian/rootfs"
+
+    /** Debian proot rootfs under app private storage. */
+    fun prootRootfsDir(ctx: Context): File =
+        File(ctx.filesDir, PROOT_ROOTFS_REL)
+
+    /** True if proot rootfs looks present (has etc or bin). */
+    fun isProotRootfsPresent(ctx: Context): Boolean =
+        prootRootfsDir(ctx).let {
+            it.isDirectory && (File(it, "etc").exists() || File(it, "bin").exists())
+        }
+
     /** Returns the Android host filesystem [File] for [projectPath].
      *  [projectPath] is the path inside Debian, e.g. "/home/flux/repos/my-app".
      *  The returned file points to the actual location on the Android host where
@@ -16,7 +29,7 @@ object ProjectPathResolver {
         val rootfs = if (method == "chroot") {
             ChrootCommandBuilder.CHROOT_PATH
         } else {
-            "${ctx.filesDir}/usr/var/lib/proot-distro/containers/debian/rootfs"
+            prootRootfsDir(ctx).absolutePath
         }
         return if (projectPath.startsWith("/")) {
             File(rootfs, projectPath.removePrefix("/"))
@@ -31,7 +44,7 @@ object ProjectPathResolver {
         val rootfs = if (method == "chroot") {
             ChrootCommandBuilder.CHROOT_PATH
         } else {
-            "${ctx.filesDir}/usr/var/lib/proot-distro/containers/debian/rootfs"
+            prootRootfsDir(ctx).absolutePath
         }
         val abs = file.absolutePath
         return if (abs.startsWith(rootfs)) {
@@ -46,7 +59,7 @@ object ProjectPathResolver {
         return if (method == "chroot") {
             File(ChrootCommandBuilder.CHROOT_PATH, "home/flux")
         } else {
-            File(ctx.filesDir, "usr/var/lib/proot-distro/containers/debian/rootfs/home/flux")
+            File(prootRootfsDir(ctx), "home/flux")
         }
     }
 
