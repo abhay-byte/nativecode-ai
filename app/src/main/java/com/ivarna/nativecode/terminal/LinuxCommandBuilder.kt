@@ -13,9 +13,10 @@ object LinuxCommandBuilder {
         ctx: Context,
         shellCmd: String,
         user: String = "flux",
-        useSharedTmp: Boolean = true
+        useSharedTmp: Boolean = true,
+        method: String = currentMethod
     ): Pair<Array<String>, HashMap<String, String>> {
-        return when (currentMethod) {
+        return when (method) {
             "chroot" -> ChrootCommandBuilder.build(ctx, shellCmd, user)
             else -> ProotCommandBuilder.build(ctx, shellCmd, user, useSharedTmp)
         }

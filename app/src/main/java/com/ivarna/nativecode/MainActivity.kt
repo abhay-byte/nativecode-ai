@@ -142,8 +142,12 @@ class MainActivity : AppCompatActivity() {
     private lateinit var scriptInstallTerminalView: TerminalView
     private var scriptInstallSession: TerminalSession? = null
 
+    private lateinit var projectCreateContainer: LinearLayout
     private lateinit var projectCreateScrollView: ScrollView
     private lateinit var projectCreateLayout: LinearLayout
+    private var projectCreateSelectedMethod: String = "proot"
+    private var projectCreateProotChip: TextView? = null
+    private var projectCreateChrootChip: TextView? = null
     private lateinit var projectsListContainer: FrameLayout
     private lateinit var projectsListScrollView: ScrollView
     private lateinit var projectsListLayout: LinearLayout
@@ -246,6 +250,8 @@ class MainActivity : AppCompatActivity() {
 
     private var activeProjectName = "MyAndroidApp"
     private var activeProjectPath = "/home/flux/repos/my-android-app"
+    /** Isolation method for [activeProjectPath] (proot|chroot). SSOT for path resolve. */
+    private var activeProjectMethod: String = "proot"
     private lateinit var fileExplorerTitleTv: TextView
     private lateinit var projectIconInput: EditText
     private lateinit var projectNameInput: EditText
@@ -438,6 +444,9 @@ class MainActivity : AppCompatActivity() {
         LinuxCommandBuilder.currentMethod = prefs.getString("linux_method", "proot") ?: "proot"
         activeProjectName = prefs.getString("active_project_name", activeProjectName) ?: activeProjectName
         activeProjectPath = prefs.getString("active_project_path", activeProjectPath) ?: activeProjectPath
+        activeProjectMethod = prefs.getString("active_project_method", null)
+            ?: getProjects().find { it.path == activeProjectPath }?.linuxMethod
+            ?: LinuxCommandBuilder.currentMethod
 
         buildRootLayout()
         setContentView(drawerLayout)
@@ -537,7 +546,45 @@ class MainActivity : AppCompatActivity() {
         getSharedPreferences("nativecode_prefs", MODE_PRIVATE).edit()
             .putString("active_project_name", activeProjectName)
             .putString("active_project_path", activeProjectPath)
+            .putString("active_project_method", activeProjectMethod)
             .apply()
+    }
+
+    /** Host dir for active project using project method (not ambient global alone). */
+    private fun activeProjectHostDir(): File =
+        ProjectPathResolver.resolve(this, activeProjectPath, activeProjectMethod)
+
+    /**
+     * Apply isolation method for a project: switch global, persist, repair if clone
+     * lives only under the opposite rootfs.
+     * @return effective method used after optional recovery
+     */
+    private fun applyProjectIsolation(path: String, preferredMethod: String): String {
+        var method = preferredMethod
+        val found = ProjectManager.detectRepoMethod(this, path, preferredMethod)
+        if (found != null && found != preferredMethod) {
+            method = found
+            val list = getProjects().toMutableList()
+            val idx = list.indexOfFirst { it.path == path }
+            if (idx >= 0) {
+                val p = list[idx]
+                list[idx] = p.copy(linuxMethod = method)
+                saveProjects(list)
+            }
+            Toast.makeText(
+                this,
+                "Repo found under ${ProjectPathResolver.methodLabel(method)}; using that method",
+                Toast.LENGTH_LONG
+            ).show()
+        }
+        activeProjectMethod = method
+        LinuxCommandBuilder.currentMethod = method
+        getSharedPreferences("nativecode_prefs", MODE_PRIVATE)
+            .edit()
+            .putString("linux_method", method)
+            .putString("active_project_method", method)
+            .apply()
+        return method
     }
 
     private fun handleIntent(intent: Intent?) {
@@ -554,6 +601,9 @@ class MainActivity : AppCompatActivity() {
             val projPath = it.getStringExtra("PROJECT_PATH")
             if (projPath != null) {
                 activeProjectPath = projPath
+                val preferred = getProjects().find { p -> p.path == projPath }?.linuxMethod
+                    ?: LinuxCommandBuilder.currentMethod
+                applyProjectIsolation(projPath, preferred)
             }
             val projName = it.getStringExtra("PROJECT_NAME")
             if (projName != null) {
@@ -729,8 +779,9 @@ class MainActivity : AppCompatActivity() {
         if (::scriptInstallLayout.isInitialized) {
             scriptInstallLayout.visibility = View.GONE
         }
-        if (::projectCreateScrollView.isInitialized) {
-            projectCreateScrollView.visibility = View.GONE
+        if (::projectCreateContainer.isInitialized) {
+            // Only toggle container — scroll child must stay VISIBLE or form is blank
+            projectCreateContainer.visibility = View.GONE
         }
         if (::projectsListContainer.isInitialized) {
             projectsListContainer.visibility = View.GONE
@@ -756,7 +807,8 @@ class MainActivity : AppCompatActivity() {
             if (::bottomNavigation.isInitialized) bottomNavigation.menu.findItem(bottomNavigation.selectedItemId)?.isChecked = false
             if (::drawerLayout.isInitialized) drawerLayout.setDrawerLockMode(androidx.drawerlayout.widget.DrawerLayout.LOCK_MODE_LOCKED_CLOSED)
         } else if (id == ID_PROJECT_CREATE) {
-            unifiedHeader.visibility = View.GONE
+            // App title bar (logo + telemetry) stays visible on create/import
+            unifiedHeader.visibility = View.VISIBLE
             if (::drawerLayout.isInitialized) drawerLayout.setDrawerLockMode(androidx.drawerlayout.widget.DrawerLayout.LOCK_MODE_LOCKED_CLOSED)
         } else if (id == ID_PROJECT_WORKSPACE || id == ID_PROJECT_SETTINGS || id == ID_PROJECT_DIR_TREE || id == ID_PROJECT_GIT_DIFF) {
             unifiedHeader.visibility = View.GONE
@@ -849,8 +901,12 @@ class MainActivity : AppCompatActivity() {
                 }
             }
             ID_PROJECT_CREATE -> {
-                if (::projectCreateScrollView.isInitialized) {
-                    projectCreateScrollView.visibility = View.VISIBLE
+                if (::projectCreateContainer.isInitialized) {
+                    projectCreateContainer.visibility = View.VISIBLE
+                    if (::projectCreateScrollView.isInitialized) {
+                        projectCreateScrollView.visibility = View.VISIBLE
+                    }
+                    refreshProjectCreateMethodChips()
                 }
             }
             ID_PROJECTS_LIST -> {
@@ -951,7 +1007,9 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        if (::projectCreateScrollView.isInitialized && projectCreateScrollView.visibility == View.VISIBLE) {
+        if ((::projectCreateContainer.isInitialized && projectCreateContainer.visibility == View.VISIBLE) ||
+            (::projectCreateScrollView.isInitialized && projectCreateScrollView.visibility == View.VISIBLE)
+        ) {
             navigateToPage(ID_PROJECTS_LIST)
             return
         }
@@ -1506,7 +1564,7 @@ class MainActivity : AppCompatActivity() {
         contentFrame.addView(prootSettingsScrollView)
         contentFrame.addView(chrootSettingsScrollView)
         contentFrame.addView(scriptInstallLayout)
-        contentFrame.addView(projectCreateScrollView)
+        contentFrame.addView(projectCreateContainer)
         contentFrame.addView(projectsListContainer)
         contentFrame.addView(projectWorkspaceContainer)
         contentFrame.addView(projectSettingsContainer)
@@ -4062,8 +4120,9 @@ class MainActivity : AppCompatActivity() {
         fileViewerContainer.removeAllViews()
 
         var targetFile = File(pathStr)
+        val projectHost = activeProjectHostDir()
         if (!targetFile.exists() && !targetFile.isAbsolute) {
-            targetFile = File(ProjectPathResolver.resolve(this, activeProjectPath), pathStr)
+            targetFile = File(projectHost, pathStr)
         }
 
         val headerCard = LinearLayout(this).apply {
@@ -4081,8 +4140,8 @@ class MainActivity : AppCompatActivity() {
             typeface = Typeface.DEFAULT_BOLD
             layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
         }
-        val relativePathStr = if (targetFile.absolutePath.contains(ProjectPathResolver.resolve(this, activeProjectPath).absolutePath)) {
-            targetFile.absolutePath.removePrefix(ProjectPathResolver.resolve(this, activeProjectPath).absolutePath).trimStart('/')
+        val relativePathStr = if (targetFile.absolutePath.contains(projectHost.absolutePath)) {
+            targetFile.absolutePath.removePrefix(projectHost.absolutePath).trimStart('/')
         } else {
             targetFile.name
         }
@@ -5836,6 +5895,7 @@ class MainActivity : AppCompatActivity() {
                 markProjectOpened(p.path)
                 activeProjectName = p.name
                 activeProjectPath = p.path
+                applyProjectIsolation(p.path, p.linuxMethod)
                 if (pageStack.isEmpty() || pageStack.peek() != ID_PROJECT_WORKSPACE) {
                     pageStack.push(ID_PROJECT_WORKSPACE)
                 }
@@ -9292,17 +9352,57 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun styleCreateMethodChip(chip: TextView, selected: Boolean) {
+        // ui_design: primary filled selected / secondary outline unselected; sharp 0px; two-tone extrusion
+        chip.background = cyberBrutalistBg(
+            fillColor = if (selected) NC.PRIMARY_CON else NC.SURFACE_CONTAINER,
+            strokeColor = if (selected) Color.parseColor("#3C4A3F") else NC.PRIMARY,
+            shadowColor = NC.SHADOW_DARK,
+            offsetDp = 4,
+            cornerRadiusDp = 0,
+            rightFaceColor = Color.parseColor("#3C4A3F")
+        )
+        chip.setTextColor(if (selected) Color.parseColor("#0A0A0A") else NC.ON_SURFACE)
+        chip.paint.isFakeBoldText = true
+    }
+
+    private fun refreshProjectCreateMethodChips() {
+        projectCreateSelectedMethod = LinuxCommandBuilder.currentMethod
+        if (projectCreateSelectedMethod == "chroot" && !ProjectPathResolver.isChrootInstalled()) {
+            projectCreateSelectedMethod = "proot"
+        }
+        val chrootOk = ProjectPathResolver.isChrootInstalled()
+        projectCreateProotChip?.let {
+            styleCreateMethodChip(it, projectCreateSelectedMethod == "proot")
+            it.isEnabled = true
+            it.alpha = 1f
+        }
+        projectCreateChrootChip?.let {
+            styleCreateMethodChip(it, projectCreateSelectedMethod == "chroot")
+            it.isEnabled = chrootOk
+            it.alpha = if (chrootOk) 1f else 0.4f
+        }
+    }
+
     private fun buildProjectCreateLayout() {
-        projectCreateScrollView = ScrollView(this).apply {
+        projectCreateContainer = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
             layoutParams = FrameLayout.LayoutParams(MATCH, MATCH)
             visibility = View.GONE
+            setBackgroundColor(NC.BG)
+        }
+        projectCreateScrollView = ScrollView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(MATCH, 0, 1f)
+            clipToPadding = false
+            setPadding(0, 0, 0, dp(24))
         }
         projectCreateLayout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(16))
+            setPadding(dp(16), dp(16), dp(16), dp(16))
         }
         projectCreateScrollView.addView(projectCreateLayout)
 
+        // Sticky page title bar (app unifiedHeader sits above this)
         val topBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -9311,17 +9411,22 @@ class MainActivity : AppCompatActivity() {
                 setColor(NC.SURFACE_LOWEST)
                 setStroke(dp(1), Color.parseColor("#3C4A3F"))
             }
-            setPadding(dp(12), dp(8), dp(12), dp(8))
+            setPadding(dp(12), dp(10), dp(12), dp(10))
             layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
         }
         val backBtn = ImageView(this).apply {
             setImageResource(R.drawable.ic_arrow_back)
             setColorFilter(NC.ON_SURFACE)
             setPadding(dp(6), dp(6), dp(6), dp(6))
-            layoutParams = LinearLayout.LayoutParams(dp(36), dp(36))
+            layoutParams = LinearLayout.LayoutParams(dp(36), dp(36)).apply { rightMargin = dp(4) }
             setOnClickListener {
                 onBackPressed()
             }
+        }
+        val logoIv = ImageView(this).apply {
+            setImageResource(R.drawable.logo_highres)
+            layoutParams = LinearLayout.LayoutParams(dp(28), dp(28)).apply { rightMargin = dp(10) }
+            scaleType = ImageView.ScaleType.FIT_CENTER
         }
         val titleTv = TextView(this).apply {
             text = "Create / Import Project"
@@ -9329,11 +9434,13 @@ class MainActivity : AppCompatActivity() {
             setTextColor(NC.ON_SURFACE)
             typeface = Typeface.MONOSPACE
             paint.isFakeBoldText = true
+            layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
         }
         topBar.addView(backBtn)
+        topBar.addView(logoIv)
         topBar.addView(titleTv)
-        projectCreateLayout.addView(topBar)
-        projectCreateLayout.addView(spacer(16))
+        projectCreateContainer.addView(topBar)
+        projectCreateContainer.addView(projectCreateScrollView)
 
         // --- Card 1: Project Name ---
         val nameCard = LinearLayout(this).apply {
@@ -9493,7 +9600,6 @@ class MainActivity : AppCompatActivity() {
         projectCreateLayout.addView(githubCard)
 
         // --- Card 4: Linux Isolation Mode ---
-        var selectedMethod = LinuxCommandBuilder.currentMethod
         val methodCard = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             background = cyberBrutalistBg(
@@ -9515,70 +9621,79 @@ class MainActivity : AppCompatActivity() {
             paint.isFakeBoldText = true
             setPadding(0, 0, 0, dp(8))
         })
+        methodCard.addView(TextView(this).apply {
+            text = "Select engine for this project. Toggle updates selection immediately."
+            textSize = 11f
+            setTextColor(NC.ON_SURF_VAR)
+            typeface = Typeface.MONOSPACE
+            setPadding(0, 0, 0, dp(12))
+        })
+
+        projectCreateSelectedMethod = LinuxCommandBuilder.currentMethod
+        if (projectCreateSelectedMethod == "chroot" && !ProjectPathResolver.isChrootInstalled()) {
+            projectCreateSelectedMethod = "proot"
+        }
 
         val prootChip = TextView(this).apply {
-            text = "  PRoot  "
-            textSize = 12f
+            text = "PRoot"
+            textSize = 13f
             typeface = Typeface.MONOSPACE
-            setPadding(dp(12), dp(8), dp(12), dp(8))
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.RECTANGLE
-                cornerRadius = dp(4).toFloat()
-                setColor(if (selectedMethod == "proot") NC.PRIMARY else NC.SURFACE_LOWEST)
-                setStroke(dp(1), if (selectedMethod == "proot") NC.PRIMARY else NC.OUTLINE)
-            }
-            setTextColor(if (selectedMethod == "proot") Color.BLACK else NC.ON_SURFACE)
+            gravity = Gravity.CENTER
+            setPadding(dp(16), dp(12), dp(16), dp(12))
             isClickable = true
+            isFocusable = true
+            layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f).apply { rightMargin = dp(8) }
         }
         val chrootChip = TextView(this).apply {
-            text = "  Chroot  "
-            textSize = 12f
+            text = "Chroot"
+            textSize = 13f
             typeface = Typeface.MONOSPACE
-            setPadding(dp(12), dp(8), dp(12), dp(8))
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.RECTANGLE
-                cornerRadius = dp(4).toFloat()
-                setColor(if (selectedMethod == "chroot") NC.PRIMARY else NC.SURFACE_LOWEST)
-                setStroke(dp(1), if (selectedMethod == "chroot") NC.PRIMARY else NC.OUTLINE)
-            }
-            setTextColor(if (selectedMethod == "chroot") Color.BLACK else NC.ON_SURFACE)
+            gravity = Gravity.CENTER
+            setPadding(dp(16), dp(12), dp(16), dp(12))
             isClickable = true
-            alpha = if (ProjectPathResolver.isChrootInstalled()) 1f else 0.4f
-            isEnabled = ProjectPathResolver.isChrootInstalled()
+            isFocusable = true
+            layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f).apply { leftMargin = dp(8) }
         }
-
-        fun updateMethodChips() {
-            (prootChip.background as GradientDrawable).apply {
-                setColor(if (selectedMethod == "proot") NC.PRIMARY else NC.SURFACE_LOWEST)
-                setStroke(dp(1), if (selectedMethod == "proot") NC.PRIMARY else NC.OUTLINE)
-            }
-            prootChip.setTextColor(if (selectedMethod == "proot") Color.BLACK else NC.ON_SURFACE)
-            (chrootChip.background as GradientDrawable).apply {
-                setColor(if (selectedMethod == "chroot") NC.PRIMARY else NC.SURFACE_LOWEST)
-                setStroke(dp(1), if (selectedMethod == "chroot") NC.PRIMARY else NC.OUTLINE)
-            }
-            chrootChip.setTextColor(if (selectedMethod == "chroot") Color.BLACK else NC.ON_SURFACE)
-        }
+        projectCreateProotChip = prootChip
+        projectCreateChrootChip = chrootChip
+        refreshProjectCreateMethodChips()
 
         prootChip.setOnClickListener {
-            selectedMethod = "proot"
-            updateMethodChips()
+            projectCreateSelectedMethod = "proot"
+            styleCreateMethodChip(prootChip, true)
+            styleCreateMethodChip(chrootChip, false)
+            chrootChip.alpha = if (ProjectPathResolver.isChrootInstalled()) 1f else 0.4f
         }
         chrootChip.setOnClickListener {
             if (ProjectPathResolver.isChrootInstalled()) {
-                selectedMethod = "chroot"
-                updateMethodChips()
+                projectCreateSelectedMethod = "chroot"
+                styleCreateMethodChip(prootChip, false)
+                styleCreateMethodChip(chrootChip, true)
             } else {
-                Toast.makeText(this, "Chroot not installed. Install via Settings > System Scripts.", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "Chroot not installed. Install via Settings → Chroot.", Toast.LENGTH_SHORT).show()
             }
+        }
+        prootChip.setOnTouchListener { v, event ->
+            when (event.action) {
+                MotionEvent.ACTION_DOWN -> v.animate().translationX(dp(2).toFloat()).translationY(dp(2).toFloat()).setDuration(60).start()
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> v.animate().translationX(0f).translationY(0f).setDuration(60).start()
+            }
+            false
+        }
+        chrootChip.setOnTouchListener { v, event ->
+            when (event.action) {
+                MotionEvent.ACTION_DOWN -> v.animate().translationX(dp(2).toFloat()).translationY(dp(2).toFloat()).setDuration(60).start()
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> v.animate().translationX(0f).translationY(0f).setDuration(60).start()
+            }
+            false
         }
 
         val chipRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            setPadding(0, dp(4), 0, 0)
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, dp(4), 0, dp(4))
         }
         chipRow.addView(prootChip)
-        chipRow.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(dp(12), 0) })
         chipRow.addView(chrootChip)
         methodCard.addView(chipRow)
         projectCreateLayout.addView(methodCard)
@@ -9588,7 +9703,7 @@ class MainActivity : AppCompatActivity() {
             val name = projectNameInput.text.toString().trim()
             val gitUrl = projectGithubInput.text.toString().trim()
             val icon = projectIconInput.text.toString().trim()
-            val method = selectedMethod
+            val method = projectCreateSelectedMethod
 
             if (name.isEmpty()) {
                 Toast.makeText(this, "Please enter a project name", Toast.LENGTH_SHORT).show()
@@ -9596,12 +9711,17 @@ class MainActivity : AppCompatActivity() {
             }
 
             val path = if (gitUrl.isNotEmpty()) {
-                val repoName = gitUrl.substringAfterLast("/").substringBeforeLast(".git")
+                val repoName = ProjectManager.repoNameFromUrl(gitUrl)
                 "/home/flux/repos/$repoName"
             } else {
                 val slug = name.trim().lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-')
                 "/home/flux/repos/$slug"
             }
+
+            // Switch isolation to chip method BEFORE clone so all nested builds match
+            LinuxCommandBuilder.currentMethod = method
+            getSharedPreferences("nativecode_prefs", MODE_PRIVATE)
+                .edit().putString("linux_method", method).apply()
 
             if (gitUrl.isNotEmpty()) {
                 projectCreateBtn.isEnabled = false
@@ -9781,18 +9901,33 @@ class MainActivity : AppCompatActivity() {
                     ProjectManager.cloneRepo(
                         this@MainActivity,
                         gitUrl,
-                        onProgress = { line -> appendLog(line) },
+                        method = method,
+                        onProgress = { line ->
+                            mainHandler.post { appendLog(line) }
+                        },
                         onDone = { exitCode ->
-                            mainHandler.removeCallbacks(pulseRunnable)
-                            mainHandler.removeCallbacks(animRunnable)
-                            contentFrame.removeView(overlayRoot)
-                            projectCreateBtn.isEnabled = true
-                            projectCreateBtn.alpha = 1f
-                            if (exitCode == 0) {
-                                addAndOpenProject(name, icon, path, method)
-                            } else {
-                                Toast.makeText(this@MainActivity, "Clone failed. Check URL or network.", Toast.LENGTH_LONG).show()
-                                navigateToPage(ID_PROJECT_CREATE)
+                            mainHandler.post {
+                                mainHandler.removeCallbacks(pulseRunnable)
+                                mainHandler.removeCallbacks(animRunnable)
+                                contentFrame.removeView(overlayRoot)
+                                projectCreateBtn.isEnabled = true
+                                projectCreateBtn.alpha = 1f
+                                if (exitCode == 0) {
+                                    val hostDir = ProjectPathResolver.resolve(this@MainActivity, path, method)
+                                    if (!File(hostDir, ".git").isDirectory) {
+                                        Toast.makeText(
+                                            this@MainActivity,
+                                            "Clone reported OK but no .git under ${ProjectPathResolver.methodLabel(method)}",
+                                            Toast.LENGTH_LONG
+                                        ).show()
+                                        navigateToPage(ID_PROJECT_CREATE)
+                                        return@post
+                                    }
+                                    addAndOpenProject(name, icon, path, method, skipEnsureDir = true)
+                                } else {
+                                    Toast.makeText(this@MainActivity, "Clone failed. Check URL or network.", Toast.LENGTH_LONG).show()
+                                    navigateToPage(ID_PROJECT_CREATE)
+                                }
                             }
                         }
                     )
@@ -9804,7 +9939,13 @@ class MainActivity : AppCompatActivity() {
         projectCreateLayout.addView(projectCreateBtn)
     }
 
-    private fun addAndOpenProject(name: String, icon: String, path: String, method: String = "proot") {
+    private fun addAndOpenProject(
+        name: String,
+        icon: String,
+        path: String,
+        method: String = "proot",
+        skipEnsureDir: Boolean = false
+    ) {
         val projects = getProjects().toMutableList()
         val existingIndex = projects.indexOfFirst { it.path == path }
         val newProj = Project(name, icon, path, linuxMethod = method)
@@ -9817,14 +9958,22 @@ class MainActivity : AppCompatActivity() {
 
         activeProjectName = name
         activeProjectPath = path
+        activeProjectMethod = method
 
         // Auto-switch global mode to project's mode
         LinuxCommandBuilder.currentMethod = method
         getSharedPreferences("nativecode_prefs", MODE_PRIVATE)
-            .edit().putString("linux_method", method).apply()
+            .edit()
+            .putString("linux_method", method)
+            .putString("active_project_name", name)
+            .putString("active_project_path", path)
+            .putString("active_project_method", method)
+            .apply()
 
-        // Ensure the project directory exists in Debian
-        ProjectManager.ensureDir(this, path)
+        // Non-git create only: mkdir under the selected method (avoid empty shell over real clone)
+        if (!skipEnsureDir) {
+            ProjectManager.ensureDir(this, path, method = method)
+        }
 
         Toast.makeText(this, "Project opened: $name", Toast.LENGTH_SHORT).show()
 
@@ -9982,9 +10131,7 @@ class MainActivity : AppCompatActivity() {
                         markProjectOpened(p1.path)
                         activeProjectName = p1.name
                         activeProjectPath = p1.path
-                        LinuxCommandBuilder.currentMethod = p1.linuxMethod
-                        getSharedPreferences("nativecode_prefs", MODE_PRIVATE)
-                            .edit().putString("linux_method", p1.linuxMethod).apply()
+                        applyProjectIsolation(p1.path, p1.linuxMethod)
                         Toast.makeText(this@MainActivity, "Project opened: ${p1.name}", Toast.LENGTH_SHORT).show()
                         if (pageStack.isEmpty() || pageStack.peek() != ID_PROJECT_WORKSPACE) {
                             pageStack.push(ID_PROJECT_WORKSPACE)
@@ -10004,9 +10151,7 @@ class MainActivity : AppCompatActivity() {
                             markProjectOpened(p2.path)
                             activeProjectName = p2.name
                             activeProjectPath = p2.path
-                            LinuxCommandBuilder.currentMethod = p2.linuxMethod
-                            getSharedPreferences("nativecode_prefs", MODE_PRIVATE)
-                                .edit().putString("linux_method", p2.linuxMethod).apply()
+                            applyProjectIsolation(p2.path, p2.linuxMethod)
                             Toast.makeText(this@MainActivity, "Project opened: ${p2.name}", Toast.LENGTH_SHORT).show()
                             if (pageStack.isEmpty() || pageStack.peek() != ID_PROJECT_WORKSPACE) {
                                 pageStack.push(ID_PROJECT_WORKSPACE)
@@ -10033,7 +10178,7 @@ class MainActivity : AppCompatActivity() {
     private fun refreshWorkspaceDirTree() {
         if (!::workspaceDirTreeLayout.isInitialized) return
         workspaceDirTreeLayout.removeAllViews()
-        val projectHostDir = ProjectPathResolver.resolve(this, activeProjectPath)
+        val projectHostDir = activeProjectHostDir()
         if (projectHostDir.exists() && projectHostDir.isDirectory) {
             if (dirSearchQuery.isEmpty()) {
                 renderDirectoryTree(projectHostDir, workspaceDirTreeLayout, 0)
@@ -11615,6 +11760,68 @@ class MainActivity : AppCompatActivity() {
         }
         settingsContentLayout.addView(settingsHeaderRow)
         settingsContentLayout.addView(settingsDivider)
+
+        // Project Name card (rename)
+        val nameCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = cyberBrutalistBg(
+                fillColor = NC.SURFACE_LOW,
+                strokeColor = NC.OUTLINE_VAR,
+                shadowColor = NC.SHADOW_DARK,
+                offsetDp = 6,
+                cornerRadiusDp = 0
+            )
+            setPadding(dp(16), dp(16), dp(16), dp(16))
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(16) }
+        }
+        val nameCardTitleRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, 0, 0, dp(12))
+        }
+        val nameCardIcon = ImageView(this).apply {
+            setImageResource(R.drawable.ic_project_config)
+            setColorFilter(NC.PRIMARY)
+            layoutParams = LinearLayout.LayoutParams(dp(20), dp(20)).apply { rightMargin = dp(8) }
+        }
+        val nameCardTitle = TextView(this).apply {
+            text = "PROJECT NAME"
+            textSize = 14f
+            setTextColor(NC.PRIMARY)
+            typeface = Typeface.MONOSPACE
+            paint.isFakeBoldText = true
+        }
+        nameCardTitleRow.addView(nameCardIcon)
+        nameCardTitleRow.addView(nameCardTitle)
+        nameCard.addView(nameCardTitleRow)
+        nameCard.addView(TextView(this).apply {
+            text = "Display name only — repo path stays the same."
+            textSize = 11f
+            setTextColor(NC.ON_SURF_VAR)
+            typeface = Typeface.MONOSPACE
+            setPadding(0, 0, 0, dp(10))
+        })
+        val configNameInput = EditText(this).apply {
+            setText(activeProjectName)
+            hint = "Project name"
+            setHintTextColor(NC.OUTLINE)
+            setTextColor(NC.ON_SURFACE)
+            textSize = 14f
+            typeface = Typeface.MONOSPACE
+            background = cyberBrutalistBg(
+                fillColor = NC.SURFACE_LOWEST,
+                strokeColor = NC.OUTLINE_VAR,
+                shadowColor = Color.TRANSPARENT,
+                offsetDp = 0,
+                cornerRadiusDp = 0
+            )
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+            setSingleLine(true)
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
+        }
+        nameCard.addView(configNameInput)
+        settingsContentLayout.addView(nameCard)
+
         settingsContentLayout.addView(buildTerminalSettingsCard())
         settingsContentLayout.addView(spacer(16))
 
@@ -11780,13 +11987,34 @@ class MainActivity : AppCompatActivity() {
         settingsContentLayout.addView(iconCard)
 
         val saveBtn = primaryButton("SAVE CONFIGURATION") {
+            val newName = configNameInput.text.toString().trim()
             val newIcon = configIconInput.text.toString().trim()
+            if (newName.isEmpty()) {
+                Toast.makeText(this, "Project name cannot be empty", Toast.LENGTH_SHORT).show()
+                return@primaryButton
+            }
             val list = getProjects().toMutableList()
             val idx = list.indexOfFirst { it.path == activeProjectPath }
             if (idx >= 0) {
                 val oldProj = list[idx]
-                list[idx] = Project(oldProj.name, newIcon, oldProj.path)
+                list[idx] = oldProj.copy(name = newName, icon = newIcon)
                 saveProjects(list)
+                activeProjectName = newName
+                getSharedPreferences("nativecode_prefs", MODE_PRIVATE).edit()
+                    .putString("active_project_name", activeProjectName)
+                    .apply()
+                if (::workspaceProjectNameTv.isInitialized) {
+                    workspaceProjectNameTv.text = activeProjectName
+                }
+                if (::projectSettingsTopBar.isInitialized) {
+                    updateProjectSubpageTopBar(projectSettingsTopBar)
+                }
+                if (::projectDirTreeTopBar.isInitialized) {
+                    updateProjectSubpageTopBar(projectDirTreeTopBar)
+                }
+                if (::projectGitDiffTopBar.isInitialized) {
+                    updateProjectSubpageTopBar(projectGitDiffTopBar)
+                }
                 Toast.makeText(this, "Configuration saved successfully!", Toast.LENGTH_SHORT).show()
                 onBackPressed()
             }
