@@ -136,6 +136,12 @@ if [ -s "$NVM_DIR/bash_completion" ] && [ -n "${BASH_VERSION:-}" ]; then
     # shellcheck disable=SC1091
     . "$NVM_DIR/bash_completion"
 fi
+
+# AI CLI browser-login tokens (written by NativeCode CliAuthService)
+if [ -f "$HOME/.config/fluxlinux/cli-auth.env" ]; then
+    # shellcheck disable=SC1091
+    . "$HOME/.config/fluxlinux/cli-auth.env"
+fi
 ENVEOF
 chown -R "$FLUX_USER:$FLUX_USER" "$ENV_DIR" 2>/dev/null || chown -R "$FLUX_USER" "$ENV_DIR" 2>/dev/null || true
 chmod 644 "$ENV_FILE"

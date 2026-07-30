@@ -34,9 +34,6 @@ public class Prefs extends LoriePreferences.PrefsProto {
   public final BooleanPreference preferScancodes = new BooleanPreference("preferScancodes", false);
   public final BooleanPreference hardwareKbdScancodesWorkaround = new BooleanPreference("hardwareKbdScancodesWorkaround", true);
   public final BooleanPreference dexMetaKeyCapture = new BooleanPreference("dexMetaKeyCapture", false);
-  public final BooleanPreference enableAccessibilityServiceAutomatically = new BooleanPreference("enableAccessibilityServiceAutomatically", false);
-  public final BooleanPreference pauseKeyInterceptingWithEsc = new BooleanPreference("pauseKeyInterceptingWithEsc", false);
-  public final BooleanPreference filterOutWinkey = new BooleanPreference("filterOutWinkey", false);
   public final BooleanPreference enforceCharBasedInput = new BooleanPreference("enforceCharBasedInput", false);
   public final BooleanPreference clipboardEnable = new BooleanPreference("clipboardEnable", true);
   public final BooleanPreference storeSecondaryDisplayPreferencesSeparately = new BooleanPreference("storeSecondaryDisplayPreferencesSeparately", false);
@@ -84,9 +81,6 @@ public class Prefs extends LoriePreferences.PrefsProto {
     put("preferScancodes", preferScancodes);
     put("hardwareKbdScancodesWorkaround", hardwareKbdScancodesWorkaround);
     put("dexMetaKeyCapture", dexMetaKeyCapture);
-    put("enableAccessibilityServiceAutomatically", enableAccessibilityServiceAutomatically);
-    put("pauseKeyInterceptingWithEsc", pauseKeyInterceptingWithEsc);
-    put("filterOutWinkey", filterOutWinkey);
     put("enforceCharBasedInput", enforceCharBasedInput);
     put("clipboardEnable", clipboardEnable);
     put("storeSecondaryDisplayPreferencesSeparately", storeSecondaryDisplayPreferencesSeparately);

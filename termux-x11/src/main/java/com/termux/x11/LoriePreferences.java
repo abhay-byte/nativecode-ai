@@ -1,9 +1,7 @@
 package com.termux.x11;
 
 import static android.Manifest.permission.POST_NOTIFICATIONS;
-import static android.Manifest.permission.WRITE_SECURE_SETTINGS;
 import static android.content.pm.PackageManager.PERMISSION_DENIED;
-import static android.content.pm.PackageManager.PERMISSION_GRANTED;
 import static android.os.Build.VERSION.SDK_INT;
 import static android.system.Os.getuid;
 
@@ -15,9 +13,7 @@ import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.content.res.Resources;
 import android.content.res.TypedArray;
-import android.database.ContentObserver;
 import android.graphics.Typeface;
-import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 
@@ -47,7 +43,6 @@ import androidx.preference.PreferenceGroup;
 import androidx.preference.PreferenceScreen;
 import androidx.preference.SeekBarPreference;
 
-import android.provider.Settings;
 import android.text.method.LinkMovementMethod;
 import android.util.Log;
 import android.util.TypedValue;
@@ -60,7 +55,6 @@ import android.widget.EditText;
 import android.widget.TextView;
 import android.widget.Toast;
 
-import com.termux.x11.utils.KeyInterceptor;
 import com.termux.x11.utils.SamsungDexUtils;
 import com.termux.x11.utils.TermuxX11ExtraKeys;
 
@@ -88,21 +82,6 @@ public class LoriePreferences extends AppCompatActivity implements PreferenceFra
             if (ACTION_PREFERENCES_CHANGED.equals(intent.getAction()) &&
                     intent.getBooleanExtra("fromBroadcast", false))
                 updatePreferencesLayout();
-        }
-    };
-
-    private final ContentObserver accessibilityObserver = new ContentObserver(null) {
-        private final Runnable updateLayout = () -> updatePreferencesLayout();
-
-        @Override
-        public void onChange(boolean selfChange) {
-            handler.removeCallbacks(updateLayout);
-            handler.postDelayed(updateLayout, 200);
-        }
-
-        @Override
-        public boolean deliverSelfNotifications() {
-            return true;
         }
     };
 
@@ -139,12 +118,6 @@ public class LoriePreferences extends AppCompatActivity implements PreferenceFra
         getSupportFragmentManager().beginTransaction()
                 .replace(R.id.prefs_container, new LoriePreferenceFragment(null))
                 .commit();
-
-        Uri ENABLED_ACCESSIBILITY_SERVICES = Settings.Secure.getUriFor(Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES);
-        Uri ACCESSIBILITY_ENABLED = Settings.Secure.getUriFor(Settings.Secure.ACCESSIBILITY_ENABLED);
-
-        getContentResolver().registerContentObserver(ENABLED_ACCESSIBILITY_SERVICES, true, accessibilityObserver);
-        getContentResolver().registerContentObserver(ACCESSIBILITY_ENABLED, true, accessibilityObserver);
     }
 
     @SuppressLint("WrongConstant")
@@ -300,7 +273,6 @@ public class LoriePreferences extends AppCompatActivity implements PreferenceFra
 
             setSummary("displayStretch", R.string.lorie_pref_summary_requiresExactOrCustom);
             setSummary("adjustResolution", R.string.lorie_pref_summary_requiresExactOrCustom);
-            setSummary("pauseKeyInterceptingWithEsc", R.string.lorie_pref_summary_requiresIntercepting);
             setSummary("scaleTouchpad", R.string.lorie_pref_summary_requiresTrackpadAndNative);
 
             if (!SamsungDexUtils.available())
@@ -360,14 +332,6 @@ public class LoriePreferences extends AppCompatActivity implements PreferenceFra
             setVisible("displayScale", displayResMode.contentEquals("scaled"));
             setVisible("displayResolutionExact", displayResMode.contentEquals("exact"));
             setVisible("displayResolutionCustom", displayResMode.contentEquals("custom"));
-
-            setEnabled("dexMetaKeyCapture", !prefs.enableAccessibilityServiceAutomatically.get());
-            setEnabled("enableAccessibilityServiceAutomatically", !prefs.dexMetaKeyCapture.get());
-            setEnabled("pauseKeyInterceptingWithEsc", prefs.dexMetaKeyCapture.get() ||
-                    prefs.enableAccessibilityServiceAutomatically.get() ||
-                    KeyInterceptor.isLaunched());
-            setEnabled("enableAccessibilityServiceAutomatically", prefs.enableAccessibilityServiceAutomatically.get() || KeyInterceptor.isLaunched());
-            setEnabled("filterOutWinkey", prefs.enableAccessibilityServiceAutomatically.get() || KeyInterceptor.isLaunched());
 
             boolean displayStretchEnabled = "exact".contentEquals(prefs.displayResolutionMode.get()) || "custom".contentEquals(prefs.displayResolutionMode.get());
             setEnabled("displayStretch", displayStretchEnabled);
@@ -449,22 +413,6 @@ public class LoriePreferences extends AppCompatActivity implements PreferenceFra
             if ("showAdditionalKbd".contentEquals(key) && (Boolean) newValue)
                 prefs.additionalKbdVisible.put(true);
 
-            if ("enableAccessibilityServiceAutomatically".contentEquals(key)) {
-                if (!((Boolean) newValue))
-                    KeyInterceptor.shutdown(false);
-                if (requireContext().checkSelfPermission(WRITE_SECURE_SETTINGS) != PERMISSION_GRANTED) {
-                    new AlertDialog.Builder(requireContext())
-                            .setTitle("Permission denied")
-                            .setMessage("Android requires WRITE_SECURE_SETTINGS permission to start accessibility service automatically.\n" +
-                                    "Please, launch this command using ADB:\n" +
-                                    "adb shell pm grant com.termux.x11 android.permission.WRITE_SECURE_SETTINGS")
-                            .setNegativeButton("OK", null)
-                            .create()
-                            .show();
-                    return false;
-                }
-            }
-            
             requireContext().sendBroadcast(new Intent(ACTION_PREFERENCES_CHANGED) {{
                 putExtra("key", key);
                 putExtra("fromBroadcast", true);
@@ -571,20 +519,6 @@ public class LoriePreferences extends AppCompatActivity implements PreferenceFra
                                 }
 
                                 edit.putString("displayResolutionCustom", newValue);
-                                break;
-                            }
-                            case "enableAccessibilityServiceAutomatically": {
-                                if (!"true".equals(newValue))
-                                    KeyInterceptor.shutdown(false);
-                                else if (context.checkSelfPermission(WRITE_SECURE_SETTINGS) != PERMISSION_GRANTED) {
-                                    sendResponse(remote, 1, 1, "Permission denied.\n" +
-                                            "Android requires WRITE_SECURE_SETTINGS permission to change `enableAccessibilityServiceAutomatically` setting.\n" +
-                                            "Please, launch this command using ADB:\n" +
-                                            "adb shell pm grant com.termux.x11 android.permission.WRITE_SECURE_SETTINGS");
-                                    return;
-                                }
-
-                                edit.putBoolean("enableAccessibilityServiceAutomatically", "true".contentEquals(newValue));
                                 break;
                             }
                             case "extra_keys_config": {

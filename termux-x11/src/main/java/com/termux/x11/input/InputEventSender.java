@@ -37,7 +37,6 @@ public final class InputEventSender {
     public boolean scaleTouchpad = false;
     public float capturedPointerSpeedFactor = 100;
     public boolean dexMetaKeyCapture = false;
-    public boolean pauseKeyInterceptingWithEsc = false;
     public boolean stylusIsMouse = false;
     public boolean stylusButtonContactModifierMode = false;
 

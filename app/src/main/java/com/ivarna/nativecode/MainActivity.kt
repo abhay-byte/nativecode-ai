@@ -54,6 +54,7 @@ import java.io.File
 import com.ivarna.nativecode.terminal.*
 import com.ivarna.nativecode.marketplace.*
 import com.ivarna.nativecode.github.*
+import com.ivarna.nativecode.cliauth.*
 import java.io.FileOutputStream
 import java.util.concurrent.Executors
 
@@ -140,6 +141,12 @@ class MainActivity : AppCompatActivity() {
     private lateinit var diffViewerContainer: LinearLayout
     private lateinit var scriptsScrollView: ScrollView
     private lateinit var scriptsLayout: LinearLayout
+    /** AI CLI browser login page (Settings Hub → AI CLI LOGIN). */
+    private lateinit var cliAuthScrollView: ScrollView
+    private var cliAuthListContainer: LinearLayout? = null
+    private var cliAuthMethodBadge: TextView? = null
+    private var cliAuthSession: com.ivarna.nativecode.cliauth.CliAuthSession? = null
+    private var cliAuthOverlay: FrameLayout? = null
     /** Repairs page: host | guest | chroot */
     private var repairsSelectedTab: String = "host"
     private var repairsRootOk: Boolean? = null
@@ -323,6 +330,7 @@ class MainActivity : AppCompatActivity() {
     private val ID_SOFTWARE_MANAGER = 16
     private val ID_MARKETPLACE = 17
     private val ID_MP_INSTALLER = 18
+    private val ID_CLI_AUTH = 19
     
     private var fileViewerBackPage = ID_FILES
     private var diffViewerBackPage = ID_GIT
@@ -869,6 +877,9 @@ class MainActivity : AppCompatActivity() {
         if (::scriptsScrollView.isInitialized) {
             scriptsScrollView.visibility = View.GONE
         }
+        if (::cliAuthScrollView.isInitialized) {
+            cliAuthScrollView.visibility = View.GONE
+        }
         if (::prootSettingsScrollView.isInitialized) {
             prootSettingsScrollView.visibility = View.GONE
         }
@@ -1022,6 +1033,12 @@ class MainActivity : AppCompatActivity() {
                 if (::scriptsScrollView.isInitialized) {
                     scriptsScrollView.visibility = View.VISIBLE
                     refreshRepairsPage()
+                }
+            }
+            ID_CLI_AUTH -> {
+                if (::cliAuthScrollView.isInitialized) {
+                    cliAuthScrollView.visibility = View.VISIBLE
+                    refreshCliAuthPage()
                 }
             }
             ID_SCRIPT_INSTALL -> {
@@ -1196,6 +1213,12 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
+        if (::cliAuthScrollView.isInitialized && cliAuthScrollView.visibility == View.VISIBLE) {
+            dismissCliAuthOverlay()
+            navigateToPage(ID_SETTINGS)
+            return
+        }
+
         if (pageStack.size > 1) {
             pageStack.pop() // remove current
             val prev = pageStack.peek()
@@ -1234,7 +1257,8 @@ class MainActivity : AppCompatActivity() {
         
         if (id == ID_SCRIPTS || id == ID_SCRIPT_INSTALL || id == ID_PROJECT_CREATE ||
             id == ID_CHROOT_SETTINGS || id == ID_PROOT_SETTINGS ||
-            id == ID_SOFTWARE_MANAGER || id == ID_MARKETPLACE || id == ID_MP_INSTALLER
+            id == ID_SOFTWARE_MANAGER || id == ID_MARKETPLACE || id == ID_MP_INSTALLER ||
+            id == ID_CLI_AUTH
         ) {
             showGlobalNav = false
             showProjectNav = false
@@ -1690,6 +1714,7 @@ class MainActivity : AppCompatActivity() {
         buildFileViewerLayout()
         buildDiffViewerLayout()
         buildScriptsLayout()
+        buildCliAuthPage()
         buildProotSettingsPage()
         buildChrootSettingsPage()
         buildSoftwareManagerPage()
@@ -1712,6 +1737,7 @@ class MainActivity : AppCompatActivity() {
         contentFrame.addView(fileViewerRootContainer)
         contentFrame.addView(diffViewerRootContainer)
         contentFrame.addView(scriptsScrollView)
+        contentFrame.addView(cliAuthScrollView)
         contentFrame.addView(prootSettingsScrollView)
         contentFrame.addView(chrootSettingsScrollView)
         contentFrame.addView(softwareManagerScrollView)
@@ -3741,6 +3767,10 @@ class MainActivity : AppCompatActivity() {
         settingsHubLayout.addView(buildSettingsGithubCard())
         settingsHubLayout.addView(spacer(16))
 
+        // AI CLI browser / device-code login hub
+        settingsHubLayout.addView(buildCliAuthSectionButton())
+        settingsHubLayout.addView(spacer(16))
+
         // Proot Settings — size-only (app storage rootfs); above chroot
         settingsHubLayout.addView(buildProotSettingsSectionButton())
         settingsHubLayout.addView(spacer(16))
@@ -3767,6 +3797,10 @@ class MainActivity : AppCompatActivity() {
 
         // Onboarding Setup
         settingsHubLayout.addView(buildOnboardingSectionButton())
+        settingsHubLayout.addView(spacer(16))
+
+        // Privacy Policy — opens public GitHub markdown
+        settingsHubLayout.addView(buildPrivacyPolicyCard())
     }
 
     private fun buildX11SettingsSectionButton(): View {
@@ -3939,6 +3973,83 @@ class MainActivity : AppCompatActivity() {
             }
             details.addView(name)
             details.addView(sub)
+            val arrow = ImageView(this@MainActivity).apply {
+                setImageResource(R.drawable.ic_chevron_right)
+                setColorFilter(NC.PRIMARY)
+                layoutParams = LinearLayout.LayoutParams(dp(20), dp(20))
+            }
+            addView(icon)
+            addView(details)
+            addView(arrow)
+        }
+    }
+
+    private fun buildCliAuthSectionButton(): View {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            background = cyberBrutalistBg(
+                fillColor = NC.SURFACE_LOW,
+                strokeColor = NC.OUTLINE_VAR,
+                shadowColor = NC.SHADOW_DARK,
+                offsetDp = 6,
+                cornerRadiusDp = 0
+            )
+            setPadding(dp(16), dp(16), dp(16), dp(16))
+            setOnClickListener {
+                if (pageStack.isEmpty() || pageStack.peek() != ID_CLI_AUTH) {
+                    pageStack.push(ID_CLI_AUTH)
+                }
+                navigateToPage(ID_CLI_AUTH)
+            }
+            setOnTouchListener { v, event ->
+                when (event.action) {
+                    MotionEvent.ACTION_DOWN -> {
+                        v.translationX = dp(4).toFloat()
+                        v.translationY = dp(4).toFloat()
+                        v.background = cyberBrutalistBg(
+                            fillColor = NC.SURFACE_LOW,
+                            strokeColor = NC.OUTLINE_VAR,
+                            shadowColor = NC.SHADOW_DARK,
+                            offsetDp = 2,
+                            cornerRadiusDp = 0
+                        )
+                    }
+                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                        v.translationX = 0f
+                        v.translationY = 0f
+                        v.background = cyberBrutalistBg(
+                            fillColor = NC.SURFACE_LOW,
+                            strokeColor = NC.OUTLINE_VAR,
+                            shadowColor = NC.SHADOW_DARK,
+                            offsetDp = 6,
+                            cornerRadiusDp = 0
+                        )
+                    }
+                }
+                false
+            }
+            val icon = ImageView(this@MainActivity).apply {
+                setImageResource(R.drawable.ic_build)
+                setColorFilter(NC.PRIMARY)
+                layoutParams = LinearLayout.LayoutParams(dp(24), dp(24)).apply { rightMargin = dp(12) }
+            }
+            val details = LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
+            }
+            details.addView(TextView(this@MainActivity).apply {
+                text = "AI CLI LOGIN"
+                textSize = 15f
+                setTextColor(Color.WHITE)
+                typeface = Typeface.DEFAULT_BOLD
+            })
+            details.addView(TextView(this@MainActivity).apply {
+                text = "Browser / device-code sign-in for coding agents"
+                textSize = 11f
+                setTextColor(NC.ON_SURF_VAR)
+                typeface = Typeface.MONOSPACE
+            })
             val arrow = ImageView(this@MainActivity).apply {
                 setImageResource(R.drawable.ic_chevron_right)
                 setColorFilter(NC.PRIMARY)
@@ -4369,6 +4480,93 @@ class MainActivity : AppCompatActivity() {
             }
             val sub = TextView(this@MainActivity).apply {
                 text = "Relaunch initial setup and onboarding walkthrough"
+                textSize = 11f
+                setTextColor(NC.ON_SURF_VAR)
+                typeface = Typeface.MONOSPACE
+            }
+            details.addView(name)
+            details.addView(sub)
+            val arrow = ImageView(this@MainActivity).apply {
+                setImageResource(R.drawable.ic_chevron_right)
+                setColorFilter(NC.PRIMARY)
+                layoutParams = LinearLayout.LayoutParams(dp(20), dp(20))
+            }
+            addView(icon)
+            addView(details)
+            addView(arrow)
+        }
+    }
+
+    /** Settings Hub → Privacy Policy (public GitHub docs markdown). */
+    private fun buildPrivacyPolicyCard(): View {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            background = cyberBrutalistBg(
+                fillColor = NC.SURFACE_LOW,
+                strokeColor = NC.OUTLINE_VAR,
+                shadowColor = NC.SHADOW_DARK,
+                offsetDp = 6,
+                cornerRadiusDp = 0
+            )
+            setPadding(dp(16), dp(16), dp(16), dp(16))
+            setOnClickListener {
+                val url = "https://github.com/abhay-byte/nativecode-ai/blob/master/docs/privacy-policy.md"
+                try {
+                    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                } catch (e: Exception) {
+                    Toast.makeText(
+                        this@MainActivity,
+                        "No browser available to open privacy policy",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+            }
+            setOnTouchListener { v, event ->
+                when (event.action) {
+                    MotionEvent.ACTION_DOWN -> {
+                        v.translationX = dp(4).toFloat()
+                        v.translationY = dp(4).toFloat()
+                        v.background = cyberBrutalistBg(
+                            fillColor = NC.SURFACE_LOW,
+                            strokeColor = NC.OUTLINE_VAR,
+                            shadowColor = NC.SHADOW_DARK,
+                            offsetDp = 2,
+                            cornerRadiusDp = 0
+                        )
+                    }
+                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                        v.translationX = 0f
+                        v.translationY = 0f
+                        v.background = cyberBrutalistBg(
+                            fillColor = NC.SURFACE_LOW,
+                            strokeColor = NC.OUTLINE_VAR,
+                            shadowColor = NC.SHADOW_DARK,
+                            offsetDp = 6,
+                            cornerRadiusDp = 0
+                        )
+                    }
+                }
+                false
+            }
+
+            val icon = ImageView(this@MainActivity).apply {
+                setImageResource(R.drawable.ic_shield_thick)
+                setColorFilter(NC.PRIMARY)
+                layoutParams = LinearLayout.LayoutParams(dp(24), dp(24)).apply { rightMargin = dp(12) }
+            }
+            val details = LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
+            }
+            val name = TextView(this@MainActivity).apply {
+                text = "PRIVACY POLICY"
+                textSize = 15f
+                setTextColor(Color.WHITE)
+                typeface = Typeface.DEFAULT_BOLD
+            }
+            val sub = TextView(this@MainActivity).apply {
+                text = "Data practices · opens on GitHub"
                 textSize = 11f
                 setTextColor(NC.ON_SURF_VAR)
                 typeface = Typeface.MONOSPACE
@@ -13295,6 +13493,524 @@ class MainActivity : AppCompatActivity() {
         settingsGhActionBtn?.isEnabled = true
     }
 
+    // ── AI CLI Login page ───────────────────────────────────────────────────
+
+    private fun buildCliAuthPage() {
+        cliAuthScrollView = ScrollView(this).apply {
+            layoutParams = FrameLayout.LayoutParams(MATCH, MATCH)
+            visibility = View.GONE
+            clipToPadding = false
+            setPadding(0, 0, 0, dp(80))
+            setBackgroundColor(NC.BG)
+        }
+        val pageLayout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(16), dp(16), dp(16))
+        }
+        cliAuthScrollView.addView(pageLayout)
+
+        val headerTitleRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val pageBackBtn = ImageView(this).apply {
+            setImageResource(R.drawable.ic_arrow_back)
+            setColorFilter(NC.PRIMARY)
+            setPadding(dp(4), dp(4), dp(4), dp(4))
+            layoutParams = LinearLayout.LayoutParams(dp(36), dp(36)).apply { rightMargin = dp(8) }
+            contentDescription = "Back"
+            setOnClickListener {
+                dismissCliAuthOverlay()
+                if (pageStack.isNotEmpty() && pageStack.peek() == ID_CLI_AUTH) {
+                    pageStack.pop()
+                }
+                navigateToPage(ID_SETTINGS, false)
+            }
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                setColor(NC.SURFACE_CONTAINER)
+                setStroke(dp(1), NC.OUTLINE_VAR)
+            }
+        }
+        val titleTv = TextView(this).apply {
+            text = "AI CLI TOOLS"
+            textSize = 22f
+            setTextColor(NC.PRIMARY)
+            typeface = Typeface.DEFAULT_BOLD
+            layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
+        }
+        val methodBadge = textBadge(
+            LinuxCommandBuilder.currentMethod.uppercase(),
+            NC.SURFACE_HIGHEST,
+            NC.PRIMARY
+        )
+        cliAuthMethodBadge = methodBadge
+        headerTitleRow.addView(pageBackBtn)
+        headerTitleRow.addView(titleTv)
+        headerTitleRow.addView(methodBadge)
+        pageLayout.addView(headerTitleRow)
+        pageLayout.addView(TextView(this).apply {
+            text = "// BROWSER / DEVICE-CODE SIGN-IN · PER ISOLATION"
+            textSize = 11f
+            setTextColor(NC.ON_SURF_VAR)
+            typeface = Typeface.MONOSPACE
+            setPadding(0, dp(4), 0, dp(8))
+        })
+        pageLayout.addView(TextView(this).apply {
+            text = "Auth is per isolation (proot ≠ chroot). Install tools via onboarding first."
+            textSize = 12f
+            setTextColor(NC.OUTLINE)
+            typeface = Typeface.MONOSPACE
+            setPadding(0, 0, 0, dp(12))
+        })
+
+        val refreshBtn = secondaryButton("REFRESH STATUS") {
+            refreshCliAuthPage(force = true)
+        }.apply {
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(12) }
+            textSize = 12f
+        }
+        pageLayout.addView(refreshBtn)
+
+        val list = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+        cliAuthListContainer = list
+        pageLayout.addView(list)
+    }
+
+    /**
+     * Paint AI CLI cards. Cache-first: reopen page is instant; guest probe only
+     * when cold / stale / [force] (REFRESH or post login-logout).
+     */
+    private fun refreshCliAuthPage(force: Boolean = false) {
+        val method = LinuxCommandBuilder.currentMethod
+        cliAuthMethodBadge?.text = method.uppercase()
+        val list = cliAuthListContainer ?: return
+        val cached = CliAuthService.cachedAll(method)
+
+        if (cached != null && !force) {
+            paintCliAuthList(list, cached)
+            if (CliAuthService.isCacheFresh(method)) return
+            // Stale: keep cards, silent re-probe
+            CliAuthService.probeAll(this, method, force = true) { statuses ->
+                if (cliAuthListContainer !== list) return@probeAll
+                if (LinuxCommandBuilder.currentMethod != method) return@probeAll
+                paintCliAuthList(list, statuses)
+            }
+            return
+        }
+
+        if (cached != null && force) {
+            paintCliAuthList(list, cached, footer = "Refreshing ${method.uppercase()}…")
+        } else {
+            list.removeAllViews()
+            list.addView(TextView(this).apply {
+                text = "Probing ${method.uppercase()} guest…"
+                textSize = 12f
+                setTextColor(NC.ON_SURF_VAR)
+                typeface = Typeface.MONOSPACE
+                setPadding(0, dp(8), 0, dp(8))
+            })
+        }
+
+        CliAuthService.probeAll(this, method, force = true) { statuses ->
+            if (cliAuthListContainer !== list) return@probeAll
+            if (LinuxCommandBuilder.currentMethod != method) return@probeAll
+            paintCliAuthList(list, statuses)
+        }
+    }
+
+    private fun paintCliAuthList(
+        list: LinearLayout,
+        statuses: List<CliToolStatus>,
+        footer: String? = null
+    ) {
+        list.removeAllViews()
+        if (statuses.isEmpty()) {
+            list.addView(TextView(this).apply {
+                text = "No tools for this method"
+                textSize = 12f
+                setTextColor(NC.ON_SURF_VAR)
+                typeface = Typeface.MONOSPACE
+            })
+            return
+        }
+        statuses.forEach { st ->
+            val def = CliToolCatalog.byId(st.toolId) ?: return@forEach
+            list.addView(buildCliToolCard(def, st))
+            list.addView(spacer(12))
+        }
+        if (!footer.isNullOrBlank()) {
+            list.addView(TextView(this).apply {
+                text = footer
+                textSize = 11f
+                setTextColor(NC.OUTLINE)
+                typeface = Typeface.MONOSPACE
+                setPadding(0, dp(4), 0, dp(4))
+            })
+        }
+    }
+
+    private fun buildCliToolCard(def: CliToolDef, status: CliToolStatus): LinearLayout {
+        val card = glassCard()
+        val titleRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, 0, 0, dp(6))
+        }
+        titleRow.addView(TextView(this).apply {
+            text = def.displayName
+            textSize = 15f
+            setTextColor(Color.WHITE)
+            typeface = Typeface.DEFAULT_BOLD
+            layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
+        })
+        val installBadge = if (status.installed) {
+            textBadge("INSTALLED", NC.PRIMARY, Color.parseColor("#0A0A0A"))
+        } else {
+            textBadge("MISSING", NC.SURFACE_HIGHEST, NC.ERROR)
+        }
+        titleRow.addView(installBadge)
+        card.addView(titleRow)
+
+        card.addView(TextView(this).apply {
+            text = "${def.bin} · ${def.subtitle}"
+            textSize = 11f
+            setTextColor(NC.OUTLINE)
+            typeface = Typeface.MONOSPACE
+            setPadding(0, 0, 0, dp(6))
+        })
+
+        // Install is mandatory (setup_cli_tools); never block login on probe flake
+        val stateLine = when {
+            status.loggedIn -> "SIGNED IN" + (status.accountLabel?.let { " · $it" } ?: "")
+            !status.installed -> "NOT LOGGED IN · bin probe weak"
+            else -> "NOT LOGGED IN" + (status.detail?.let { " · $it" } ?: "")
+        }
+        card.addView(TextView(this).apply {
+            text = stateLine
+            textSize = 12f
+            setTextColor(if (status.loggedIn) NC.PRIMARY else NC.ON_SURF_VAR)
+            typeface = Typeface.MONOSPACE
+            setPadding(0, 0, 0, dp(10))
+        })
+
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val loginLabel = when {
+            status.loggedIn -> "RE-AUTH"
+            def.strategy == CliLoginStrategy.API_KEY_FORM -> "SET API KEY"
+            def.strategy == CliLoginStrategy.TERMINAL_GUIDED -> "LOGIN (TERM)"
+            else -> "LOGIN"
+        }
+        val loginBtn = primaryButton(loginLabel) {
+            startCliToolLogin(def)
+        }.apply {
+            layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
+            textSize = 11f
+            isEnabled = !CliAuthService.isSessionActive()
+        }
+        row.addView(loginBtn)
+        if (status.installed && status.loggedIn) {
+            val logoutBtn = secondaryButton("LOGOUT") {
+                performCliToolLogout(def)
+            }.apply {
+                layoutParams = LinearLayout.LayoutParams(WRAP, WRAP).apply { leftMargin = dp(8) }
+                textSize = 11f
+                isEnabled = !CliAuthService.isSessionActive()
+            }
+            row.addView(logoutBtn)
+        }
+        if (!def.consoleUrl.isNullOrBlank()) {
+            val docsBtn = secondaryButton("WEB") {
+                CliAuthService.openBrowser(this@MainActivity, def.consoleUrl!!)
+            }.apply {
+                layoutParams = LinearLayout.LayoutParams(WRAP, WRAP).apply { leftMargin = dp(8) }
+                textSize = 11f
+            }
+            row.addView(docsBtn)
+        }
+        card.addView(row)
+        return card
+    }
+
+    private fun startCliToolLogin(def: CliToolDef) {
+        if (CliAuthService.isSessionActive()) {
+            Toast.makeText(this, "Auth already in progress", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val method = LinuxCommandBuilder.currentMethod
+        when (def.strategy) {
+            CliLoginStrategy.API_KEY_FORM -> showCliApiKeyDialog(def)
+            CliLoginStrategy.TERMINAL_GUIDED -> {
+                // Try service stream + guided terminal fallback via overlay
+                showCliAuthOverlay(def, method)
+            }
+            else -> showCliAuthOverlay(def, method)
+        }
+    }
+
+    private fun performCliToolLogout(def: CliToolDef) {
+        val method = LinuxCommandBuilder.currentMethod
+        Toast.makeText(this, "Logging out ${def.displayName}…", Toast.LENGTH_SHORT).show()
+        CliAuthService.logout(this, method, def.id) { ok, msg ->
+            Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+            refreshCliAuthPage(force = true)
+        }
+    }
+
+    private fun showCliApiKeyDialog(def: CliToolDef) {
+        val method = LinuxCommandBuilder.currentMethod
+        val input = EditText(this).apply {
+            hint = def.envKey ?: "API key"
+            setTextColor(Color.WHITE)
+            setHintTextColor(NC.OUTLINE)
+            typeface = Typeface.MONOSPACE
+            textSize = 13f
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or
+                android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+            setPadding(dp(12), dp(12), dp(12), dp(12))
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#0A0A0A"))
+                setStroke(dp(1), NC.OUTLINE_VAR)
+            }
+        }
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(8), dp(8), dp(8), 0)
+            addView(TextView(this@MainActivity).apply {
+                text = "Paste key for ${def.displayName}. Stored in guest ~/.config/fluxlinux/cli-auth.env ($method)."
+                textSize = 12f
+                setTextColor(NC.ON_SURF_VAR)
+                typeface = Typeface.MONOSPACE
+                setPadding(0, 0, 0, dp(10))
+            })
+            addView(input)
+        }
+        android.app.AlertDialog.Builder(this)
+            .setTitle("${def.displayName} API key")
+            .setView(box)
+            .setPositiveButton("SAVE") { _, _ ->
+                val key = input.text?.toString().orEmpty()
+                CliAuthService.saveApiKey(this, method, def.id, key) { ok, msg, _ ->
+                    Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+                    if (ok) refreshCliAuthPage(force = true)
+                }
+            }
+            .setNeutralButton("OPEN WEB") { _, _ ->
+                def.consoleUrl?.let { CliAuthService.openBrowser(this, it) }
+            }
+            .setNegativeButton("CANCEL", null)
+            .show()
+    }
+
+    private fun showCliAuthOverlay(def: CliToolDef, method: String) {
+        dismissCliAuthOverlay()
+        val overlayRoot = FrameLayout(this).apply {
+            layoutParams = FrameLayout.LayoutParams(MATCH, MATCH)
+            setBackgroundColor(Color.parseColor("#E6131313"))
+            isClickable = true
+            isFocusable = true
+        }
+        cliAuthOverlay = overlayRoot
+
+        val panel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = cyberBrutalistBg(
+                fillColor = NC.SURFACE_LOW,
+                strokeColor = NC.OUTLINE_VAR,
+                shadowColor = NC.SHADOW_DARK,
+                offsetDp = 6,
+                cornerRadiusDp = 0
+            )
+            setPadding(dp(16), dp(16), dp(16), dp(16))
+            layoutParams = FrameLayout.LayoutParams(MATCH, MATCH).apply {
+                setMargins(dp(12), dp(48), dp(12), dp(48))
+            }
+        }
+
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, 0, 0, dp(10))
+        }
+        header.addView(TextView(this).apply {
+            text = "${def.displayName} · ${method.uppercase()}"
+            textSize = 13f
+            setTextColor(NC.PRIMARY)
+            typeface = Typeface.MONOSPACE
+            paint.isFakeBoldText = true
+            layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
+        })
+        panel.addView(header)
+
+        val phaseTv = TextView(this).apply {
+            text = "Starting…"
+            textSize = 11f
+            setTextColor(NC.ON_SURF_VAR)
+            typeface = Typeface.MONOSPACE
+        }
+        panel.addView(phaseTv)
+
+        val otpRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            visibility = View.GONE
+            setPadding(0, dp(8), 0, dp(8))
+        }
+        val otpTv = TextView(this).apply {
+            text = "----"
+            textSize = 16f
+            setTextColor(NC.PRIMARY)
+            typeface = Typeface.MONOSPACE
+            paint.isFakeBoldText = true
+            layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
+        }
+        val openBrowserBtn = secondaryButton("OPEN BROWSER") {}.apply {
+            textSize = 11f
+            layoutParams = LinearLayout.LayoutParams(WRAP, WRAP)
+        }
+        otpRow.addView(otpTv)
+        otpRow.addView(openBrowserBtn)
+        panel.addView(otpRow)
+
+        val logScroll = ScrollView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(MATCH, 0, 1f)
+            setBackgroundColor(Color.parseColor("#0A0A0A"))
+        }
+        val logLayout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(10), dp(8), dp(10), dp(8))
+        }
+        logScroll.addView(logLayout)
+        panel.addView(logScroll)
+
+        fun appendLog(line: String) {
+            logLayout.addView(TextView(this).apply {
+                text = line
+                textSize = 11f
+                setTextColor(
+                    when {
+                        line.contains("error", true) || line.contains("fatal", true) -> NC.ERROR
+                        else -> NC.ON_SURFACE
+                    }
+                )
+                typeface = Typeface.MONOSPACE
+                setPadding(0, dp(1), 0, dp(1))
+            })
+            logScroll.post { logScroll.fullScroll(View.FOCUS_DOWN) }
+        }
+
+        val cancelBtn = primaryButton("CANCEL") {
+            cliAuthSession?.cancel()
+            dismissCliAuthOverlay()
+            refreshCliAuthPage(force = true)
+        }.apply {
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(12) }
+        }
+        panel.addView(cancelBtn)
+
+        overlayRoot.addView(panel)
+        contentFrame.addView(overlayRoot)
+        overlayRoot.bringToFront()
+
+        var lastUrl: String? = def.consoleUrl
+        var lastOtp: String? = null
+        openBrowserBtn.setOnClickListener {
+            val u = lastUrl
+            if (!u.isNullOrBlank()) CliAuthService.openBrowser(this, u)
+            else Toast.makeText(this, "No URL yet", Toast.LENGTH_SHORT).show()
+        }
+
+        val listener = object : CliAuthListener {
+            override fun onPhase(phase: CliAuthPhase, message: String) {
+                phaseTv.text = message
+            }
+            override fun onLog(line: String) {
+                appendLog(line)
+            }
+            override fun onOtp(code: String) {
+                lastOtp = code
+                otpRow.visibility = View.VISIBLE
+                otpTv.text = "$code  · Copied"
+                phaseTv.text = "Waiting for browser…"
+            }
+            override fun onUrl(url: String) {
+                lastUrl = url
+                otpRow.visibility = View.VISIBLE
+                if (lastOtp == null) otpTv.text = "URL ready"
+                appendLog("URL: $url")
+            }
+            override fun onDone(status: CliToolStatus) {
+                phaseTv.text = if (status.loggedIn) "Signed in" else (status.detail ?: "Done")
+                appendLog("Done · loggedIn=${status.loggedIn}")
+                mainHandler.postDelayed({
+                    dismissCliAuthOverlay()
+                    refreshCliAuthPage(force = true)
+                    if (status.loggedIn) {
+                        Toast.makeText(
+                            this@MainActivity,
+                            "${def.displayName}: signed in · ${method.uppercase()}",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                }, 500)
+            }
+            override fun onFailed(message: String) {
+                phaseTv.text = "Failed"
+                appendLog(message)
+                cancelBtn.text = "CLOSE"
+                cancelBtn.setOnClickListener {
+                    dismissCliAuthOverlay()
+                    refreshCliAuthPage(force = true)
+                }
+            }
+            override fun onCancelled() {
+                dismissCliAuthOverlay()
+                refreshCliAuthPage(force = true)
+            }
+            override fun onTerminalGuided(toolId: String, commandHint: String) {
+                appendLog("Open terminal and run: $commandHint")
+                mainHandler.post {
+                    Toast.makeText(
+                        this@MainActivity,
+                        "Run in terminal: $commandHint",
+                        Toast.LENGTH_LONG
+                    ).show()
+                    // Launch matching AI tool session so user can complete login
+                    try {
+                        createNewTerminalSession(def.terminalType)
+                    } catch (_: Exception) {
+                        try {
+                            createNewTerminalSession("shell")
+                        } catch (_: Exception) {
+                        }
+                    }
+                }
+            }
+        }
+
+        cliAuthSession = CliAuthService.startLogin(this, method, def.id, listener)
+        if (cliAuthSession == null) {
+            dismissCliAuthOverlay()
+            if (def.strategy == CliLoginStrategy.API_KEY_FORM) {
+                showCliApiKeyDialog(def)
+            }
+        }
+    }
+
+    private fun dismissCliAuthOverlay() {
+        cliAuthSession?.cancel()
+        cliAuthOverlay?.let {
+            try { contentFrame.removeView(it) } catch (_: Exception) {}
+        }
+        cliAuthOverlay = null
+        cliAuthSession = null
+    }
+
     private fun buildProjectCreateLayout() {
         projectCreateContainer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -13490,14 +14206,25 @@ class MainActivity : AppCompatActivity() {
             setPadding(dp(16), dp(16), dp(16), dp(16))
             layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(20) }
         }
-        githubCard.addView(TextView(this).apply {
+        val ghUrlHeader = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, 0, 0, dp(8))
+        }
+        ghUrlHeader.addView(ImageView(this).apply {
+            setImageResource(R.drawable.ic_github)
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            clearColorFilter()
+            layoutParams = LinearLayout.LayoutParams(dp(18), dp(18)).apply { rightMargin = dp(8) }
+        })
+        ghUrlHeader.addView(TextView(this).apply {
             text = "GITHUB REPOSITORY URL (OPTIONAL)"
             setTextColor(NC.PRIMARY)
             textSize = 12f
             typeface = Typeface.MONOSPACE
             paint.isFakeBoldText = true
-            setPadding(0, 0, 0, dp(8))
         })
+        githubCard.addView(ghUrlHeader)
         projectGithubInput = EditText(this).apply {
             hint = "https://github.com/username/repo.git"
             setHintTextColor(NC.OUTLINE)

@@ -36,7 +36,7 @@ class BackgroundService : Service() {
         )
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("FluxLinux is running")
+            .setContentTitle("NativeCode is running")
             .setContentText("Host and GUI services are active in the background.")
             .setSmallIcon(R.drawable.ic_terminal)
             .setContentIntent(pendingIntent)
@@ -48,7 +48,7 @@ class BackgroundService : Service() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
-                "Background Service Channel",
+                "NativeCode Background Service",
                 NotificationManager.IMPORTANCE_LOW
             )
             val manager = getSystemService(NotificationManager::class.java)
@@ -57,6 +57,6 @@ class BackgroundService : Service() {
     }
 
     companion object {
-        const val CHANNEL_ID = "FluxLinuxBackgroundServiceChannel"
+        const val CHANNEL_ID = "NativeCodeBackgroundServiceChannel"
     }
 }

@@ -403,11 +403,6 @@ public class TouchInputHandler {
         else
             mActivity.getLorieView().releasePointerCapture();
 
-        if (mInjector.pauseKeyInterceptingWithEsc) {
-            if (mInjector.dexMetaKeyCapture)
-                SamsungDexUtils.dexMetaKeyCapture(mActivity, enabled);
-            keyIntercepting = enabled;
-        }
     }
 
     public static boolean isExternal(InputDevice d) {
@@ -435,7 +430,6 @@ public class TouchInputHandler {
         mInjector.dexMetaKeyCapture = p.dexMetaKeyCapture.get();
         mInjector.stylusIsMouse = p.stylusIsMouse.get();
         mInjector.stylusButtonContactModifierMode = p.stylusButtonContactModifierMode.get();
-        mInjector.pauseKeyInterceptingWithEsc = p.pauseKeyInterceptingWithEsc.get();
         switch (p.transformCapturedPointer.get()) {
             case "c":
                 capturedPointerTransformation = CapturedPointerTransformation.CLOCKWISE;
@@ -458,8 +452,9 @@ public class TouchInputHandler {
         if (!p.pointerCapture.get() && mActivity.getLorieView().hasPointerCapture())
             mActivity.getLorieView().releasePointerCapture();
 
-        keyIntercepting = !mInjector.pauseKeyInterceptingWithEsc || mActivity.getLorieView().hasPointerCapture();
-        SamsungDexUtils.dexMetaKeyCapture(mActivity, mInjector.dexMetaKeyCapture && keyIntercepting);
+        // pauseKeyInterceptingWithEsc removed with Accessibility interceptor — always intercept keys
+        keyIntercepting = true;
+        SamsungDexUtils.dexMetaKeyCapture(mActivity, mInjector.dexMetaKeyCapture);
 
         swipeUpAction = extractUserActionFromPreferences(p, "swipeUp");
         swipeDownAction = extractUserActionFromPreferences(p, "swipeDown");
@@ -558,7 +553,7 @@ public class TouchInputHandler {
     }
 
     public boolean shouldInterceptKeys() {
-        return !mInjector.pauseKeyInterceptingWithEsc || keyIntercepting;
+        return true;
     }
 
     private void moveCursorByOffset(float deltaX, float deltaY) {

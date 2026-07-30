@@ -43,12 +43,6 @@
             <com.termux.x11.NcSwitchPreference app:key="preferScancodes" app:defaultValue="false" />
             <com.termux.x11.NcSwitchPreference app:key="hardwareKbdScancodesWorkaround" app:defaultValue="true" />
             <com.termux.x11.NcSwitchPreference app:key="dexMetaKeyCapture" app:defaultValue="false" />
-            <Preference app:key="enableAccessibilityService">
-                <intent android:action="android.settings.ACCESSIBILITY_SETTINGS"/>
-            </Preference>
-            <com.termux.x11.NcSwitchPreference app:key="enableAccessibilityServiceAutomatically" app:defaultValue="false" />
-            <com.termux.x11.NcSwitchPreference app:key="pauseKeyInterceptingWithEsc" app:defaultValue="false" />
-            <com.termux.x11.NcSwitchPreference app:key="filterOutWinkey" app:defaultValue="false" />
             <com.termux.x11.NcSwitchPreference app:key="enforceCharBasedInput" app:defaultValue="false" />
         </PreferenceCategory>
 

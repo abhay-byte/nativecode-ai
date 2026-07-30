@@ -1,6 +1,5 @@
 package com.termux.x11;
 
-import static android.Manifest.permission.WRITE_SECURE_SETTINGS;
 import static android.content.pm.PackageManager.PERMISSION_GRANTED;
 import static android.os.Build.VERSION.SDK_INT;
 import static android.view.KeyEvent.*;
@@ -63,7 +62,6 @@ import com.termux.x11.input.InputEventSender;
 import com.termux.x11.input.InputStub;
 import com.termux.x11.input.TouchInputHandler;
 import com.termux.x11.utils.FullscreenWorkaround;
-import com.termux.x11.utils.KeyInterceptor;
 import com.termux.x11.utils.TermuxX11ExtraKeys;
 import com.termux.x11.utils.X11ToolbarViewPager;
 
@@ -87,7 +85,6 @@ public class MainActivity extends AppCompatActivity {
     private static boolean showIMEWhileExternalConnected = true;
     private static boolean externalKeyboardConnected = false;
     private View.OnKeyListener mLorieKeyListener;
-    private boolean filterOutWinKey = false;
     boolean useTermuxEKBarBehaviour = false;
     private boolean isInPictureInPictureMode = false;
 
@@ -586,12 +583,6 @@ public class MainActivity extends AppCompatActivity {
 
         lorieView.triggerCallback();
 
-        filterOutWinKey = prefs.filterOutWinkey.get();
-        if (prefs.enableAccessibilityServiceAutomatically.get())
-            KeyInterceptor.launch(this);
-        else if (checkSelfPermission(WRITE_SECURE_SETTINGS) == PERMISSION_GRANTED)
-            KeyInterceptor.shutdown(true);
-
         useTermuxEKBarBehaviour = prefs.useTermuxEKBarBehaviour.get();
         showIMEWhileExternalConnected = prefs.showIMEWhileExternalConnected.get();
 
@@ -685,8 +676,6 @@ public class MainActivity extends AppCompatActivity {
     }
 
     public boolean handleKey(KeyEvent e) {
-        if (filterOutWinKey && (e.getKeyCode() == KEYCODE_META_LEFT || e.getKeyCode() == KEYCODE_META_RIGHT || e.isMetaPressed()))
-            return false;
         return mLorieKeyListener.onKey(getLorieView(), e.getKeyCode(), e);
     }
 
@@ -824,7 +813,6 @@ public class MainActivity extends AppCompatActivity {
     @Override
     public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
-        KeyInterceptor.recheck();
         prefs.recheckStoringSecondaryDisplayPreferences();
         Window window = getWindow();
         View decorView = window.getDecorView();
