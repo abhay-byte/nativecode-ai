@@ -793,6 +793,9 @@ class OnboardingActivity : AppCompatActivity() {
         val spacer = View(this).apply { layoutParams = LinearLayout.LayoutParams(MATCH, 0, 1f) }
         root.addView(spacer)
 
+        // Mutable: flipped by RootShell.probeRootAvailable (same SSOT as chroot settings)
+        var chrootRootOk = false
+
         // Helper to update selection state of the two method cards
         fun updateIsolationCardSelections(selectedMethod: String,
                 prootCardRef: LinearLayout, chrootCardRef: LinearLayout) {
@@ -806,8 +809,8 @@ class OnboardingActivity : AppCompatActivity() {
                     fillColor = NC.SURFACE_LOW, strokeColor = NC.BORDER,
                     shadowColor = NC.SURFACE_BRIGHT, offsetDp = 6,
                     cornerRadiusDp = 0, rightFaceColor = NC.OUTLINE_VAR)
-                chrootCardRef.alpha = 0.65f
-            } else {
+                chrootCardRef.alpha = if (chrootRootOk) 0.65f else 0.4f
+            } else if (chrootRootOk) {
                 chrootCardRef.background = cyberBrutalistBg(
                     fillColor = NC.SURFACE_CONTAINER, strokeColor = NC.SECONDARY,
                     shadowColor = NC.SURFACE_BRIGHT, offsetDp = 6,
@@ -818,6 +821,19 @@ class OnboardingActivity : AppCompatActivity() {
                     shadowColor = NC.SURFACE_BRIGHT, offsetDp = 6,
                     cornerRadiusDp = 0, rightFaceColor = NC.OUTLINE_VAR)
                 prootCardRef.alpha = 0.65f
+            } else {
+                // No root: never paint chroot as selected
+                selectedIsolationMethod = "proot"
+                prootCardRef.background = cyberBrutalistBg(
+                    fillColor = NC.SURFACE_CONTAINER, strokeColor = NC.PRIMARY,
+                    shadowColor = NC.SURFACE_BRIGHT, offsetDp = 6,
+                    cornerRadiusDp = 0, rightFaceColor = NC.OUTLINE_VAR)
+                prootCardRef.alpha = 1f
+                chrootCardRef.background = cyberBrutalistBg(
+                    fillColor = NC.SURFACE_LOW, strokeColor = NC.BORDER,
+                    shadowColor = NC.SURFACE_BRIGHT, offsetDp = 6,
+                    cornerRadiusDp = 0, rightFaceColor = NC.OUTLINE_VAR)
+                chrootCardRef.alpha = 0.4f
             }
         }
 
@@ -900,7 +916,7 @@ class OnboardingActivity : AppCompatActivity() {
             setTextColor(NC.ON_SURFACE)
             typeface = Typeface.DEFAULT_BOLD
         }
-        val chrootBadge = textBadge("ROOT REQUIRED", NC.SURFACE_HIGHEST, NC.SECONDARY)
+        val chrootBadge = textBadge("CHECKING…", NC.SURFACE_HIGHEST, NC.ON_SURF_VAR)
         chrootTop.addView(chrootIcon); chrootTop.addView(chrootTitle)
         chrootTop.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(0, 1, 1f) })
         chrootTop.addView(chrootBadge)
@@ -914,19 +930,89 @@ class OnboardingActivity : AppCompatActivity() {
             setPadding(0, dp(10), 0, 0)
         }
         chrootCard.addView(chrootDesc)
+
+        val chrootWarn = TextView(this).apply {
+            text = "⚠ NO ROOT — grant superuser in KernelSU/Magisk to use chroot"
+            textSize = 12f
+            setTextColor(NC.ERROR)
+            typeface = Typeface.MONOSPACE
+            setPadding(0, dp(10), 0, 0)
+            visibility = View.GONE
+        }
+        chrootCard.addView(chrootWarn)
         root.addView(chrootCard)
 
-        // Wire up click listeners for card selection
+        fun styleChrootBadge(rootOk: Boolean, probing: Boolean) {
+            when {
+                probing -> {
+                    chrootBadge.text = "CHECKING…"
+                    chrootBadge.setTextColor(NC.ON_SURF_VAR)
+                    chrootBadge.background = roundedBg(NC.SURFACE_HIGHEST, NC.OUTLINE_VAR, dp(4))
+                }
+                rootOk -> {
+                    chrootBadge.text = "ROOT REQUIRED"
+                    chrootBadge.setTextColor(NC.SECONDARY)
+                    chrootBadge.background = roundedBg(NC.SURFACE_HIGHEST, NC.SECONDARY, dp(4))
+                }
+                else -> {
+                    chrootBadge.text = "NO ROOT"
+                    chrootBadge.setTextColor(Color.parseColor("#0A0A0A"))
+                    chrootBadge.background = roundedBg(NC.ERROR, NC.ON_ERROR, dp(4))
+                }
+            }
+        }
+
+        fun applyChrootMethodGate(rootOk: Boolean, probing: Boolean) {
+            chrootRootOk = rootOk
+            styleChrootBadge(rootOk, probing)
+            chrootWarn.visibility = if (!probing && !rootOk) View.VISIBLE else View.GONE
+            if (probing) {
+                chrootCard.alpha = 0.55f
+                chrootCard.isClickable = false
+                chrootCard.isEnabled = false
+                return
+            }
+            if (!rootOk) {
+                // Force proot when chroot unavailable (also overrides preferred_isolation)
+                selectedIsolationMethod = "proot"
+                updateIsolationCardSelections("proot", prootCard, chrootCard)
+                chrootCard.isClickable = true // toast explain only
+                chrootCard.isEnabled = true
+                chrootCard.setOnClickListener {
+                    Toast.makeText(
+                        this,
+                        "No root. Grant superuser in KernelSU/Magisk to select chroot.",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+            } else {
+                chrootCard.isClickable = true
+                chrootCard.isEnabled = true
+                chrootCard.setOnClickListener {
+                    selectedIsolationMethod = "chroot"
+                    updateIsolationCardSelections("chroot", prootCard, chrootCard)
+                }
+                // Re-apply selection paint (proot default or preferred chroot)
+                updateIsolationCardSelections(selectedIsolationMethod, prootCard, chrootCard)
+            }
+        }
+
+        // Wire proot always; chroot gated after probe
         prootCard.setOnClickListener {
             selectedIsolationMethod = "proot"
             updateIsolationCardSelections("proot", prootCard, chrootCard)
         }
-        chrootCard.setOnClickListener {
-            selectedIsolationMethod = "chroot"
-            updateIsolationCardSelections("chroot", prootCard, chrootCard)
+
+        // Initial paint: proot selected while root probes (same RootShell as chroot settings page)
+        updateIsolationCardSelections(
+            if (selectedIsolationMethod == "chroot") "proot" else selectedIsolationMethod,
+            prootCard,
+            chrootCard
+        )
+        applyChrootMethodGate(rootOk = false, probing = true)
+        RootShell.probeRootAvailable(forceClearCache = false) { ok ->
+            applyChrootMethodGate(rootOk = ok, probing = false)
         }
-        // Honor preferred_isolation from intent (e.g. Settings → Install Chroot)
-        updateIsolationCardSelections(selectedIsolationMethod, prootCard, chrootCard)
 
         // Customization Script Toggle Card (Cyber-Brutalist Design)
         val customToggleCard = LinearLayout(this).apply {

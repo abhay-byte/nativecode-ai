@@ -480,6 +480,7 @@ public class TouchInputHandler {
             return noAction;
 
         switch(pref.asList().get()) {
+            case "return to app": return (key, down) -> { if (down) mActivity.goToNativeCodeHome(); };
             case "toggle soft keyboard": return (key, down) -> { if (down) MainActivity.toggleKeyboardVisibility(mActivity); };
             case "toggle additional key bar": return (key, down) -> { if (down) mActivity.toggleExtraKeys(); };
             case "open preferences": return (key, down) -> { if (down) mActivity.startActivity(new Intent(mActivity, LoriePreferences.class) {{ setAction(Intent.ACTION_MAIN); }}); };
@@ -505,6 +506,16 @@ public class TouchInputHandler {
                     setPackage(mActivity.getPackageName());
                     setAction(Intent.ACTION_MAIN);
                 }}, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+            case "return to app":
+                try {
+                    Intent home = new Intent(mActivity, Class.forName("com.ivarna.nativecode.MainActivity"));
+                    home.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+                    home.setPackage(mActivity.getPackageName());
+                    return PendingIntent.getActivity(mActivity, requestCode, home,
+                            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+                } catch (ClassNotFoundException e) {
+                    return null;
+                }
             case "restart activity":
                 return PendingIntent.getActivity(mActivity, requestCode,
                         Intent.makeRestartActivityTask(mActivity.getComponentName()), PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);

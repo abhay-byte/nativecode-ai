@@ -14,8 +14,7 @@
         tools:ignore="DataExtractionRules,GoogleAppIndexingWarning">
         <activity
             android:name=".MainActivity"
-            android:taskAffinity=".MainActivity"
-            android:launchMode="singleInstance"
+            android:launchMode="singleTask"
             android:supportsPictureInPicture="true"
             android:configChanges="fontScale|orientation|screenSize|keyboard|keyboardHidden|layoutDirection|locale|mcc|mnc|navigation|screenLayout|touchscreen|uiMode|smallestScreenSize|density"
             android:resizeableActivity="true"
@@ -30,10 +29,9 @@
             <meta-data android:name="android.app.shortcuts" android:resource="@xml/shortcuts" />
         </activity>
         <activity
-            android:theme="@style/Theme.AppCompat.DayNight"
+            android:theme="@style/Theme.NativeCode.X11.Preferences"
             android:excludeFromRecents="true"
             android:name=".LoriePreferences"
-            android:taskAffinity=".LoriePreferences"
             android:supportsPictureInPicture="false"
             android:resizeableActivity="true"
             android:exported="true">
@@ -47,7 +45,7 @@
 
         <service android:name=".utils.KeyInterceptor"
             android:exported="true"
-            android:label="Termux:X11 KeyInterceptor"
+            android:label="NativeCode Desktop KeyInterceptor"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
             <intent-filter>
                 <action android:name="android.accessibilityservice.AccessibilityService" />

@@ -50,6 +50,25 @@ object RootShell {
      */
     fun isRootAvailable(): Boolean = resolveSuInvocation() != null
 
+    /**
+     * Async root probe. Runs [isRootAvailable] off the UI thread; [onResult] always on main.
+     * Use from onboarding method cards / settings hub gates — not for hot paths that need
+     * the boolean in the same bg job (call [isRootAvailable] there directly).
+     *
+     * @param forceClearCache true = drop cached su first (user just granted root).
+     */
+    fun probeRootAvailable(forceClearCache: Boolean = false, onResult: (Boolean) -> Unit) {
+        executor.execute {
+            if (forceClearCache) clearSuCache()
+            val ok = try {
+                isRootAvailable()
+            } catch (_: Exception) {
+                false
+            }
+            mainHandler.post { onResult(ok) }
+        }
+    }
+
     /** Result of a blocking root capture (exit code + stdout). */
     data class CaptureResult(val exitCode: Int, val stdout: String)
 

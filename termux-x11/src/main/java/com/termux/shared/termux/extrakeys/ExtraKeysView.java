@@ -108,14 +108,14 @@ public final class ExtraKeysView extends GridLayout {
         boolean performExtraKeyButtonHapticFeedback(View view, ExtraKeyButton buttonInfo, Button button);
     }
 
-    /** Defines the default value for {@link #mButtonTextColor} */
-    public static final int DEFAULT_BUTTON_TEXT_COLOR = 0xFFFFFFFF;
-    /** Defines the default value for {@link #mButtonActiveTextColor} */
-    public static final int DEFAULT_BUTTON_ACTIVE_TEXT_COLOR = 0xFF80DEEA;
+    /** Defines the default value for {@link #mButtonTextColor} — NC on-surface */
+    public static final int DEFAULT_BUTTON_TEXT_COLOR = 0xFFFAFAFA;
+    /** Defines the default value for {@link #mButtonActiveTextColor} — NC on-primary */
+    public static final int DEFAULT_BUTTON_ACTIVE_TEXT_COLOR = 0xFF0A0A0A;
     /** Defines the default value for {@link #mButtonBackgroundColor} */
     public static final int DEFAULT_BUTTON_BACKGROUND_COLOR = 0x00000000;
-    /** Defines the default value for {@link #mButtonActiveBackgroundColor} */
-    public static final int DEFAULT_BUTTON_ACTIVE_BACKGROUND_COLOR = 0xFF7F7F7F;
+    /** Defines the default value for {@link #mButtonActiveBackgroundColor} — NC primary */
+    public static final int DEFAULT_BUTTON_ACTIVE_BACKGROUND_COLOR = 0xFF3DDC84;
 
     /** Defines the minimum allowed duration in milliseconds for {@link #mLongPressTimeout}. */
     public static final int MIN_LONG_PRESS_DURATION = 200;
@@ -568,44 +568,79 @@ public final class ExtraKeysView extends GridLayout {
 
     private boolean setIcon(Button button, String key) {
         int id;
+        String unicodeFallback = null;
         switch (key) {
             case "LEFT":
                 id = R.drawable.ic_extra_key_arrow_left;
+                unicodeFallback = "←";
                 break;
             case "RIGHT":
                 id = R.drawable.ic_extra_key_arrow_right;
+                unicodeFallback = "→";
                 break;
             case "UP":
                 id = R.drawable.ic_extra_key_arrow_up;
+                unicodeFallback = "↑";
                 break;
             case "DOWN":
                 id = R.drawable.ic_extra_key_arrow_down;
+                unicodeFallback = "↓";
                 break;
             case "PREFERENCES":
                 id = R.drawable.ic_extra_key_settings;
+                unicodeFallback = "⚙";
                 break;
             case "KEYBOARD":
                 id = R.drawable.ic_extra_key_keyboard;
+                unicodeFallback = "⌨";
                 break;
             case "ZOOM_IN":
                 id = R.drawable.ic_zoom_in;
+                unicodeFallback = "+";
                 break;
             case "ZOOM_OUT":
                 id = R.drawable.ic_zoom_out;
+                unicodeFallback = "−";
                 break;
             case "ZOOM_RESET":
                 id = R.drawable.ic_zoom_reset;
+                unicodeFallback = "⊙";
                 break;
             default:
                 return false;
         }
 
-        Drawable icon = getResources().getDrawable(id, getContext().getTheme());
-        button.setText(null);
-        button.setForeground(icon);
-        button.setForegroundGravity(Gravity.CENTER);
         button.setContentDescription(key);
-        return true;
+        button.setGravity(Gravity.CENTER);
+
+        Drawable icon = null;
+        try {
+            icon = getResources().getDrawable(id, getContext().getTheme());
+        } catch (Exception ignored) { }
+
+        if (icon != null) {
+            // setForeground is invisible on many Material button styles — use compound drawables
+            icon = icon.mutate();
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                icon.setTint(mButtonTextColor);
+            }
+            int size = (int) (18f * getResources().getDisplayMetrics().density);
+            icon.setBounds(0, 0, size, size);
+            button.setText("");
+            button.setCompoundDrawables(null, icon, null, null);
+            button.setCompoundDrawablePadding(0);
+            button.setPadding(0, 0, 0, 0);
+            button.setIncludeFontPadding(false);
+            return true;
+        }
+
+        // Unicode fallback so icon keys never blank
+        if (unicodeFallback != null) {
+            button.setText(unicodeFallback);
+            button.setCompoundDrawables(null, null, null, null);
+            return true;
+        }
+        return false;
     }
 
     /**

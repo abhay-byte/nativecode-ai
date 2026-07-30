@@ -180,18 +180,7 @@ public class MainActivity extends AppCompatActivity {
         LorieView lorieView = findViewById(R.id.lorieView);
         View lorieParent = (View) lorieView.getParent();
 
-        View backBtn = findViewById(R.id.back_to_home_button);
-        if (backBtn != null) {
-            backBtn.setOnClickListener(v -> {
-                try {
-                    Intent intent = new Intent(this, Class.forName("com.ivarna.nativecode.MainActivity"));
-                    intent.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
-                    startActivity(intent);
-                } catch (Exception e) {
-                    Log.e("MainActivity", "Failed to launch main activity", e);
-                }
-            });
-        }
+        setupChromeCluster();
 
         mInputHandler = new TouchInputHandler(this, new InputEventSender(lorieView));
         mLorieKeyListener = (v, k, e) -> {
@@ -242,7 +231,8 @@ public class MainActivity extends AppCompatActivity {
         }
         onPreferencesChanged("");
 
-        toggleExtraKeys(false, false);
+        // Extra keys: use prefs (default ON); do not force-hide on create
+        setTerminalToolbarView();
 
         initStylusAuxButtons();
         initMouseAuxButtons();
@@ -700,22 +690,112 @@ public class MainActivity extends AppCompatActivity {
         return mLorieKeyListener.onKey(getLorieView(), e.getKeyCode(), e);
     }
 
+    /**
+     * Right-edge Back+Keyboard cluster: vertical stack, 50% alpha, drag Y only as a group.
+     * Tap still fires each button click; horizontal position stays pinned to end.
+     */
+    @SuppressLint("ClickableViewAccessibility")
+    private void setupChromeCluster() {
+        final View cluster = findViewById(R.id.chrome_cluster);
+        if (cluster == null)
+            return;
+
+        View backBtn = findViewById(R.id.back_to_home_button);
+        View kbdBtn = findViewById(R.id.keyboard_button);
+        if (backBtn != null)
+            backBtn.setOnClickListener(v -> goToNativeCodeHome());
+        if (kbdBtn != null)
+            kbdBtn.setOnClickListener(v -> toggleKeyboardVisibility(this));
+
+        final int touchSlop = ViewConfiguration.get(this).getScaledTouchSlop();
+        final int tapTimeout = ViewConfiguration.getTapTimeout();
+
+        View.OnTouchListener dragY = new View.OnTouchListener() {
+            float downRawY;
+            float startTranslationY;
+            long downTime;
+            boolean dragging;
+
+            @Override
+            public boolean onTouch(View v, MotionEvent e) {
+                switch (e.getActionMasked()) {
+                    case MotionEvent.ACTION_DOWN:
+                        downRawY = e.getRawY();
+                        startTranslationY = cluster.getTranslationY();
+                        downTime = SystemClock.uptimeMillis();
+                        dragging = false;
+                        v.setPressed(true);
+                        return true;
+                    case MotionEvent.ACTION_MOVE: {
+                        float dy = e.getRawY() - downRawY;
+                        if (!dragging && Math.abs(dy) > touchSlop)
+                            dragging = true;
+                        if (dragging) {
+                            float parentH = frm != null ? frm.getHeight() : ((View) cluster.getParent()).getHeight();
+                            float clusterH = cluster.getHeight();
+                            // Laid-out Y (gravity center_vertical|end) without translation.
+                            float baseY = cluster.getTop();
+                            float minTy = -baseY;
+                            float maxTy = parentH - clusterH - baseY;
+                            ViewPager pager = getTerminalToolbarViewPager();
+                            if (pager != null && pager.getVisibility() == View.VISIBLE)
+                                maxTy -= pager.getHeight();
+                            if (maxTy < minTy)
+                                maxTy = minTy;
+                            cluster.setTranslationY(MathUtils.clamp(startTranslationY + dy, minTy, maxTy));
+                            // Keep glued to right edge (layout_gravity end).
+                            cluster.setTranslationX(0f);
+                        }
+                        return true;
+                    }
+                    case MotionEvent.ACTION_UP:
+                    case MotionEvent.ACTION_CANCEL:
+                        v.setPressed(false);
+                        if (!dragging && SystemClock.uptimeMillis() - downTime <= tapTimeout)
+                            v.performClick();
+                        dragging = false;
+                        return true;
+                    default:
+                        return true;
+                }
+            }
+        };
+
+        if (backBtn != null)
+            backBtn.setOnTouchListener(dragY);
+        if (kbdBtn != null)
+            kbdBtn.setOnTouchListener(dragY);
+        // Drag from padding/gap between buttons too.
+        cluster.setOnTouchListener(dragY);
+    }
+
+    /** Return to NativeCode host MainActivity; leave X session running. */
+    public void goToNativeCodeHome() {
+        try {
+            Intent intent = new Intent(this, Class.forName("com.ivarna.nativecode.MainActivity"));
+            intent.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+            startActivity(intent);
+        } catch (Exception e) {
+            Log.e("MainActivity", "Failed to launch NativeCode MainActivity", e);
+        }
+    }
+
     @SuppressLint("ObsoleteSdkInt")
     Notification buildNotification() {
         NotificationCompat.Builder builder =  new NotificationCompat.Builder(this, getNotificationChannel(mNotificationManager))
-                .setContentTitle("Termux:X11")
+                .setContentTitle(getResources().getString(R.string.app_name))
                 .setSmallIcon(R.drawable.ic_x11_icon)
                 .setContentText(getResources().getText(R.string.lorie_notification_content_text))
                 .setOngoing(true)
                 .setPriority(Notification.PRIORITY_MAX)
                 .setSilent(true)
                 .setShowWhen(false)
-                .setColor(0xFF607D8B);
+                .setColor(0xFF3DDC84);
         return mInputHandler.setupNotification(prefs, builder).build();
     }
 
     private String getNotificationChannel(NotificationManager notificationManager){
-        String channelId = getResources().getString(R.string.app_name);
+        String channelId = "nativecode_x11";
         String channelName = getResources().getString(R.string.app_name);
         NotificationChannel channel = new NotificationChannel(channelId, channelName, NotificationManager.IMPORTANCE_HIGH);
         channel.setImportance(NotificationManager.IMPORTANCE_HIGH);
@@ -816,7 +896,7 @@ public class MainActivity extends AppCompatActivity {
 
     @Override
     public void onBackPressed() {
-        super.onBackPressed();
+        goToNativeCodeHome();
     }
 
     public static boolean hasPipPermission(@NonNull Context context) {
@@ -868,6 +948,7 @@ public class MainActivity extends AppCompatActivity {
     void clientConnectedStateChanged() {
         runOnUiThread(()-> {
             boolean connected = LorieView.connected();
+            // Extra keys only if showAdditionalKbd (default OFF)
             setTerminalToolbarView();
             findViewById(R.id.mouse_buttons).setVisibility(prefs.showMouseHelper.get() && "1".equals(prefs.touchMode.get()) && connected ? View.VISIBLE : View.GONE);
             findViewById(R.id.stub).setVisibility(connected?View.INVISIBLE:View.VISIBLE);

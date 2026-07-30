@@ -9,8 +9,6 @@ import static android.system.Os.getuid;
 
 import android.annotation.SuppressLint;
 import android.content.BroadcastReceiver;
-import android.content.ClipData;
-import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
@@ -45,6 +43,7 @@ import androidx.preference.PreferenceDataStore;
 import androidx.preference.PreferenceFragmentCompat;
 
 import androidx.preference.Preference.OnPreferenceChangeListener;
+import androidx.preference.PreferenceGroup;
 import androidx.preference.PreferenceScreen;
 import androidx.preference.SeekBarPreference;
 
@@ -124,14 +123,22 @@ public class LoriePreferences extends AppCompatActivity implements PreferenceFra
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_lorie_preferences);
         prefs = new Prefs(this);
-        getSupportFragmentManager().beginTransaction().replace(android.R.id.content, new LoriePreferenceFragment(null)).commit();
 
+        androidx.appcompat.widget.Toolbar toolbar = findViewById(R.id.prefs_toolbar);
+        setSupportActionBar(toolbar);
         ActionBar actionBar = getSupportActionBar();
         if (actionBar != null) {
             actionBar.setDisplayHomeAsUpEnabled(true);
             actionBar.setHomeButtonEnabled(true);
+            actionBar.setTitle(R.string.lorie_pref_main);
         }
+
+        // Fragment lives in prefs_container — never under toolbar
+        getSupportFragmentManager().beginTransaction()
+                .replace(R.id.prefs_container, new LoriePreferenceFragment(null))
+                .commit();
 
         Uri ENABLED_ACCESSIBILITY_SERVICES = Settings.Secure.getUriFor(Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES);
         Uri ACCESSIBILITY_ENABLED = Settings.Secure.getUriFor(Settings.Secure.ACCESSIBILITY_ENABLED);
@@ -173,7 +180,7 @@ public class LoriePreferences extends AppCompatActivity implements PreferenceFra
     private void showFragment(PreferenceFragmentCompat fragment) {
         getSupportFragmentManager().beginTransaction()
                 .setCustomAnimations(R.anim.slide_in_right, R.anim.slide_out_left, R.anim.slide_in_left, R.anim.slide_out_right)
-                .replace(android.R.id.content, fragment)
+                .replace(R.id.prefs_container, fragment)
                 .addToBackStack(null)
                 .commit();
     }
@@ -219,8 +226,11 @@ public class LoriePreferences extends AppCompatActivity implements PreferenceFra
         @Override
         public void onResume() {
             super.onResume();
-            //noinspection DataFlowIssue
-            ((LoriePreferences) getActivity()).getSupportActionBar().setTitle(getPreferenceScreen().getTitle());
+            ActionBar bar = ((LoriePreferences) requireActivity()).getSupportActionBar();
+            if (bar != null) {
+                CharSequence t = getPreferenceScreen() != null ? getPreferenceScreen().getTitle() : null;
+                bar.setTitle(t != null ? t : getString(R.string.lorie_pref_main));
+            }
         }
 
         /** @noinspection SameParameterValue*/
@@ -236,6 +246,37 @@ public class LoriePreferences extends AppCompatActivity implements PreferenceFra
             return getResources().getIdentifier("lorie_pref_" + name, "string", getContext().getPackageName());
         }
 
+        /** Wire titles/listeners for a preference and recurse into categories. */
+        private void setupPreferenceTree(Preference p) {
+            if (p == null)
+                return;
+            p.setOnPreferenceChangeListener(this);
+            p.setPreferenceDataStore(prefs);
+
+            String key = p.getKey();
+            if (key != null) {
+                int id = findId(key);
+                if (id != 0)
+                    p.setTitle(getResources().getString(id));
+                int sumId = findId(key + "_summary");
+                if (sumId != 0)
+                    p.setSummary(getResources().getString(sumId));
+
+                if (p instanceof ListPreference && prefs.keys.get(key) != null) {
+                    ListPreference list = (ListPreference) p;
+                    list.setEntries(prefs.keys.get(key).asList().getEntries());
+                    list.setEntryValues(prefs.keys.get(key).asList().getValues());
+                    list.setSummaryProvider(ListPreference.SimpleSummaryProvider.getInstance());
+                }
+            }
+
+            if (p instanceof PreferenceGroup) {
+                PreferenceGroup group = (PreferenceGroup) p;
+                for (int i = 0; i < group.getPreferenceCount(); i++)
+                    setupPreferenceTree(group.getPreference(i));
+            }
+        }
+
         /** @noinspection DataFlowIssue*/
         @Override @SuppressLint("ApplySharedPref")
         public void onCreatePreferences(@Nullable Bundle savedInstanceState, @Nullable String rootKey) {
@@ -244,33 +285,18 @@ public class LoriePreferences extends AppCompatActivity implements PreferenceFra
             if ((Integer.parseInt(prefs.touchMode.get()) - 1) > 2)
                 prefs.touchMode.put("1");
 
-            setPreferencesFromResource(R.xml.preferences, root == null ? "main" : root);
+            // Always load single flat "main" screen (nested screens removed)
+            setPreferencesFromResource(R.xml.preferences, "main");
 
-            int id;
             PreferenceScreen screen = getPreferenceScreen();
-            if ((id = findId(screen.getKey())) != 0)
-                getPreferenceScreen().setTitle(getResources().getString(id));
-            for (int i=0; i<getPreferenceScreen().getPreferenceCount(); i++) {
-                Preference p = screen.getPreference(i);
-                p.setOnPreferenceChangeListener(this);
-                p.setPreferenceDataStore(prefs);
+            int id = findId(screen.getKey());
+            if (id != 0)
+                screen.setTitle(getResources().getString(id));
+            else
+                screen.setTitle(R.string.lorie_pref_main);
 
-                if ((id = findId(p.getKey())) != 0)
-                    p.setTitle(getResources().getString(id));
-
-                if ((id = findId(p.getKey() + "_summary")) != 0)
-                    p.setSummary(getResources().getString(id));
-
-                if (p instanceof ListPreference) {
-                    ListPreference list = (ListPreference) p;
-                    list.setEntries(prefs.keys.get(p.getKey()).asList().getEntries());
-                    list.setEntryValues(prefs.keys.get(p.getKey()).asList().getValues());
-                    list.setSummaryProvider(ListPreference.SimpleSummaryProvider.getInstance());
-                }
-            }
-
-            with("showAdditionalKbd", p -> p.setLayoutResource(R.layout.preference));
-            with("version", p -> p.setSummary(BuildConfig.VERSION_NAME));
+            for (int i = 0; i < screen.getPreferenceCount(); i++)
+                setupPreferenceTree(screen.getPreference(i));
 
             setSummary("displayStretch", R.string.lorie_pref_summary_requiresExactOrCustom);
             setSummary("adjustResolution", R.string.lorie_pref_summary_requiresExactOrCustom);
@@ -380,15 +406,6 @@ public class LoriePreferences extends AppCompatActivity implements PreferenceFra
             if (p.getKey() == null)
                 return super.onPreferenceTreeClick(p);
 
-            if ("version".contentEquals(p.getKey())) {
-                Context ctx = getContext();
-                if (ctx != null) {
-                    ((ClipboardManager) ctx.getSystemService(Context.CLIPBOARD_SERVICE))
-                            .setPrimaryClip(ClipData.newPlainText(p.getSummary(), p.getSummary()));
-                    Toast.makeText(ctx, "Copied to clipboard", Toast.LENGTH_SHORT).show();
-                }
-            }
-
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && "requestNotificationPermission".contentEquals(p.getKey())) {
                 ActivityCompat.requestPermissions(requireActivity(), new String[]{POST_NOTIFICATIONS}, 101);
                 return true;
@@ -451,7 +468,7 @@ public class LoriePreferences extends AppCompatActivity implements PreferenceFra
             requireContext().sendBroadcast(new Intent(ACTION_PREFERENCES_CHANGED) {{
                 putExtra("key", key);
                 putExtra("fromBroadcast", true);
-                setPackage("com.termux.x11");
+                setPackage(requireContext().getPackageName());
             }});
 
             return true;
@@ -613,7 +630,7 @@ public class LoriePreferences extends AppCompatActivity implements PreferenceFra
                         Intent intent0 = new Intent(ACTION_PREFERENCES_CHANGED);
                         intent0.putExtra("key", key);
                         intent0.putExtra("fromBroadcast", true);
-                        intent0.setPackage("com.termux.x11");
+                        intent0.setPackage(context.getPackageName());
                         context.sendBroadcast(intent0);
                     }
                     edit.commit();
@@ -851,7 +868,37 @@ public class LoriePreferences extends AppCompatActivity implements PreferenceFra
             this.ctx = ctx;
             builtInDisplayPreferences = PreferenceManager.getDefaultSharedPreferences(ctx);
             secondaryDisplayPreferences = ctx.getSharedPreferences("secondary", Context.MODE_PRIVATE);
+            migrateProductDefaultsOnce(builtInDisplayPreferences);
             recheckStoringSecondaryDisplayPreferences();
+        }
+
+        /**
+         * One-time product defaults for installs that still hold stock Termux:X11 values.
+         * Fresh installs never had those keys → BooleanPreference/ListPreference defaults apply.
+         * Already-customized values (not stock) are left alone.
+         */
+        private static void migrateProductDefaultsOnce(SharedPreferences sp) {
+            final String flag = "nc_x11_product_defaults_v1";
+            if (sp.getBoolean(flag, false))
+                return;
+            SharedPreferences.Editor e = sp.edit();
+            // scaled @ 120%
+            if (!sp.contains("displayResolutionMode")
+                    || "native".equals(sp.getString("displayResolutionMode", "native")))
+                e.putString("displayResolutionMode", "scaled");
+            if (!sp.contains("displayScale") || sp.getInt("displayScale", 100) == 100)
+                e.putInt("displayScale", 120);
+            // extra keys OFF
+            if (!sp.contains("showAdditionalKbd") || sp.getBoolean("showAdditionalKbd", true))
+                e.putBoolean("showAdditionalKbd", false);
+            if (!sp.contains("additionalKbdVisible") || sp.getBoolean("additionalKbdVisible", true))
+                e.putBoolean("additionalKbdVisible", false);
+            // system Back → return to app
+            if (!sp.contains("backButtonAction")
+                    || "toggle soft keyboard".equals(sp.getString("backButtonAction", "")))
+                e.putString("backButtonAction", "return to app");
+            e.putBoolean(flag, true);
+            e.commit();
         }
 
         protected void recheckStoringSecondaryDisplayPreferences() {

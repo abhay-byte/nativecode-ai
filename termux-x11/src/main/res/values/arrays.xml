@@ -62,6 +62,7 @@
     </string-array>
     <string-array name="userActionsValues">
         <item>no action</item>
+        <item>return to app</item>
         <item>toggle soft keyboard</item>
         <item>toggle additional key bar</item>
         <item>open preferences</item>

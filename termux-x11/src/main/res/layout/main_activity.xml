@@ -25,24 +25,52 @@
             android:visibility="visible"
             android:layout_gravity="center" />
 
-        <ImageButton
-            android:id="@+id/back_to_home_button"
-            android:layout_width="40dp"
-            android:layout_height="40dp"
-            android:layout_gravity="top|left"
-            android:layout_margin="16dp"
-            android:src="@android:drawable/ic_menu_revert"
-            android:background="#80000000"
-            android:tint="@android:color/white"
-            android:contentDescription="Back to Home"
-            android:visibility="visible"
-            tools:ignore="HardcodedText,UseAppTint" />
+        <!-- NC chrome: Back + Keyboard — right edge, vertical, 50% transparent, drag Y -->
+        <LinearLayout
+            android:id="@+id/chrome_cluster"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_vertical|end"
+            android:layout_marginEnd="8dp"
+            android:orientation="vertical"
+            android:gravity="center_horizontal"
+            android:alpha="0.5"
+            android:elevation="4dp">
+
+            <ImageButton
+                android:id="@+id/back_to_home_button"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:src="@drawable/ic_nc_back"
+                android:background="@drawable/bg_nc_chrome_btn"
+                android:scaleType="centerInside"
+                android:padding="10dp"
+                android:contentDescription="@string/chrome_back_desc"
+                android:visibility="visible"
+                tools:ignore="ContentDescription" />
+
+            <Space
+                android:layout_width="1dp"
+                android:layout_height="8dp" />
+
+            <ImageButton
+                android:id="@+id/keyboard_button"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:src="@drawable/ic_nc_keyboard"
+                android:background="@drawable/bg_nc_chrome_btn"
+                android:scaleType="centerInside"
+                android:padding="10dp"
+                android:contentDescription="@string/chrome_keyboard_desc"
+                android:visibility="visible"
+                tools:ignore="ContentDescription" />
+        </LinearLayout>
 
         <LinearLayout
             android:id="@+id/stub"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:background="@android:color/black"
+            android:background="@color/nc_bg"
             android:gravity="center_horizontal|center_vertical"
             android:orientation="vertical"
             android:visibility="visible">
@@ -67,8 +95,9 @@
                 android:layout_height="wrap_content"
                 android:gravity="center_horizontal|center_vertical"
                 android:text="@string/not_connected"
-                android:textColor="#FFFFFF"
-                android:textSize="20sp" />
+                android:textColor="@color/nc_on_surface"
+                android:textSize="20sp"
+                android:fontFamily="monospace" />
 
             <Space
                 android:layout_width="match_parent"
@@ -79,7 +108,11 @@
                 android:id="@+id/preferences_button"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="@string/preferences_button_text" />
+                android:text="@string/preferences_button_text"
+                android:textAllCaps="true"
+                android:textColor="@color/nc_on_surface"
+                android:background="@drawable/bg_nc_stub_btn"
+                android:fontFamily="monospace" />
 
             <Space
                 android:layout_width="match_parent"
@@ -90,7 +123,11 @@
                 android:id="@+id/help_button"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="@string/help_button_text" />
+                android:text="@string/help_button_text"
+                android:textAllCaps="true"
+                android:textColor="@color/nc_on_surface"
+                android:background="@drawable/bg_nc_stub_btn"
+                android:fontFamily="monospace" />
 
             <Space
                 android:layout_width="match_parent"
@@ -101,7 +138,11 @@
                 android:id="@+id/exit_button"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="@string/exit_button_text" />
+                android:text="@string/exit_button_text"
+                android:textAllCaps="true"
+                android:textColor="@color/nc_on_surface"
+                android:background="@drawable/bg_nc_stub_btn"
+                android:fontFamily="monospace" />
         </LinearLayout>
 
 
@@ -285,7 +326,7 @@
         android:visibility="gone"
         android:layout_width="match_parent"
         android:layout_height="37.5dp"
-        android:background="@android:color/black"
+        android:background="@color/nc_ek_bar_bg"
         android:layout_gravity="bottom|center"/>
 
     <View

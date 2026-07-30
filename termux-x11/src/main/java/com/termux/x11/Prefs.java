@@ -4,8 +4,8 @@ import android.content.Context;
 import com.termux.x11.utils.TermuxX11ExtraKeys;
 
 public class Prefs extends LoriePreferences.PrefsProto {
-  public final ListPreference displayResolutionMode = new ListPreference("displayResolutionMode", "native", R.array.displayResolutionVariants, R.array.displayResolutionVariants);
-  public final IntPreference displayScale = new IntPreference("displayScale", 100);
+  public final ListPreference displayResolutionMode = new ListPreference("displayResolutionMode", "scaled", R.array.displayResolutionVariants, R.array.displayResolutionVariants);
+  public final IntPreference displayScale = new IntPreference("displayScale", 120);
   public final ListPreference displayResolutionExact = new ListPreference("displayResolutionExact", "1280x1024", R.array.displayResolution, R.array.displayResolution);
   public final StringPreference displayResolutionCustom = new StringPreference("displayResolutionCustom", "1280x1024");
   public final ListPreference displayFilteringMode = new ListPreference("displayFilteringMode", "nearest", R.array.displayFilteringVariants, R.array.displayFilteringVariants);
@@ -28,8 +28,8 @@ public class Prefs extends LoriePreferences.PrefsProto {
   public final IntPreference capturedPointerSpeedFactor = new IntPreference("capturedPointerSpeedFactor", 100);
   public final BooleanPreference tapToMove = new BooleanPreference("tapToMove", false);
   public final BooleanPreference ignoreGamepadEvents = new BooleanPreference("ignoreGamepadEvents", false);
-  public final BooleanPreference showAdditionalKbd = new BooleanPreference("showAdditionalKbd", true);
-  public final BooleanPreference additionalKbdVisible = new BooleanPreference("additionalKbdVisible", true);
+  public final BooleanPreference showAdditionalKbd = new BooleanPreference("showAdditionalKbd", false);
+  public final BooleanPreference additionalKbdVisible = new BooleanPreference("additionalKbdVisible", false);
   public final BooleanPreference showIMEWhileExternalConnected = new BooleanPreference("showIMEWhileExternalConnected", true);
   public final BooleanPreference preferScancodes = new BooleanPreference("preferScancodes", false);
   public final BooleanPreference hardwareKbdScancodesWorkaround = new BooleanPreference("hardwareKbdScancodesWorkaround", true);
@@ -47,7 +47,7 @@ public class Prefs extends LoriePreferences.PrefsProto {
   public final ListPreference swipeDownAction = new ListPreference("swipeDownAction", "toggle additional key bar", R.array.userActionsValues, R.array.userActionsValues);
   public final ListPreference volumeUpAction = new ListPreference("volumeUpAction", "no action", R.array.userActionsVolumeUpValues, R.array.userActionsVolumeUpValues);
   public final ListPreference volumeDownAction = new ListPreference("volumeDownAction", "no action", R.array.userActionsVolumeDownValues, R.array.userActionsVolumeDownValues);
-  public final ListPreference backButtonAction = new ListPreference("backButtonAction", "toggle soft keyboard", R.array.userActionsValues, R.array.userActionsValues);
+  public final ListPreference backButtonAction = new ListPreference("backButtonAction", "return to app", R.array.userActionsValues, R.array.userActionsValues);
   public final ListPreference notificationTapAction = new ListPreference("notificationTapAction", "open preferences", R.array.userActionsValues, R.array.userActionsValues);
   public final ListPreference notificationButton0Action = new ListPreference("notificationButton0Action", "open preferences", R.array.userActionsValues, R.array.userActionsValues);
   public final ListPreference notificationButton1Action = new ListPreference("notificationButton1Action", "exit", R.array.userActionsValues, R.array.userActionsValues);

@@ -4,6 +4,21 @@ import android.content.Context
 import android.os.Handler
 import android.os.Looper
 
+/** Cancel handle for a streamed shell process. */
+class ShellJob(private val process: Process) {
+    @Volatile
+    var cancelled: Boolean = false
+        private set
+
+    fun cancel() {
+        cancelled = true
+        try {
+            process.destroyForcibly()
+        } catch (_: Exception) {
+        }
+    }
+}
+
 /** Runs shell commands with proper environment, supporting both proot and chroot. */
 object ShellCommandRunner {
 
@@ -23,6 +38,36 @@ object ShellCommandRunner {
         return proc.waitFor()
     }
 
+    /** Runs a command and returns combined stdout/stderr as a string (blocking). */
+    fun runCapture(ctx: Context, cmd: Array<String>, envMap: Map<String, String>? = null): String {
+        val adjusted = if (cmd.isNotEmpty() && cmd[0].startsWith("/data/data/"))
+            arrayOf("/system/bin/linker64") + cmd else cmd
+        val pb = ProcessBuilder(*adjusted)
+        applyEnvironment(ctx, pb, envMap)
+        pb.redirectErrorStream(true)
+        val proc = pb.start()
+        val text = proc.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+        proc.waitFor()
+        return text
+    }
+
+    /** Blocking capture with exit code (call from bg thread). */
+    fun runCaptureExit(
+        ctx: Context,
+        cmd: Array<String>,
+        envMap: Map<String, String>? = null
+    ): Pair<Int, String> {
+        val adjusted = if (cmd.isNotEmpty() && cmd[0].startsWith("/data/data/"))
+            arrayOf("/system/bin/linker64") + cmd else cmd
+        val pb = ProcessBuilder(*adjusted)
+        applyEnvironment(ctx, pb, envMap)
+        pb.redirectErrorStream(true)
+        val proc = pb.start()
+        val text = proc.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+        val exit = proc.waitFor()
+        return exit to text
+    }
+
     /** Runs a command and streams each output line to [onLine] on the main thread. */
     fun runStreamed(
         ctx: Context,
@@ -31,23 +76,79 @@ object ShellCommandRunner {
         onLine: (line: String) -> Unit,
         onDone: (exitCode: Int) -> Unit
     ) {
+        runStreamedCancelable(ctx, cmd, envMap, onLine, onDone)
+    }
+
+    /**
+     * Streamed run with cancel handle. [onLine]/[onDone] post to main thread.
+     * Process starts on a worker thread; cancel is safe before/after start.
+     */
+    fun runStreamedCancelable(
+        ctx: Context,
+        cmd: Array<String>,
+        envMap: Map<String, String>? = null,
+        onLine: (line: String) -> Unit,
+        onDone: (exitCode: Int) -> Unit
+    ): ShellJob {
         val adjusted = if (cmd.isNotEmpty() && cmd[0].startsWith("/data/data/"))
             arrayOf("/system/bin/linker64") + cmd else cmd
         val pb = ProcessBuilder(*adjusted)
         applyEnvironment(ctx, pb, envMap)
         pb.redirectErrorStream(true)
 
-        Thread {
-            val proc = pb.start()
-            val reader = proc.inputStream.bufferedReader(Charsets.UTF_8)
-            var line: String?
-            while (reader.readLine().also { line = it } != null) {
-                val l = line ?: continue
-                mainHandler.post { onLine(l) }
+        // Placeholder process; real Process attached once started
+        val holder = arrayOfNulls<Process>(1)
+        val job = ShellJob(object : Process() {
+            override fun getOutputStream() = java.io.ByteArrayOutputStream()
+            override fun getInputStream() = java.io.ByteArrayInputStream(ByteArray(0))
+            override fun getErrorStream() = java.io.ByteArrayInputStream(ByteArray(0))
+            override fun waitFor(): Int = -1
+            override fun exitValue(): Int = -1
+            override fun destroy() {
+                holder[0]?.destroyForcibly()
             }
-            val exit = proc.waitFor()
+            override fun destroyForcibly(): Process {
+                holder[0]?.destroyForcibly()
+                return this
+            }
+            override fun isAlive(): Boolean = holder[0]?.isAlive == true
+        })
+
+        Thread {
+            val proc = try {
+                if (job.cancelled) {
+                    mainHandler.post { onDone(-1) }
+                    return@Thread
+                }
+                pb.start().also { holder[0] = it }
+            } catch (_: Exception) {
+                mainHandler.post { onDone(-1) }
+                return@Thread
+            }
+            try {
+                val reader = proc.inputStream.bufferedReader(Charsets.UTF_8)
+                var line: String?
+                while (reader.readLine().also { line = it } != null) {
+                    if (job.cancelled) break
+                    val l = line ?: continue
+                    mainHandler.post { onLine(l) }
+                }
+            } catch (_: Exception) {
+            }
+            val exit = try {
+                if (job.cancelled) {
+                    try { proc.destroyForcibly() } catch (_: Exception) {}
+                    -1
+                } else {
+                    proc.waitFor()
+                }
+            } catch (_: Exception) {
+                -1
+            }
             mainHandler.post { onDone(exit) }
         }.start()
+
+        return job
     }
 
     private fun applyEnvironment(ctx: Context, pb: ProcessBuilder, envMap: Map<String, String>?) {
