@@ -16,6 +16,11 @@
   <img alt="License" src="https://img.shields.io/badge/license-proprietary-lightgrey">
 </p>
 
+<p align="center">
+  <a href="https://github.com/abhay-byte/nativecode-ai"><img alt="App Repo" src="https://img.shields.io/badge/App-Repo-7F52FF?logo=github"></a>
+  <a href="https://github.com/abhay-byte/nativecode-marketplace"><img alt="Marketplace" src="https://img.shields.io/badge/Marketplace-nativecode--marketplace-3DDC84?logo=github"></a>
+</p>
+
 NativeCode transforms a phone or tablet into a portable Linux workstation — a Debian 13 (Trixie) container with a graphical XFCE4 desktop, preconfigured development runtimes, and terminal-first AI coding tools. No PC required.
 
 ---
@@ -28,7 +33,7 @@ NativeCode transforms a phone or tablet into a portable Linux workstation — a 
 - **AI CLI engine** — run Claude Code, Codex, OpenCode, Aider, and more inside the native terminal.
 - **Preconfigured runtimes** — Node.js 26 LTS, Python 3.12, GCC, and standard package managers.
 - **Git workspace** — multi-repo project tree, real-time status, visual diff inspector, and branch switching, plus GitHub CLI integration.
-- **Software marketplace** — browse and install packages from an in-app catalog.
+- **Software marketplace** — browse and install packages from an in-app catalog sourced from [nativecode-marketplace](https://github.com/abhay-byte/nativecode-marketplace).
 - **CLI provisioning** — guided install and credential management for AI vendor tools.
 - **Cyber-brutalist UI** — obsidian theme with glassmorphism cards and a sharp, high-contrast design.
 
@@ -69,21 +74,28 @@ On first run, the onboarding wizard guides you through setup:
 
 ## Architecture
 
-```
-┌───────────────────────────── Android app (com.ivarna.nativecode) ─────────────────────────────┐
-│  SplashActivity → OnboardingActivity → MainActivity (single activity, custom Views)            │
-│                                                                                                │
-│  ├── BackgroundService / AppTerminalService / RootShellService  — terminal + setup execution  │
-│  ├── marketplace/    — package catalog, install registry, install runner                      │
-│  ├── github/         — GitHub CLI auth & commands                                             │
-│  ├── cliauth/        — AI CLI tool provisioning, vendor safety catalog, credential mgmt       │
-│  ├── git/            — visual diff, status, branches                                          │
-│  └── terminal/       — PRoot / Chroot command builders, project manager                       │
-├───────────────────────────────────────────────────────────────────────────────────────────────┤
-│  /data/data/com.ivarna.nativecode/files/                                                     │
-│   ├── usr/            custom-compiled Termux userland (bootstrap.tar)                         │
-│   └── distro/         Debian 13 (Trixie) container via proot-distro / chroot                  │
-└───────────────────────────────────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    subgraph App["Android app (com.ivarna.nativecode)"]
+        UI["Splash → Onboarding → MainActivity"]
+        UI --> Services["BackgroundService / AppTerminalService / RootShellService"]
+        Services --> MKT["marketplace/ — catalog, registry, install runner"]
+        Services --> GH["github/ — GitHub CLI auth & commands"]
+        Services --> AUTH["cliauth/ — AI CLI provisioning & credential mgmt"]
+        Services --> GIT["git/ — visual diff, status, branches"]
+        Services --> TERM["terminal/ — PRoot / Chroot builders, project manager"]
+    end
+
+    subgraph Storage["/data/data/com.ivarna.nativecode/files/"]
+        USER["usr/ — custom-compiled Termux userland (bootstrap.tar)"]
+        DISTRO["distro/ — Debian 13 (Trixie) container"]
+    end
+
+    MKT -->|raw.githubusercontent.com| MP[(nativecode-marketplace repo)]
+    TERM -->|PRoot bind / chroot| DISTRO
+    USER --> DISTRO
+    DISTRO --> AI["AI CLIs — Claude Code, Codex, OpenCode, Aider"]
+    DISTRO --> X11["Termux-X11 + VirGL — XFCE4 desktop"]
 ```
 
 The app ships a custom `bootstrap.tar` — a Termux userland compiled against the app's private package namespace — and copies it to internal storage on first launch. A PRoot bind mount maps the custom prefix to `/data/data/com.termux`, letting standard tooling run unmodified inside the sandbox. SSL certificates are exposed via `SSL_CERT_FILE` / `CURL_CA_BUNDLE`.
