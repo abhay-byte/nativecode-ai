@@ -1,13 +1,14 @@
 #!/system/bin/sh
-# nativecode-chroot v2.1
+# nativecode-chroot v2.2
 # SSOT chroot runner for NativeCode Debian 13 (requires root).
 # Do not nest this under run_debian13_root.sh — it already owns mounts + one chroot.
 # Guest entry always uses env -i + Debian PATH (never Android /system PATH).
+# v2.2: TTY-safe b64 (no stdin pipe), login --workdir, devpts ptmx heal.
 #
 # Usage:
 #   nativecode_chroot.sh version
 #   nativecode_chroot.sh mount [--x11]
-#   nativecode_chroot.sh login [--user flux|root] [--shell zsh|bash]
+#   nativecode_chroot.sh login [--user flux|root] [--shell zsh|bash] [--workdir PATH]
 #   nativecode_chroot.sh sh    [--user flux|root] -- 'shell string'
 #   nativecode_chroot.sh exec  [--user flux|root] -- CMD [ARGS...]
 #   nativecode_chroot.sh b64   [--user flux|root] -- BASE64_PAYLOAD
@@ -16,13 +17,14 @@
 #   NC_CHROOT  NC_PACKAGE  NC_HOST_TMP  NC_PREFIX  NC_BB  NC_SHELL
 set -u
 
-VERSION_STR="nativecode-chroot v2.1"
+VERSION_STR="nativecode-chroot v2.2"
 NC_PACKAGE="${NC_PACKAGE:-com.ivarna.nativecode}"
 NC_CHROOT="${NC_CHROOT:-/data/local/tmp/chrootDebian13}"
 NC_HOST_TMP="${NC_HOST_TMP:-/data/data/${NC_PACKAGE}/files/usr/tmp}"
 NC_PREFIX="${NC_PREFIX:-/data/data/${NC_PACKAGE}/files/usr}"
 LOGIN_SHELL="${NC_SHELL:-zsh}"
 USER_NAME="flux"
+LOGIN_WORKDIR=""
 WANT_X11=0
 MODE=""
 BB=""
@@ -37,7 +39,7 @@ usage() {
 usage:
   nativecode_chroot.sh version
   nativecode_chroot.sh mount [--x11]
-  nativecode_chroot.sh login [--user flux|root] [--shell zsh|bash]
+  nativecode_chroot.sh login [--user flux|root] [--shell zsh|bash] [--workdir PATH]
   nativecode_chroot.sh sh    [--user flux|root] -- SHELL_STRING
   nativecode_chroot.sh exec  [--user flux|root] -- CMD [ARGS...]
   nativecode_chroot.sh b64   [--user flux|root] -- BASE64_PAYLOAD
@@ -122,6 +124,36 @@ ensure_sticky_tmp() {
   chmod 1777 "$NC_CHROOT/var/tmp" 2>/dev/null || true
 }
 
+# devpts with usable ptmx (stock mount often leaves ptmxmode=000 → c--------- pts/ptmx).
+# Root still "passes" test -w on mode 000 — check numeric mode, not -w.
+ensure_devpts() {
+  _pts="$NC_CHROOT/dev/pts"
+  mkdir -p "$_pts" 2>/dev/null || true
+  if is_mounted "$_pts"; then
+    _perm=""
+    if [ -c "$_pts/ptmx" ]; then
+      _perm=$($BB stat -c '%a' "$_pts/ptmx" 2>/dev/null || stat -c '%a' "$_pts/ptmx" 2>/dev/null || echo "")
+    fi
+    # 0 / 000 / empty missing → heal once (no mount storm: single umount+remount)
+    case "$_perm" in
+      ""|0|000)
+        $BB umount "$_pts" 2>/dev/null || $BB umount -l "$_pts" 2>/dev/null || true
+        ;;
+    esac
+  fi
+  if ! is_mounted "$_pts"; then
+    $BB mount -t devpts devpts "$_pts" -o newinstance,ptmxmode=0666,mode=0620 2>/dev/null \
+      || $BB mount -t devpts devpts "$_pts" -o ptmxmode=0666,mode=0620 2>/dev/null \
+      || $BB mount -t devpts -o ptmxmode=0666,mode=0620 devpts "$_pts" 2>/dev/null \
+      || $BB mount -t devpts devpts "$_pts" 2>/dev/null \
+      || true
+  fi
+  if [ ! -c "$NC_CHROOT/dev/ptmx" ] && [ -c "$_pts/ptmx" ]; then
+    $BB ln -sf pts/ptmx "$NC_CHROOT/dev/ptmx" 2>/dev/null || true
+  fi
+  unset _pts _perm
+}
+
 ensure_mounts() {
   [ -d "$NC_CHROOT" ] || die "chroot missing: $NC_CHROOT"
   mkdir -p \
@@ -139,7 +171,7 @@ ensure_mounts() {
   bind_if_missing /dev "$NC_CHROOT/dev"
   bind_if_missing /sys "$NC_CHROOT/sys"
   mount_type_if_missing proc proc "$NC_CHROOT/proc"
-  mount_type_if_missing devpts devpts "$NC_CHROOT/dev/pts"
+  ensure_devpts
   mount_type_if_missing tmpfs tmpfs "$NC_CHROOT/dev/shm" "size=512M,mode=1777"
 
   ensure_sticky_tmp
@@ -218,17 +250,49 @@ guest_chroot_env() {
 }
 
 guest_login() {
+  # Optional project cwd (workspace shell). Path must not contain single quotes.
+  _cd=""
+  if [ -n "${LOGIN_WORKDIR:-}" ]; then
+    case "$LOGIN_WORKDIR" in
+      *"'"*) die "workdir must not contain single quotes" ;;
+    esac
+    _cd="cd '$LOGIN_WORKDIR' 2>/dev/null || true; "
+  fi
   case "$USER_NAME" in
     root)
       case "$LOGIN_SHELL" in
-        zsh) guest_chroot_env /bin/zsh -l ;;
-        bash|*) guest_chroot_env /bin/bash --login ;;
+        zsh)
+          if [ -n "$_cd" ]; then
+            guest_chroot_env /bin/zsh -c "${_cd}exec /bin/zsh -l"
+          else
+            guest_chroot_env /bin/zsh -l
+          fi
+          ;;
+        bash|*)
+          if [ -n "$_cd" ]; then
+            guest_chroot_env /bin/bash --login -c "${_cd}exec /bin/bash --login"
+          else
+            guest_chroot_env /bin/bash --login
+          fi
+          ;;
       esac
       ;;
     flux|*)
       case "$LOGIN_SHELL" in
-        bash) guest_chroot_env /bin/su - "$USER_NAME" -s /bin/bash ;;
-        zsh|*) guest_chroot_env /bin/su - "$USER_NAME" -s /bin/zsh ;;
+        bash)
+          if [ -n "$_cd" ]; then
+            guest_chroot_env /bin/su - "$USER_NAME" -s /bin/bash -c "${_cd}exec /bin/bash -l"
+          else
+            guest_chroot_env /bin/su - "$USER_NAME" -s /bin/bash
+          fi
+          ;;
+        zsh|*)
+          if [ -n "$_cd" ]; then
+            guest_chroot_env /bin/su - "$USER_NAME" -s /bin/zsh -c "${_cd}exec /bin/zsh -l"
+          else
+            guest_chroot_env /bin/su - "$USER_NAME" -s /bin/zsh
+          fi
+          ;;
       esac
       ;;
   esac
@@ -271,16 +335,18 @@ guest_exec() {
 
 # Base64 payload → bash as USER_NAME (Kotlin / RootShell path).
 # Absolute /usr/bin/base64 — never depend on guest PATH for decode bootstrap.
-# Brace group required: A || B | bash binds as A || (B|bash) and skips bash when A succeeds.
+# TTY-safe: decode to temp script then bash FILE (do NOT pipe into bash — that steals stdin
+# and breaks TUI tools needing /dev/tty: bubbletea, grok, claude, opencode).
 guest_b64() {
   _b64="$1"
   [ -n "$_b64" ] || die "b64 requires payload"
-  # payload is base64 alphabet only — safe to embed unquoted
-  _run="{ echo $_b64 | /usr/bin/base64 -d 2>/dev/null || echo $_b64 | /bin/base64 -d; } | /bin/bash"
+  # alphabet-only payload — safe inside single quotes
+  # \$ preserved for guest; host expands only ${_b64}
+  _inner="_b='${_b64}'; _f=/tmp/.nc_b64_\$\$; { echo \$_b | /usr/bin/base64 -d 2>/dev/null || echo \$_b | /bin/base64 -d; } >\$_f || exit 2; /bin/bash --noprofile --norc \$_f; _e=\$?; rm -f \$_f; exit \$_e"
   if [ "$USER_NAME" = "root" ]; then
-    guest_chroot_env /bin/bash --noprofile --norc -c "$_run"
+    guest_chroot_env /bin/bash --noprofile --norc -c "$_inner"
   else
-    guest_chroot_env /bin/su - "$USER_NAME" -s /bin/bash -c "$_run"
+    guest_chroot_env /bin/su - "$USER_NAME" -s /bin/bash -c "$_inner"
   fi
 }
 
@@ -354,6 +420,7 @@ case "$MODE" in
     exit 0
     ;;
   login)
+    LOGIN_WORKDIR=""
     while [ "$#" -gt 0 ]; do
       case "$1" in
         --user)
@@ -363,6 +430,10 @@ case "$MODE" in
         --shell)
           [ "$#" -ge 2 ] || die "--shell needs value"
           LOGIN_SHELL="$2"; shift 2
+          ;;
+        --workdir)
+          [ "$#" -ge 2 ] || die "--workdir needs value"
+          LOGIN_WORKDIR="$2"; shift 2
           ;;
         --x11) WANT_X11=1; shift ;;
         *) die "login: unknown arg $1" ;;

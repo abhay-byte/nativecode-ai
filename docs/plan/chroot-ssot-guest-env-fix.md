@@ -1,11 +1,35 @@
 # Plan: Fix chroot SSOT guest env (PATH / base64 / login)
 
 **Date:** 2026-07-31  
-**Status:** **ADB SMOKE PASS (v2.1)** — light device probe OK; UI M1–M7 still user-side  
- 
+**Status:** **PARTIAL (v2.1)** — PATH/`env -i`/absolute base64 **correct**; UI ship **blocked** by new findings  
+**Superseding plan (TTY / flux workspace / git):** [`chroot-ssot-interactive-tty-and-git.md`](chroot-ssot-interactive-tty-and-git.md)
+
 **Scope:** Repair **chroot** paths that broke after `nativecode_chroot.sh` hub (SSOT)  
 **Out of scope:** **proot** (do not touch — working). No marketplace catalog changes. No git UI redesign.  
 **Safety:** Live device stress forbidden — see [`docs/environment/chroot-adb-device-crash-postmortem.md`](../environment/chroot-adb-device-crash-postmortem.md)
+
+---
+
+## Review pass 3 (2026-07-31) — user UI re-report + light ADB
+
+**Device:** helper **v2.1** staged; project `.git` present; flux `git rev-parse` → `true`; b64 status bundle OK.  
+**User UI still fails:** git DIFF, flux project shell, AI tools (TTY).
+
+| Question | Answer |
+|----------|--------|
+| v2.1 PATH/env correctly done? | **Yes** |
+| Enough to ship UI? | **No** |
+| New plan required? | **Yes** → [`chroot-ssot-interactive-tty-and-git.md`](chroot-ssot-interactive-tty-and-git.md) |
+
+### Pass 3 findings
+
+| ID | Sev | Finding |
+|----|-----|---------|
+| R3-B1 | blocker | `guest_b64` uses `{decode}\|/bin/bash` → stdin not PTY → agy/grok/claude/opencode die |
+| R3-B2 | blocker | Workspace flux: `mkdir&&cd&&exec zsh` fails `isInteractive` → b64 path → instant exit; root OK (`workDir=null` → login) |
+| R3-B3 | blocker | `isSimpleGuestCmd` misses `'`; git status simple-`sh` + nested quotes → NotGit despite real repo |
+| R3-S1 | secondary | devpts `ptmxmode=000` → `/dev/pts/ptmx` unusable |
+| R3-OK | ok | SoftMgr/root PATH class still valid if b64 stays PATH-clean |
 
 ---
 
@@ -77,11 +101,18 @@ guest_chroot_env /bin/su - "$USER_NAME" -s /bin/bash -c "$_run"  # flux
 
 **ADB guest env class:** **PASS** (S1/S2/S5/S6 mechanism fixed on device).
 
-### Remaining (user UI only)
+### Remaining (user UI — **not** “user only”)
 
-1. UI M1–M7 chroot after app install/open (ensureHelper restages if needed).  
-2. M7 proot regression glance.  
-3. Mark plan + SSOT **shipped** after UI pass.
+User re-report 2026-07-31 after v2.1: git DIFF still broken; flux project shell exits; AI tools TTY crash (agy/grok/claude/opencode).  
+**Root cause reclass:** not PATH. See pass 3 + superseding plan.
+
+| ID | Symptom | v2.1 enough? | Real cause (pass 3) |
+|----|---------|--------------|---------------------|
+| U1 | GIT DIFF NOT A GIT REPOSITORY | No | `isSimpleGuestCmd` allows `'`; status bundle nested-quote break (guest git OK on ADB b64) |
+| U3 | flux shell project: process completed | No | `mkdir&&cd&&exec zsh` not interactive → b64 stdin pipe |
+| U4–U8 | AI tools /dev/tty + os error 6 | No | `guest_b64` `… \| /bin/bash` steals TTY |
+
+**Do not mark shipped.** Implement [`chroot-ssot-interactive-tty-and-git.md`](chroot-ssot-interactive-tty-and-git.md) (v2.2).
 
 **Parent SSOT plan:** [`docs/plan/chroot-ssot-shell-runner.md`](chroot-ssot-shell-runner.md)  
 **SSOT map:** [`docs/environment/nativecode-chroot-ssot.md`](../environment/nativecode-chroot-ssot.md)
