@@ -5,6 +5,7 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.ACCESS_SUPERUSER" />
 
     <application
@@ -49,23 +50,39 @@
             android:configChanges="orientation|keyboardHidden|screenSize"
             android:exported="false" />
 
+        <!--
+          specialUse subtype: user-initiated Linux terminals, project shells, and optional XFCE desktop.
+          Keep justification in sync with docs/policy/fgs-special-use-declaration.md
+        -->
         <service
             android:name=".BackgroundService"
             android:enabled="true"
             android:exported="false"
-            android:foregroundServiceType="specialUse" />
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Keeps user-started XFCE/desktop (Termux-X11) host services alive with a visible, stoppable notification while the user leaves the app." />
+        </service>
 
         <service
             android:name=".AppTerminalService"
             android:enabled="true"
             android:exported="false"
-            android:foregroundServiceType="specialUse" />
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Keeps user-started app terminal / AI CLI sessions alive with a visible notification so shells are not killed when the user switches apps." />
+        </service>
 
         <service
             android:name=".ProjectTerminalService"
             android:enabled="true"
             android:exported="false"
-            android:foregroundServiceType="specialUse" />
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Keeps user-started per-project terminal sessions alive with a visible notification while working across Android apps." />
+        </service>
 
     </application>
 

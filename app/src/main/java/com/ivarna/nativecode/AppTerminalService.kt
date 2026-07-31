@@ -6,8 +6,10 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
+import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
+import android.util.Log
 import androidx.core.app.NotificationCompat
 
 class AppTerminalService : Service() {
@@ -19,16 +21,39 @@ class AppTerminalService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val count = intent?.getIntExtra("SESSION_COUNT", 0) ?: 0
+        if (count <= 0) {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
+            return START_NOT_STICKY
+        }
         val notification = createNotification(count)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(1001, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
-        } else {
-            startForeground(1001, notification)
+        try {
+            startAsForeground(notification)
+        } catch (e: Exception) {
+            Log.e(TAG, "startForeground failed", e)
+            // Last-resort path so the service does not ANR the process
+            try {
+                startForeground(NOTIF_ID, notification)
+            } catch (e2: Exception) {
+                Log.e(TAG, "fallback startForeground failed", e2)
+            }
         }
         return START_STICKY
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
+
+    private fun startAsForeground(notification: Notification) {
+        if (Build.VERSION.SDK_INT >= 34) {
+            startForeground(
+                NOTIF_ID,
+                notification,
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+            )
+        } else {
+            startForeground(NOTIF_ID, notification)
+        }
+    }
 
     private fun createNotification(count: Int): Notification {
         val intent = Intent(this, MainActivity::class.java).apply {
@@ -36,16 +61,24 @@ class AppTerminalService : Service() {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
         }
         val pendingIntent = PendingIntent.getActivity(
-            this, 1001, intent,
+            this, NOTIF_ID, intent,
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("App Terminal Active")
-            .setContentText("Running $count terminal session(s) in background.")
-            .setSmallIcon(R.drawable.ic_terminal)
+            .setContentTitle("NativeCode — Terminal")
+            .setContentText(
+                if (count == 1) "1 app terminal session running"
+                else "$count app terminal sessions running"
+            )
+            .setSmallIcon(R.drawable.ic_stat_terminal)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setCategory(NotificationCompat.CATEGORY_SERVICE)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .build()
     }
 
@@ -53,15 +86,20 @@ class AppTerminalService : Service() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
-                "App Terminal Service Channel",
-                NotificationManager.IMPORTANCE_LOW
-            )
-            val manager = getSystemService(NotificationManager::class.java)
-            manager?.createNotificationChannel(channel)
+                "NativeCode Terminal Sessions",
+                NotificationManager.IMPORTANCE_DEFAULT
+            ).apply {
+                description = "Shows while app terminal sessions stay alive in the background"
+                setShowBadge(false)
+            }
+            getSystemService(NotificationManager::class.java)?.createNotificationChannel(channel)
         }
     }
 
     companion object {
-        const val CHANNEL_ID = "AppTerminalServiceChannel"
+        private const val TAG = "AppTerminalService"
+        // New id: IMPORTANCE is immutable once a channel exists on device
+        const val CHANNEL_ID = "AppTerminalServiceChannel_v2"
+        private const val NOTIF_ID = 1001
     }
 }

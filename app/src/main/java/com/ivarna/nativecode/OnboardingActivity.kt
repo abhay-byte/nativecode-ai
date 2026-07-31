@@ -44,7 +44,7 @@ class OnboardingActivity : AppCompatActivity() {
     private lateinit var rootLayout: FrameLayout
     private lateinit var pageContainer: FrameLayout
 
-    // Onboarding pages: 0 intro → 1 slideshow → 2 requirements → 3 isolation → 4 full setup → 5 complete
+    // Onboarding pages: 0 privacy → 1 intro → 2 slideshow → 3 requirements → 4 isolation → 5 setup → 6 complete
     private var currentPageIndex = 0
 
     private val executor = Executors.newCachedThreadPool()
@@ -156,11 +156,17 @@ class OnboardingActivity : AppCompatActivity() {
         intent.getStringExtra("preferred_isolation")?.let { pref ->
             if (pref == "chroot" || pref == "proot") selectedIsolationMethod = pref
         }
-        val startPage = intent.getIntExtra("target_page", 0)
+        val privacyOk = getSharedPreferences("nativecode_prefs", MODE_PRIVATE)
+            .getBoolean("privacy_accepted", false)
+        var startPage = intent.getIntExtra("target_page", if (privacyOk) 1 else 0)
+        // 0 = privacy; force privacy first until accepted
+        if (!privacyOk) startPage = 0
+        else if (startPage == 0) startPage = 1
         showPage(startPage)
 
         // Jump straight into Environment Setup and run full install chain
-        if (intent.getBooleanExtra("auto_start_setup", false) && startPage == 4) {
+        // Page index 5 = Debian base setup (after privacy page insert)
+        if (intent.getBooleanExtra("auto_start_setup", false) && startPage == 5 && privacyOk) {
             if (!isDebianBaseSetupStarted) {
                 isDebianBaseSetupStarted = true
                 runDebianBaseSetup()
@@ -173,18 +179,162 @@ class OnboardingActivity : AppCompatActivity() {
         pageContainer.removeAllViews()
 
         val view = when (index) {
-            0 -> buildIntroPage()
-            1 -> buildSlideshowPage()
-            2 -> buildRequirementsPage()
-            3 -> buildIsolationPage()
-            4 -> buildDebianBasePage()
-            5, 6 -> buildCompletePage() // 6 = legacy target_page after page insert
+            0 -> buildPrivacyPage()
+            1 -> buildIntroPage()
+            2 -> buildSlideshowPage()
+            3 -> buildRequirementsPage()
+            4 -> buildIsolationPage()
+            5 -> buildDebianBasePage()
+            6, 7 -> buildCompletePage() // 7 = legacy target_page after privacy insert
             else -> buildIntroPage()
         }
 
         view.alpha = 0f
         pageContainer.addView(view)
         view.animate().alpha(1f).setDuration(250).start()
+    }
+
+    // ── Page 0: Privacy (local-only / open-source) ────────────────────────────
+    private fun buildPrivacyPage(): View {
+        val scroll = ScrollView(this).apply {
+            layoutParams = FrameLayout.LayoutParams(MATCH, MATCH)
+            isFillViewport = true
+            setBackgroundColor(NC.BG)
+        }
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(24), dp(16), dp(24))
+            layoutParams = FrameLayout.LayoutParams(MATCH, MATCH)
+        }
+
+        val headerIcon = ImageView(this).apply {
+            setImageResource(R.drawable.ic_shield_thick)
+            setColorFilter(NC.PRIMARY)
+            layoutParams = LinearLayout.LayoutParams(dp(36), dp(36)).apply {
+                bottomMargin = dp(12)
+                gravity = Gravity.START
+            }
+        }
+        root.addView(headerIcon)
+
+        val title = TextView(this).apply {
+            text = "PRIVACY"
+            textSize = 28f
+            setTextColor(NC.PRIMARY)
+            typeface = Typeface.DEFAULT_BOLD
+            letterSpacing = -0.01f
+        }
+        root.addView(title)
+
+        val sub = TextView(this).apply {
+            text = "// OPEN SOURCE · LOCAL-FIRST DEVELOPER ENVIRONMENT"
+            textSize = 11f
+            setTextColor(NC.ON_SURF_VAR)
+            typeface = Typeface.MONOSPACE
+            setPadding(0, dp(6), 0, dp(16))
+        }
+        root.addView(sub)
+
+        val divider = View(this).apply {
+            layoutParams = LinearLayout.LayoutParams(MATCH, dp(1)).apply { bottomMargin = dp(16) }
+            setBackgroundColor(NC.OUTLINE_VAR)
+        }
+        root.addView(divider)
+
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = cyberBrutalistBg(
+                fillColor = NC.SURFACE_LOW,
+                strokeColor = NC.OUTLINE_VAR,
+                shadowColor = NC.SURFACE_BRIGHT,
+                offsetDp = 6,
+                cornerRadiusDp = 0,
+                rightFaceColor = NC.OUTLINE_VAR
+            )
+            setPadding(dp(16), dp(16), dp(16), dp(16))
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(16) }
+        }
+
+        fun bullet(label: String, body: String): LinearLayout {
+            return LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(0, 0, 0, dp(14))
+                addView(TextView(this@OnboardingActivity).apply {
+                    text = label
+                    textSize = 13f
+                    setTextColor(NC.PRIMARY)
+                    typeface = Typeface.MONOSPACE
+                })
+                addView(TextView(this@OnboardingActivity).apply {
+                    text = body
+                    textSize = 14f
+                    setTextColor(Color.parseColor("#FAFAFA"))
+                    setPadding(0, dp(4), 0, 0)
+                    setLineSpacing(0f, 1.25f)
+                })
+            }
+        }
+
+        card.addView(
+            bullet(
+                "01 · NO NATIVECODE CLOUD",
+                "NativeCode is open source. We do not operate a backend that collects your personal data, analytics, or telemetry."
+            )
+        )
+        card.addView(
+            bullet(
+                "02 · YOUR DATA STAYS LOCAL",
+                "Files, projects, packages, and credentials live on this device inside your Debian proot or chroot distro — not on our servers."
+            )
+        )
+        card.addView(
+            bullet(
+                "03 · OPTIONAL NETWORK",
+                "You may choose GitHub login, AI CLIs, or package downloads. Those talks go to those third parties only when you start them — never silently by NativeCode cloud."
+            )
+        )
+        card.addView(
+            bullet(
+                "04 · YOU CONTROL DELETION",
+                "Clear app storage, uninstall, or delete guest files to remove local data. Manage third-party accounts with each vendor."
+            )
+        )
+        root.addView(card)
+
+        val policyLink = TextView(this).apply {
+            text = "Full policy on GitHub ↗"
+            textSize = 13f
+            setTextColor(NC.PRIMARY)
+            typeface = Typeface.MONOSPACE
+            setPadding(0, 0, 0, dp(20))
+            setOnClickListener {
+                val url = "https://github.com/abhay-byte/nativecode-ai/blob/master/docs/privacy-policy.md"
+                try {
+                    startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url)))
+                } catch (_: Exception) {
+                    Toast.makeText(this@OnboardingActivity, "No browser available", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+        root.addView(policyLink)
+
+        val spacer = View(this).apply {
+            layoutParams = LinearLayout.LayoutParams(MATCH, 0, 1f)
+        }
+        root.addView(spacer)
+
+        root.addView(
+            primaryButton("I Understand — Continue", R.drawable.ic_arrow_right) {
+                getSharedPreferences("nativecode_prefs", MODE_PRIVATE)
+                    .edit()
+                    .putBoolean("privacy_accepted", true)
+                    .apply()
+                showPage(1)
+            }
+        )
+
+        scroll.addView(root)
+        return scroll
     }
 
     // ── Page 1: Brand Intro ───────────────────────────────────────────────────
@@ -265,7 +415,7 @@ class OnboardingActivity : AppCompatActivity() {
         root.addView(botSpacer)
 
         val btn = primaryButton("Get Started", R.drawable.ic_arrow_right) {
-            showPage(1)
+            showPage(2) // slideshow
         }
         root.addView(btn)
 
@@ -544,7 +694,7 @@ class OnboardingActivity : AppCompatActivity() {
             if (activeSlide > 0) {
                 switchSlide(activeSlide - 1)
             } else {
-                showPage(0)
+                showPage(1) // intro
             }
         }
         prevBtn.layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f).apply { rightMargin = dp(8) }
@@ -553,7 +703,7 @@ class OnboardingActivity : AppCompatActivity() {
             if (activeSlide < slides.size - 1) {
                 switchSlide(activeSlide + 1)
             } else {
-                showPage(2)
+                showPage(3) // requirements
             }
         }
         nextBtn.layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
@@ -658,12 +808,12 @@ class OnboardingActivity : AppCompatActivity() {
             orientation = LinearLayout.HORIZONTAL
             setPadding(0, dp(12), 0, dp(shadowOff))
         }
-        val prevBtn = secondaryButton("Back") { showPage(1) }
+        val prevBtn = secondaryButton("Back") { showPage(2) } // slideshow
         prevBtn.layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f).apply { rightMargin = dp(8) }
 
         val nextLabel = if (snap.hardBlocked) "Storage required" else "Continue"
         val nextBtn = primaryButton(nextLabel, if (snap.hardBlocked) null else R.drawable.ic_arrow_right) {
-            if (!snap.hardBlocked) showPage(3)
+            if (!snap.hardBlocked) showPage(4) // isolation
         }
         nextBtn.layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
         if (snap.hardBlocked) {
@@ -1066,10 +1216,10 @@ class OnboardingActivity : AppCompatActivity() {
 
         // Buttons
         val btnRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        val prevBtn = secondaryButton("Back") { showPage(2) }
+        val prevBtn = secondaryButton("Back") { showPage(3) } // requirements
         prevBtn.layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f).apply { rightMargin = dp(8) }
         val nextBtn = primaryButton("Configure & Install", R.drawable.ic_arrow_right) {
-            showPage(4)
+            showPage(5) // debian base setup
             if (!isDebianBaseSetupStarted) {
                 isDebianBaseSetupStarted = true
                 runDebianBaseSetup()
@@ -1321,7 +1471,7 @@ class OnboardingActivity : AppCompatActivity() {
 
         // Next pinned to bottom
         baseNextBtn = primaryButton("Next: Complete Setup", R.drawable.ic_arrow_right) {
-            showPage(5)
+            showPage(6) // complete
         }
         if (setupFinished) {
             baseNextBtn.isEnabled = true

@@ -11,10 +11,10 @@ This Privacy Policy describes how NativeCode handles information when you use th
 
 ## 1. Summary
 
-- NativeCode is designed so that **most work stays on your device** inside the app sandbox and Linux guest filesystem.
-- The app **does not** operate a first-party analytics backend described in this document.
-- Optional features (GitHub login, AI CLI authentication, package/marketplace installs, rootfs download) may send data to **third-party services you choose to use**.
-- Auth tokens and credentials, when used, are stored **on-device** (app storage / guest home), not uploaded to a NativeCode server.
+- NativeCode is **open source** and **local-first**. We do **not** collect personal data on a NativeCode cloud/backend.
+- Your files, projects, packages, and credentials stay **on this device** inside the Debian **proot** or **chroot** distro (and app private storage).
+- Optional features (GitHub login, AI CLI auth, package/marketplace installs, rootfs download) may contact **third parties you choose** — not a NativeCode analytics service.
+- Auth tokens/credentials, when used, are stored **on-device** only.
 
 ---
 

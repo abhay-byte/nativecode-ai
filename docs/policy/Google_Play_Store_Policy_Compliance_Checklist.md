@@ -22,8 +22,8 @@
 | Bucket | Count (approx.) | Highest-risk items |
 |--------|-----------------|--------------------|
 | Followed | ~28 | API 36, 64-bit, AAB path, identity/verification/closed-test (ops confirmed), no ads, no install-packages, media via picker only, FGS for terminal/AI BG, NativeCode branding |
-| Partial | ~12 | Privacy policy (in-app + GitHub; Console pending), remote scripts, FileProvider, AI controls, listing/IARC, Financial Features, module exports |
-| Not followed | ~9 | Data safety, consent UX, FGS Console/property, AI report UI, auto remote installers, POST_NOTIFICATIONS, store package |
+| Partial | ~11 | FGS Console video (code property done), remote scripts, FileProvider, AI controls, listing/IARC, Financial Features, module exports |
+| Not followed | ~6 | AI report UI, auto remote installers, store package, account-deletion UX |
 
 **Ship-blocking before production (must fix or formally justify):**
 
@@ -549,10 +549,10 @@ Missing or clearly non-compliant as of this audit.
 | Field | Detail |
 |-------|--------|
 | **Guide §** | §1, §4.1 User Data policy |
-| **Status** | **PARTIAL** — in-repo policy + Settings Hub card; Console URL still required after publish |
-| **Evidence** | `docs/privacy-policy.md`; Settings Hub **PRIVACY POLICY** opens `https://github.com/abhay-byte/nativecode-ai/blob/master/docs/privacy-policy.md` via `Intent.ACTION_VIEW`. Live only after push to default branch. Play Console privacy field not set from repo. |
-| **Reason** | Play requires public HTTPS policy linked in Console **and** in-app. GitHub-hosted markdown satisfies interim public URL once pushed; dedicated domain/HTML still preferred for production. |
-| **How to fix (remaining)** | 1) Push `docs/privacy-policy.md` to `master`. 2) Paste same URL in Play Console → App content → Privacy policy. 3) Optional: host HTML copy on own domain. 4) Keep in sync with Data safety (C2). |
+| **Status** | **FOLLOWED** (ops: Console privacy URL + Data safety filled; in-app link + `docs/privacy-policy.md`) |
+| **Evidence** | GitHub policy live; Settings Hub card; Play Console privacy URL set by developer; onboarding privacy page (C3). |
+| **Reason** | Mandatory public policy + in-app entry satisfied. |
+| **How to keep fixed** | Keep `docs/privacy-policy.md` in sync with Data safety when features change. |
 
 ---
 
@@ -561,47 +561,27 @@ Missing or clearly non-compliant as of this audit.
 | Field | Detail |
 |-------|--------|
 | **Guide §** | §1, §4.2 |
-| **Status** | **NOT FOLLOWED** (no evidence of completion; data collection exists) |
-| **Evidence** | Network auth + remote downloads exist; form answers not stored in repo. |
-| **Reason** | Required for every app; must match privacy policy and actual SDK/code behavior. |
-| **How to fix** | In Play Console Data safety declare at least:  
-| | - **Account info** (GitHub username/token handling — even if token stays on device, collection/processing rules apply as configured)  
-| | - **App activity / files** if applicable  
-| | - **Network** transmissions to GitHub, AI vendors, raw script hosts, rootfs CDN  
-| | - Security practices (encryption in transit HTTPS)  
-| | - Data deletion (uninstall / clear storage)  
-| | Update form whenever marketplace hosts or auth vendors change. |
-
----
+| **Status** | **FOLLOWED** (ops: completed in Play Console by developer) |
+| **Evidence** | Developer confirmed Console Data safety form filled to match local-first policy. |
+| **How to keep fixed** | Re-open form when auth vendors / network destinations change. |
 
 ### C3. In-app prominent privacy entry / consent UX for non-obvious data
 
 | Field | Detail |
 |-------|--------|
 | **Guide §** | §4.3 Prominent disclosure & consent |
-| **Status** | **NOT FOLLOWED** |
-| **Evidence** | Onboarding focuses on isolation method + setup progress; no privacy acceptance screen; no disclosure before OAuth/token storage. |
-| **Reason** | When collection may exceed user expectation (tokens written into guest FS, remote script execution), Play expects clear disclosure + affirmative consent before collection begins. |
-| **How to fix** | Add first-run screen: what is stored locally, what leaves the device, third-party logins optional. Require Accept before continuing. Re-show for major policy changes. |
-
----
+| **Status** | **FOLLOWED** — first onboarding page; local-first / open-source disclosure + Accept |
+| **Evidence** | `OnboardingActivity` page 0 `buildPrivacyPage()`; pref `privacy_accepted`; cyber-brutalist UI per `docs/project/ui_design.md`. Messaging: no NativeCode cloud collection; data stays in proot/chroot. |
+| **How to keep fixed** | Re-show if major privacy policy version changes (bump pref key). |
 
 ### C4. FGS `specialUse` subtype property + Console FGS declaration
 
 | Field | Detail |
 |-------|--------|
 | **Guide §** | §4.7 Foreground Services policy |
-| **Status** | **NOT FOLLOWED** (manifest property / Console package incomplete) |
-| **Evidence** | Services use `specialUse` but no `PROPERTY_SPECIAL_USE_FGS_SUBTYPE` (or documented equivalent) found; no Console declaration artifacts. |
-| **Reason** | `specialUse` without justification is a common rejection. |
-| **How to fix** | ```xml
-<property
-    android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-    android:value="Keeps user-initiated Linux terminal / X11 developer sessions alive with ongoing notification" />
-```  
-Also complete Play Console “Foreground service permissions” declaration with short video of notification + stop path. |
-
----
+| **Status** | **PARTIAL** — code + demo video ready in `docs/policy/`; paste justification + upload video in Play Console FGS form |
+| **Evidence** | Manifest `PROPERTY_SPECIAL_USE_FGS_SUBTYPE` on BackgroundService / AppTerminalService / ProjectTerminalService; solid notif icon; IMPORTANCE_DEFAULT; POST_NOTIFICATIONS; see `docs/policy/fgs-special-use-declaration.md` (≤300 char justification) + demo MP4 when recorded. |
+| **How to fix (remaining)** | Upload demo video + paste justification in Play Console FGS declaration. |
 
 ### C5. AI-Generated Content — reporting mechanism
 

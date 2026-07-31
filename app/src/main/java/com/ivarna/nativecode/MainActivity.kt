@@ -307,6 +307,7 @@ class MainActivity : AppCompatActivity() {
         private const val PREF_CHROOT_LAST_MS = "chroot_last_check_ms"
         private const val PREF_CHROOT_PROC_COUNT = "chroot_proc_count"
         private const val PREF_CHROOT_PROC_LAST_MS = "chroot_proc_last_ms"
+        private const val REQ_POST_NOTIFICATIONS = 4401
     }
 
     private val executor = Executors.newCachedThreadPool()
@@ -547,6 +548,7 @@ class MainActivity : AppCompatActivity() {
 
         buildRootLayout()
         setContentView(drawerLayout)
+        ensurePostNotificationsPermission()
 
         // Apply Insets
         ViewCompat.setOnApplyWindowInsetsListener(drawerLayout) { _, insets ->
@@ -728,17 +730,42 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun ensurePostNotificationsPermission() {
+        if (Build.VERSION.SDK_INT < 33) return
+        if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)
+            == android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) return
+        requestPermissions(
+            arrayOf(android.Manifest.permission.POST_NOTIFICATIONS),
+            REQ_POST_NOTIFICATIONS
+        )
+    }
+
+    private fun startNativeCodeFgs(intent: Intent) {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(intent)
+            } else {
+                startService(intent)
+            }
+        } catch (e: Exception) {
+            Log.e("MainActivity", "Failed to start FGS ${intent.component?.className}", e)
+            try {
+                startService(intent)
+            } catch (e2: Exception) {
+                Log.e("MainActivity", "Fallback startService failed", e2)
+            }
+        }
+    }
+
     private fun updateAppTerminalService() {
         val count = sessionsList.size
         val intent = Intent(this, AppTerminalService::class.java).apply {
             putExtra("SESSION_COUNT", count)
         }
         if (count > 0) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                startForegroundService(intent)
-            } else {
-                startService(intent)
-            }
+            ensurePostNotificationsPermission()
+            startNativeCodeFgs(intent)
         } else {
             stopService(intent)
         }
@@ -752,11 +779,8 @@ class MainActivity : AppCompatActivity() {
             putExtra("PROJECT_PATH", activeProjectPath)
         }
         if (count > 0) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                startForegroundService(intent)
-            } else {
-                startService(intent)
-            }
+            ensurePostNotificationsPermission()
+            startNativeCodeFgs(intent)
         } else {
             stopService(intent)
         }
@@ -8943,7 +8967,7 @@ class MainActivity : AppCompatActivity() {
         val intent = Intent(this, OnboardingActivity::class.java).apply {
             putExtra("force_onboarding", true)
             putExtra("preferred_isolation", "chroot")
-            putExtra("target_page", 4) // Environment Setup (full install log)
+            putExtra("target_page", 5) // Environment Setup (full install log; after privacy page)
             putExtra("auto_start_setup", true)
         }
         startActivity(intent)
@@ -11429,9 +11453,8 @@ class MainActivity : AppCompatActivity() {
 
     /** Start XFCE: proot → start_gui.sh; chroot → start_gui_chroot.sh (host X11 + root DE). */
     private fun startGui() {
-        val serviceIntent = Intent(this, BackgroundService::class.java)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(serviceIntent)
-        else startService(serviceIntent)
+        ensurePostNotificationsPermission()
+        startNativeCodeFgs(Intent(this, BackgroundService::class.java))
 
         val method = getSharedPreferences("nativecode_prefs", MODE_PRIVATE).getString("linux_method", "proot") ?: "proot"
         if (method == "chroot" && !ProjectPathResolver.isChrootInstalled()) {
