@@ -4,7 +4,7 @@
 
 # Paths (Must match setup_debian13_chroot.sh)
 DEBIANPATH="/data/local/tmp/chrootDebian13"
-LAUNCH_SCRIPTS="/data/local/tmp/start_debian13.sh /data/local/tmp/start_debian13_gui.sh /data/local/tmp/enter_debian13.sh /data/local/tmp/enter_debian13_root.sh /data/local/tmp/run_debian13_root.sh /data/local/tmp/stop_debian13_gui.sh /data/local/tmp/uninstall_debian13_chroot.sh"
+LAUNCH_SCRIPTS="/data/local/tmp/start_debian13.sh /data/local/tmp/start_debian13_gui.sh /data/local/tmp/enter_debian13.sh /data/local/tmp/enter_debian13_root.sh /data/local/tmp/run_debian13_root.sh /data/local/tmp/stop_debian13_gui.sh /data/local/tmp/uninstall_debian13_chroot.sh /data/local/tmp/nativecode_chroot.sh"
 
 # Error Handler
 error() {

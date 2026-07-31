@@ -292,55 +292,42 @@ configure_debian_chroot() {
     touch "$DEBIANPATH/.flux_configured"
     success "Debian Environment Configured!"
 
-    # --- GENERATE GUI LAUNCH SCRIPT ---
+    # --- GENERATE GUI LAUNCH SCRIPT (thin → SSOT GUI / helper) ---
     LAUNCH_SCRIPT="/data/local/tmp/start_debian13.sh"
-    progress "Creating GUI launch script at $LAUNCH_SCRIPT..."
+    progress "Creating thin GUI launch script at $LAUNCH_SCRIPT..."
 
-    cat <<EOF > "$LAUNCH_SCRIPT"
-#!/bin/sh
-DEBIANPATH="/data/local/tmp/chrootDebian13"
-BB="$BB"
-export LD_LIBRARY_PATH=$LD_LIBRARY_PATH
+    cat <<'EOF' > "$LAUNCH_SCRIPT"
+#!/system/bin/sh
+# Compat one-shot GUI → prefer start_debian13_gui.sh (app SSOT) else helper mount --x11 + xfce
+GUI=/data/local/tmp/start_debian13_gui.sh
+HELPER=/data/local/tmp/nativecode_chroot.sh
+DEBIANPATH="${DEBIANPATH:-/data/local/tmp/chrootDebian13}"
+TARGET_PREFIX="${TARGET_PREFIX:-/data/data/com.ivarna.nativecode/files/usr}"
+USERNAME="${USERNAME:-flux}"
 
-/system/bin/mount -o remount,dev,suid /data 2>/dev/null || \$BB mount -o remount,dev,suid /data 2>/dev/null || true
-
-\$BB mount --bind /dev \$DEBIANPATH/dev
-\$BB mount --bind /sys \$DEBIANPATH/sys
-\$BB mount -t proc proc \$DEBIANPATH/proc
-\$BB mount -t devpts devpts \$DEBIANPATH/dev/pts
-
-mkdir -p \$DEBIANPATH/dev/shm
-\$BB mount -t tmpfs -o size=512M,mode=1777 tmpfs \$DEBIANPATH/dev/shm
-
-mkdir -p \$DEBIANPATH/tmp \$DEBIANPATH/mnt/host-tmp
-# Unmount bad /tmp bind from older installs; keep disk-backed sticky /tmp
-if grep -q " \$DEBIANPATH/tmp " /proc/mounts 2>/dev/null; then
-    \$BB umount \$DEBIANPATH/tmp 2>/dev/null || \$BB umount -l \$DEBIANPATH/tmp 2>/dev/null || true
+if [ -f "$GUI" ]; then
+  exec sh "$GUI"
 fi
-chmod 1777 \$DEBIANPATH/tmp 2>/dev/null || true
-\$BB mount --bind /data/data/com.ivarna.nativecode/files/usr/tmp \$DEBIANPATH/mnt/host-tmp 2>/dev/null || true
-if [ -f /data/data/com.ivarna.nativecode/files/usr/tmp/launch_tool.sh ]; then
-    cp -f /data/data/com.ivarna.nativecode/files/usr/tmp/launch_tool.sh \$DEBIANPATH/tmp/launch_tool.sh 2>/dev/null || true
-    chmod 755 \$DEBIANPATH/tmp/launch_tool.sh 2>/dev/null || true
+
+if [ ! -f "$HELPER" ]; then
+  echo "nativecode_chroot.sh missing — open app chroot session or re-run setup" >&2
+  exit 127
 fi
-mkdir -p \$DEBIANPATH/sdcard
-\$BB mount --bind /sdcard \$DEBIANPATH/sdcard
 
-# X11: bind only host .X11-unix into sticky /tmp (app Settings uses start_debian13_gui.sh SSOT)
-TARGET_PREFIX="/data/data/com.ivarna.nativecode/files/usr"
-mkdir -p \$TARGET_PREFIX/tmp/.X11-unix \$DEBIANPATH/tmp/.X11-unix
-chmod 1777 \$TARGET_PREFIX/tmp/.X11-unix 2>/dev/null || true
-\$BB mount --bind \$TARGET_PREFIX/tmp/.X11-unix \$DEBIANPATH/tmp/.X11-unix 2>/dev/null || true
-
-echo "Cleaning internal XFCE4 session..."
-\$BB chroot \$DEBIANPATH /bin/su - root -c "killall -9 xfce4-session xfwm4 xfdesktop xfce4-panel dbus-launch dbus-daemon" >/dev/null 2>&1
-
-echo "Starting Debian 13 Chroot GUI ($USERNAME)..."
+export NC_CHROOT="$DEBIANPATH"
+export NC_PREFIX="$TARGET_PREFIX"
+export NC_HOST_TMP="${TARGET_PREFIX}/tmp"
+sh "$HELPER" mount --x11 || true
+sh "$HELPER" sh --user root -- \
+  "killall -9 xfce4-session xfwm4 xfdesktop xfce4-panel dbus-launch dbus-daemon 2>/dev/null; true" \
+  >/dev/null 2>&1 || true
+echo "Starting Debian 13 Chroot GUI ($USERNAME) via SSOT helper..."
 echo "NOTE: Prefer app Settings START (start_gui_chroot.sh) for Pulse/X11 host stack."
-\$BB chroot \$DEBIANPATH /bin/su - $USERNAME -c 'export DISPLAY=:0 && export PULSE_SERVER=tcp:127.0.0.1 && export XDG_RUNTIME_DIR=/tmp && export VTEST_SOCKET_NAME=/mnt/host-tmp/.virgl_test && xfconf-query -c xfwm4 -p /general/use_compositing -s false 2>/dev/null; dbus-launch --exit-with-session startxfce4'
+exec sh "$HELPER" sh --user "$USERNAME" -- \
+  'export DISPLAY=:0 PULSE_SERVER=tcp:127.0.0.1 XDG_RUNTIME_DIR=/tmp VTEST_SOCKET_NAME=/mnt/host-tmp/.virgl_test; xfconf-query -c xfwm4 -p /general/use_compositing -s false 2>/dev/null; exec dbus-launch --exit-with-session startxfce4'
 EOF
-    chmod +x "$LAUNCH_SCRIPT"
-    success "GUI Launch script created."
+    chmod 755 "$LAUNCH_SCRIPT"
+    success "GUI Launch script created (SSOT thin wrapper)."
 
     # Prefer asset SSOT stop when present under app home (redeployed by app)
     STOP_LAUNCHER="/data/local/tmp/stop_debian13_gui.sh"
@@ -378,132 +365,71 @@ EOF
         success "Staged start_debian13_gui.sh from app assets"
     fi
 
-    # --- GENERATE ROOT COMMAND RUNNER ---
+    # --- SSOT helper + thin compat wrappers ---
+    HELPER="/data/local/tmp/nativecode_chroot.sh"
+    progress "Installing chroot SSOT helper at $HELPER..."
+    HELPER_SRC=""
+    for cand in \
+        "/data/data/com.ivarna.nativecode/files/home/nativecode_chroot.sh" \
+        "/data/data/com.ivarna.nativecode/files/staged_scripts/nativecode_chroot.sh" \
+        "$(dirname "$0")/nativecode_chroot.sh"
+    do
+        if [ -f "$cand" ]; then
+            HELPER_SRC="$cand"
+            break
+        fi
+    done
+    if [ -n "$HELPER_SRC" ]; then
+        cp -f "$HELPER_SRC" "$HELPER"
+        chmod 755 "$HELPER"
+        success "SSOT helper installed from $HELPER_SRC"
+    else
+        error "nativecode_chroot.sh not found in app home/staged — app ensureHelperScript will stage on first session"
+    fi
+
     ROOT_RUNNER="/data/local/tmp/run_debian13_root.sh"
-    progress "Creating Root Runner at $ROOT_RUNNER..."
-
-    cat <<EOF > "$ROOT_RUNNER"
-#!/bin/sh
-# Wrapper to run a command inside Chroot as Root (with mounts)
-
-DEBIANPATH="/data/local/tmp/chrootDebian13"
-BB="$BB"
-export LD_LIBRARY_PATH=$LD_LIBRARY_PATH
-
-/system/bin/mount -o remount,dev,suid /data >/dev/null 2>&1 || \$BB mount -o remount,dev,suid /data >/dev/null 2>&1
-\$BB mount --bind /dev \$DEBIANPATH/dev >/dev/null 2>&1
-\$BB mount --bind /sys \$DEBIANPATH/sys >/dev/null 2>&1
-\$BB mount -t proc proc \$DEBIANPATH/proc >/dev/null 2>&1
-\$BB mount -t devpts devpts \$DEBIANPATH/dev/pts >/dev/null 2>&1
-mkdir -p \$DEBIANPATH/dev/shm
-\$BB mount -t tmpfs -o size=512M,mode=1777 tmpfs \$DEBIANPATH/dev/shm >/dev/null 2>&1
-mkdir -p \$DEBIANPATH/tmp \$DEBIANPATH/mnt/host-tmp
-# Unmount bad /tmp bind from older installs; keep disk-backed sticky /tmp
-if grep -q " \$DEBIANPATH/tmp " /proc/mounts 2>/dev/null; then
-    \$BB umount \$DEBIANPATH/tmp 2>/dev/null || \$BB umount -l \$DEBIANPATH/tmp 2>/dev/null || true
+    progress "Creating thin root runner → SSOT at $ROOT_RUNNER..."
+    cat <<'EOF' > "$ROOT_RUNNER"
+#!/system/bin/sh
+# Compat wrapper → nativecode_chroot.sh exec --user root
+HELPER=/data/local/tmp/nativecode_chroot.sh
+if [ ! -f "$HELPER" ]; then
+  echo "nativecode_chroot.sh missing — open a chroot session once or re-run setup" >&2
+  exit 127
 fi
-chmod 1777 \$DEBIANPATH/tmp 2>/dev/null || true
-\$BB mount --bind /data/data/com.ivarna.nativecode/files/usr/tmp \$DEBIANPATH/mnt/host-tmp 2>/dev/null || true
-if [ -f /data/data/com.ivarna.nativecode/files/usr/tmp/launch_tool.sh ]; then
-    cp -f /data/data/com.ivarna.nativecode/files/usr/tmp/launch_tool.sh \$DEBIANPATH/tmp/launch_tool.sh 2>/dev/null || true
-    chmod 755 \$DEBIANPATH/tmp/launch_tool.sh 2>/dev/null || true
+if [ "$#" -lt 1 ]; then
+  echo "Usage: $0 <command> [args...]" >&2
+  exit 1
 fi
-mkdir -p \$DEBIANPATH/sdcard
-\$BB mount --bind /sdcard \$DEBIANPATH/sdcard >/dev/null 2>&1
-
-CMD="\$@"
-if [ -z "\$CMD" ]; then
-    echo "Usage: \$0 <command>"
-    exit 1
-fi
-
-\$BB chroot \$DEBIANPATH /bin/su - root -c "\$CMD"
+exec sh "$HELPER" exec --user root -- "$@"
 EOF
-    chmod +x "$ROOT_RUNNER"
-    success "Root runner created."
+    chmod 755 "$ROOT_RUNNER"
+    success "Root runner created (SSOT wrapper)."
 
-    # --- GENERATE CLI LAUNCHER (User Shell) ---
     CLI_SCRIPT="/data/local/tmp/enter_debian13.sh"
-    progress "Creating CLI Launcher at $CLI_SCRIPT..."
-
-    cat <<EOF > "$CLI_SCRIPT"
-#!/bin/sh
-# CLI Entry for Debian 13 Chroot
-
-DEBIANPATH="/data/local/tmp/chrootDebian13"
-BB="$BB"
-export LD_LIBRARY_PATH=$LD_LIBRARY_PATH
-
-/system/bin/mount -o remount,dev,suid /data 2>/dev/null || \$BB mount -o remount,dev,suid /data 2>/dev/null
-
-\$BB mount --bind /dev \$DEBIANPATH/dev 2>/dev/null
-\$BB mount --bind /sys \$DEBIANPATH/sys 2>/dev/null
-\$BB mount -t proc proc \$DEBIANPATH/proc 2>/dev/null
-\$BB mount -t devpts devpts \$DEBIANPATH/dev/pts 2>/dev/null
-
-mkdir -p \$DEBIANPATH/dev/shm
-\$BB mount -t tmpfs -o size=512M,mode=1777 tmpfs \$DEBIANPATH/dev/shm 2>/dev/null
-
-mkdir -p \$DEBIANPATH/tmp \$DEBIANPATH/mnt/host-tmp
-# Unmount bad /tmp bind from older installs; keep disk-backed sticky /tmp
-if grep -q " \$DEBIANPATH/tmp " /proc/mounts 2>/dev/null; then
-    \$BB umount \$DEBIANPATH/tmp 2>/dev/null || \$BB umount -l \$DEBIANPATH/tmp 2>/dev/null || true
-fi
-chmod 1777 \$DEBIANPATH/tmp 2>/dev/null || true
-\$BB mount --bind /data/data/com.ivarna.nativecode/files/usr/tmp \$DEBIANPATH/mnt/host-tmp 2>/dev/null || true
-if [ -f /data/data/com.ivarna.nativecode/files/usr/tmp/launch_tool.sh ]; then
-    cp -f /data/data/com.ivarna.nativecode/files/usr/tmp/launch_tool.sh \$DEBIANPATH/tmp/launch_tool.sh 2>/dev/null || true
-    chmod 755 \$DEBIANPATH/tmp/launch_tool.sh 2>/dev/null || true
-fi
-mkdir -p \$DEBIANPATH/sdcard
-\$BB mount --bind /sdcard \$DEBIANPATH/sdcard 2>/dev/null
-
+    progress "Creating thin CLI launcher at $CLI_SCRIPT..."
+    cat <<'EOF' > "$CLI_SCRIPT"
+#!/system/bin/sh
+# Compat → nativecode_chroot.sh login --user flux
+HELPER=/data/local/tmp/nativecode_chroot.sh
+[ -f "$HELPER" ] || { echo "nativecode_chroot.sh missing" >&2; exit 127; }
 echo "Entering Debian 13 Chroot (CLI)..."
-\$BB chroot \$DEBIANPATH /bin/su - $USERNAME
+exec sh "$HELPER" login --user flux --shell zsh
 EOF
-    chmod +x "$CLI_SCRIPT"
+    chmod 755 "$CLI_SCRIPT"
     success "CLI Launcher created: $CLI_SCRIPT"
 
-    # --- GENERATE ROOT CLI LAUNCHER (Root Shell) ---
     ROOT_CLI_SCRIPT="/data/local/tmp/enter_debian13_root.sh"
-    progress "Creating Root CLI Launcher at $ROOT_CLI_SCRIPT..."
-
-    cat <<EOF > "$ROOT_CLI_SCRIPT"
-#!/bin/sh
-# Root CLI Entry for Debian 13 Chroot
-
-DEBIANPATH="/data/local/tmp/chrootDebian13"
-BB="$BB"
-export LD_LIBRARY_PATH=$LD_LIBRARY_PATH
-
-/system/bin/mount -o remount,dev,suid /data 2>/dev/null || \$BB mount -o remount,dev,suid /data 2>/dev/null
-
-\$BB mount --bind /dev \$DEBIANPATH/dev 2>/dev/null
-\$BB mount --bind /sys \$DEBIANPATH/sys 2>/dev/null
-\$BB mount -t proc proc \$DEBIANPATH/proc 2>/dev/null
-\$BB mount -t devpts devpts \$DEBIANPATH/dev/pts 2>/dev/null
-
-mkdir -p \$DEBIANPATH/dev/shm
-\$BB mount -t tmpfs -o size=512M,mode=1777 tmpfs \$DEBIANPATH/dev/shm 2>/dev/null
-
-mkdir -p \$DEBIANPATH/tmp \$DEBIANPATH/mnt/host-tmp
-# Unmount bad /tmp bind from older installs; keep disk-backed sticky /tmp
-if grep -q " \$DEBIANPATH/tmp " /proc/mounts 2>/dev/null; then
-    \$BB umount \$DEBIANPATH/tmp 2>/dev/null || \$BB umount -l \$DEBIANPATH/tmp 2>/dev/null || true
-fi
-chmod 1777 \$DEBIANPATH/tmp 2>/dev/null || true
-\$BB mount --bind /data/data/com.ivarna.nativecode/files/usr/tmp \$DEBIANPATH/mnt/host-tmp 2>/dev/null || true
-if [ -f /data/data/com.ivarna.nativecode/files/usr/tmp/launch_tool.sh ]; then
-    cp -f /data/data/com.ivarna.nativecode/files/usr/tmp/launch_tool.sh \$DEBIANPATH/tmp/launch_tool.sh 2>/dev/null || true
-    chmod 755 \$DEBIANPATH/tmp/launch_tool.sh 2>/dev/null || true
-fi
-mkdir -p \$DEBIANPATH/sdcard
-\$BB mount --bind /sdcard \$DEBIANPATH/sdcard 2>/dev/null
-
+    progress "Creating thin root CLI launcher at $ROOT_CLI_SCRIPT..."
+    cat <<'EOF' > "$ROOT_CLI_SCRIPT"
+#!/system/bin/sh
+# Compat → nativecode_chroot.sh login --user root
+HELPER=/data/local/tmp/nativecode_chroot.sh
+[ -f "$HELPER" ] || { echo "nativecode_chroot.sh missing" >&2; exit 127; }
 echo "Entering Debian 13 Chroot as ROOT..."
-\$BB chroot \$DEBIANPATH /bin/bash -c "export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin && exec /bin/bash --login"
+exec sh "$HELPER" login --user root --shell bash
 EOF
-    chmod +x "$ROOT_CLI_SCRIPT"
+    chmod 755 "$ROOT_CLI_SCRIPT"
     success "Root CLI Launcher created: $ROOT_CLI_SCRIPT"
 
     cleanup_mounts

@@ -1,0 +1,10 @@
+NativeCode brings a full Debian Linux environment and AI development suite to Android devices.
+
+Key Features:
+- Debian 13 (Trixie) Linux PRoot/Chroot container
+- XFCE4 Desktop GUI with Termux-X11 & GPU acceleration
+- Integrated AI CLI engine (Claude Code, Codex, OpenCode)
+- Pre-configured runtimes: Node.js 26, Python 3.12 & GCC
+- Multi-repo project workspace & visual Git diff inspector
+
+Transform your phone or tablet into a portable Linux & AI workstation for coding and software development.

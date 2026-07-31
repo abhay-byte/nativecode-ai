@@ -7,7 +7,9 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
+import com.ivarna.nativecode.RootShell
 import com.ivarna.nativecode.marketplace.PackageInstallRunner
+import com.ivarna.nativecode.terminal.ChrootCommandBuilder
 import com.ivarna.nativecode.terminal.LinuxCommandBuilder
 import com.ivarna.nativecode.terminal.ProjectPathResolver
 import com.ivarna.nativecode.terminal.ShellCommandRunner
@@ -83,20 +85,68 @@ object GitHubCliService {
         onResult: (Boolean, String) -> Unit
     ) {
         executor.execute {
-            val status = probeStatusSync(ctx, method)
-            val user = status.username
-            if (user.isNullOrBlank()) {
-                mainHandler.post { onResult(false, "Not signed in") }
-                return@execute
+            try {
+                val status = try {
+                    probeStatusSync(ctx, method)
+                } catch (_: Exception) {
+                    null
+                }
+                val user = status?.username ?: readHostsYmlUser(ctx, method)
+
+                val ok = if (method == "chroot") {
+                    // Host wipe is SSOT (fast). Full Terminal chroot hung forever.
+                    logoutChroot(user)
+                } else {
+                    logoutProot(ctx, user)
+                }
+                statusCache.remove(method)
+                val label = user?.takeIf { it.isNotBlank() }?.let { " @$it" } ?: ""
+                mainHandler.post {
+                    onResult(
+                        ok,
+                        if (ok) "Logged out$label" else "Logout failed"
+                    )
+                }
+            } catch (e: Exception) {
+                statusCache.remove(method)
+                mainHandler.post { onResult(false, e.message ?: "Logout failed") }
             }
-            val (args, env) = fluxCmd(ctx, GhGuestCommands.authLogout(user), method)
+        }
+    }
+
+    /**
+     * Chroot logout = wipe hosts.yml via RootShell (probe SSOT).
+     * Skip full guest `gh auth logout` — was hanging UI for minutes.
+     */
+    private fun logoutChroot(@Suppress("UNUSED_PARAMETER") user: String?): Boolean {
+        if (!RootShell.isRootAvailable()) return false
+        val root = ChrootCommandBuilder.CHROOT_PATH
+        val wipe = RootShell.executeSync(
+            "rm -f '$root/home/flux/.config/gh/hosts.yml' " +
+                "'$root/home/flux/.config/gh/hosts.yml.bak' 2>/dev/null; " +
+                "true"
+        )
+        return wipe == 0
+    }
+
+    private fun logoutProot(ctx: Context, user: String?): Boolean {
+        // Wipe token file first (instant offline sign-out)
+        try {
+            val hosts = File(
+                ProjectPathResolver.guestHomeDir(ctx, "proot"),
+                ".config/gh/hosts.yml"
+            )
+            if (hosts.isFile) hosts.delete()
+        } catch (_: Exception) {
+        }
+        if (user.isNullOrBlank()) return true
+        return try {
+            val (args, env) = fluxCmd(ctx, GhGuestCommands.authLogout(user), "proot")
             mergeGhEnv(env)
-            val (exit, out) = ShellCommandRunner.runCaptureExit(ctx, args, env)
-            statusCache.remove(method)
-            val ok = exit == 0
-            mainHandler.post {
-                onResult(ok, if (ok) "Logged out @$user" else out.trim().ifBlank { "Logout failed" })
-            }
+            val (exit, _) = ShellCommandRunner.runCaptureExit(ctx, args, env)
+            exit == 0
+        } catch (_: Exception) {
+            true // hosts already gone
         }
     }
 
@@ -158,7 +208,11 @@ object GitHubCliService {
     // ── Sync helpers ────────────────────────────────────────────────────────
 
     private fun probeStatusSync(ctx: Context, method: String): GhAuthStatus {
-        // Detect gh
+        // Chroot home is not app-readable; use RootShell host paths + timed guest probe.
+        if (method == "chroot") {
+            return probeStatusChroot(ctx)
+        }
+        // proot: host-visible rootfs + guest shell
         val (dArgs, dEnv) = fluxCmd(ctx, GhGuestCommands.detectGh(), method)
         mergeGhEnv(dEnv)
         val (_, dOut) = try {
@@ -185,9 +239,7 @@ object GitHubCliService {
         }
         val wExit = wPair.first
         val wOut = wPair.second
-        val loginFromApi = wOut.lineSequence()
-            .map { it.trim() }
-            .firstOrNull { it.isNotEmpty() && !it.contains(' ') && !it.contains("error", true) && it.matches(Regex("[A-Za-z0-9-]+")) }
+        val loginFromApi = parseWhoamiLogin(wOut)
         if (wExit == 0 && !loginFromApi.isNullOrBlank()) {
             val s = GhAuthStatus(method, true, true, loginFromApi, raw = wOut)
             statusCache[method] = s
@@ -229,6 +281,65 @@ object GitHubCliService {
         statusCache[method] = fromHuman
         return fromHuman
     }
+
+    /**
+     * Chroot probe: host-side root (fast) first — app cannot read/write chroot home.
+     * Guest `gh` only if hosts.yml missing (timed RootShell, no hang).
+     */
+    private fun probeStatusChroot(ctx: Context): GhAuthStatus {
+        val method = "chroot"
+        val root = ChrootCommandBuilder.CHROOT_PATH
+        if (!RootShell.isRootAvailable()) {
+            val s = GhAuthStatus(method, false, false, error = "root required")
+            statusCache[method] = s
+            return s
+        }
+        val binOut = RootShell.capture(
+            "if [ -x '$root/usr/bin/gh' ] || [ -x '$root/usr/local/bin/gh' ] || " +
+                "[ -x '$root/bin/gh' ] || [ -x '$root/home/flux/.local/bin/gh' ]; then " +
+                "echo GH_OK; else echo GH_MISSING; fi",
+            timeoutMs = 12_000L
+        )
+        val installed = binOut.contains("GH_OK") && !binOut.contains("GH_MISSING")
+        if (!installed) {
+            val s = GhAuthStatus(method, false, false, raw = binOut)
+            statusCache[method] = s
+            return s
+        }
+        // Offline SSOT: hosts.yml under chroot (root cat)
+        val fromFile = readHostsYmlUser(ctx, method)
+        if (fromFile != null) {
+            val s = GhAuthStatus(method, true, true, fromFile, raw = "hosts.yml")
+            statusCache[method] = s
+            return s
+        }
+        // Optional live whoami (network; bounded)
+        val who = RootShell.captureInChroot(
+            GhGuestCommands.whoami(),
+            user = "flux",
+            timeoutMs = 45_000L,
+            context = ctx
+        )
+        val login = parseWhoamiLogin(who.stdout)
+        if (who.exitCode == 0 && !login.isNullOrBlank()) {
+            val s = GhAuthStatus(method, true, true, login, raw = who.stdout)
+            statusCache[method] = s
+            return s
+        }
+        val s = GhAuthStatus(method, true, false, raw = who.stdout)
+        statusCache[method] = s
+        return s
+    }
+
+    private fun parseWhoamiLogin(out: String): String? =
+        out.lineSequence()
+            .map { it.trim() }
+            .firstOrNull {
+                it.isNotEmpty() &&
+                    !it.contains(' ') &&
+                    !it.contains("error", true) &&
+                    it.matches(Regex("[A-Za-z0-9-]+"))
+            }
 
     private fun listReposSync(ctx: Context, method: String): List<GhRepo> {
         val (args, env) = fluxCmd(ctx, GhGuestCommands.repoList(), method)
@@ -294,11 +405,10 @@ object GitHubCliService {
         // CHECK_AUTH
         phase(GhAuthPhase.CHECK_AUTH, "Checking auth…")
         if (status.loggedIn && !status.username.isNullOrBlank()) {
-            // ensure git helper
-            runSetupGit(ctx, method)
-            status = probeStatusSync(ctx, method)
             phase(GhAuthPhase.SUCCESS, "Already signed in")
             mainHandler.post { listener.onDone(status) }
+            // best-effort git helper after UI done (do not block)
+            executor.execute { runSetupGit(ctx, method) }
             return
         }
 
@@ -315,13 +425,13 @@ object GitHubCliService {
             return
         }
 
-        // VERIFY
+        // VERIFY — hosts.yml / cache first (fast); never stall UI on setup-git
         phase(GhAuthPhase.VERIFY, "Verifying…")
-        runSetupGit(ctx, method)
         status = probeStatusSync(ctx, method)
         if (status.loggedIn) {
             phase(GhAuthPhase.SUCCESS, "Signed in as @${status.username}")
             mainHandler.post { listener.onDone(status) }
+            executor.execute { runSetupGit(ctx, method) }
         } else {
             fail("Auth completed but not logged in")
         }
@@ -417,64 +527,112 @@ object GitHubCliService {
         }
 
         // Primary: write hosts.yml into guest rootfs from Android (no guest network)
-        val wrote = writeHostsYml(ctx, method, token, username ?: "user")
+        val finalUser = username ?: "user"
+        val wrote = writeHostsYml(ctx, method, token, finalUser)
         if (wrote) {
             logLine("Wrote ~/.config/gh/hosts.yml for flux ($method)")
+            // Seed cache now — VERIFY must not re-hang on guest shell
+            if (!username.isNullOrBlank()) {
+                statusCache[method] = GhAuthStatus(
+                    method, true, true, username, raw = "hosts.yml-write"
+                )
+            }
         } else {
             logLine("Direct hosts.yml write failed — trying gh --with-token…")
             if (!injectTokenViaGh(ctx, method, token, logLine)) {
                 logLine("Token inject failed")
                 return false
             }
+            if (!username.isNullOrBlank()) {
+                statusCache[method] = GhAuthStatus(
+                    method, true, true, username, raw = "token-inject"
+                )
+            }
         }
-
-        // Ensure git credential helper
-        runSetupGit(ctx, method)
+        // setup-git deferred to VERIFY (timed) — do not block here
         return true
     }
 
-    /** Write gh hosts.yml into guest flux home on host-visible rootfs. */
+    /** Write gh hosts.yml into guest flux home. Proot = direct FS; chroot = RootShell copy. */
     private fun writeHostsYml(
         ctx: Context,
         method: String,
         token: String,
         username: String
     ): Boolean {
+        val safeUser = username.replace(Regex("[^A-Za-z0-9-]"), "")
+        if (safeUser.isBlank()) return false
+        val safeToken = token.trim()
+        // gho_/ghp_/github_pat_* — reject whitespace / YAML-breakers only
+        if (safeToken.isEmpty() || safeToken.any { it.isWhitespace() || it == '"' || it == '\'' }) {
+            return false
+        }
+        // Format compatible with gh 2.4x insecure storage
+        val body =
+            """
+            |github.com:
+            |    oauth_token: $safeToken
+            |    user: $safeUser
+            |    git_protocol: https
+            |    users:
+            |        $safeUser:
+            |            oauth_token: $safeToken
+            """.trimMargin() + "\n"
+        val cfgBody = "git_protocol: https\n"
+
+        if (method == "chroot") {
+            return writeHostsYmlChroot(ctx, body, cfgBody)
+        }
+
         val home = ProjectPathResolver.guestHomeDir(ctx, method)
         val dir = File(home, ".config/gh")
         return try {
             if (!dir.exists() && !dir.mkdirs()) return false
-            // Safe: token is OAuth alnum/_ ; username is login
-            val safeUser = username.replace(Regex("[^A-Za-z0-9-]"), "")
-            if (safeUser.isBlank()) return false
-            val safeToken = token.trim()
-            // gho_/ghp_/github_pat_* — reject whitespace / YAML-breakers only
-            if (safeToken.isEmpty() || safeToken.any { it.isWhitespace() || it == '"' || it == '\'' }) {
-                return false
-            }
             val hosts = File(dir, "hosts.yml")
-            // Format compatible with gh 2.4x insecure storage
-            hosts.writeText(
-                """
-                |github.com:
-                |    oauth_token: $safeToken
-                |    user: $safeUser
-                |    git_protocol: https
-                |    users:
-                |        $safeUser:
-                |            oauth_token: $safeToken
-                """.trimMargin() + "\n"
-            )
+            hosts.writeText(body)
             hosts.setReadable(false, false)
             hosts.setReadable(true, true)
             hosts.setWritable(false, false)
             hosts.setWritable(true, true)
-            // config.yml optional
             val cfg = File(dir, "config.yml")
-            if (!cfg.exists()) {
-                cfg.writeText("git_protocol: https\n")
-            }
+            if (!cfg.exists()) cfg.writeText(cfgBody)
             true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    /** Chroot home not app-writable — stage in cache, RootShell copyIntoChroot. */
+    private fun writeHostsYmlChroot(ctx: Context, hostsBody: String, cfgBody: String): Boolean {
+        if (!RootShell.isRootAvailable()) return false
+        return try {
+            val dir = File(ctx.cacheDir, "nc_gh_stage").also { it.mkdirs() }
+            val hostsTmp = File(dir, "hosts.yml").apply { writeText(hostsBody) }
+            val cfgTmp = File(dir, "config.yml").apply { writeText(cfgBody) }
+            val root = ChrootCommandBuilder.CHROOT_PATH
+            // Ensure dir owned by flux before copy
+            RootShell.executeSync(
+                "mkdir -p '$root/home/flux/.config/gh' && " +
+                    "(chown -R flux:flux '$root/home/flux/.config' 2>/dev/null || " +
+                    "chown -R 1000:1000 '$root/home/flux/.config' 2>/dev/null || true)"
+            )
+            val hostsOk = RootShell.copyIntoChroot(
+                hostsTmp,
+                "/home/flux/.config/gh/hosts.yml"
+            ).exitCode == 0
+            // config.yml best-effort (may already exist)
+            RootShell.copyIntoChroot(cfgTmp, "/home/flux/.config/gh/config.yml")
+            RootShell.executeSync(
+                "chmod 600 '$root/home/flux/.config/gh/hosts.yml' 2>/dev/null || true; " +
+                    "(chown flux:flux '$root/home/flux/.config/gh/hosts.yml' " +
+                    "'$root/home/flux/.config/gh/config.yml' 2>/dev/null || true)"
+            )
+            try {
+                hostsTmp.delete()
+                cfgTmp.delete()
+            } catch (_: Exception) {
+            }
+            hostsOk
         } catch (_: Exception) {
             false
         }
@@ -482,9 +640,19 @@ object GitHubCliService {
 
     private fun readHostsYmlUser(ctx: Context, method: String): String? {
         return try {
-            val f = File(ProjectPathResolver.guestHomeDir(ctx, method), ".config/gh/hosts.yml")
-            if (!f.isFile) return null
-            val text = f.readText()
+            val text = if (method == "chroot") {
+                if (!RootShell.isRootAvailable()) return null
+                val root = ChrootCommandBuilder.CHROOT_PATH
+                RootShell.capture(
+                    "cat '$root/home/flux/.config/gh/hosts.yml' 2>/dev/null",
+                    timeoutMs = 10_000L
+                )
+            } else {
+                val f = File(ProjectPathResolver.guestHomeDir(ctx, method), ".config/gh/hosts.yml")
+                if (!f.isFile) return null
+                f.readText()
+            }
+            if (text.isBlank()) return null
             // user: name
             Regex("""(?m)^\s*user:\s*(\S+)\s*$""").find(text)?.groupValues?.get(1)
                 ?.takeIf { it != "github.com" && !it.contains("token") }
@@ -499,13 +667,42 @@ object GitHubCliService {
         token: String,
         log: (String) -> Unit
     ): Boolean {
-        // Stage token file inside guest home (host-visible)
-        val home = ProjectPathResolver.guestHomeDir(ctx, method)
-        val tokenFile = File(home, ".config/gh/.nc_token_inject")
+        val guestPath = "/home/flux/.config/gh/.nc_token_inject"
         return try {
+            if (method == "chroot") {
+                if (!RootShell.isRootAvailable()) {
+                    log("inject: no root")
+                    return false
+                }
+                val tmp = File(ctx.cacheDir, "nc_gh_token_inject").apply {
+                    writeText(token.trim() + "\n")
+                }
+                val root = ChrootCommandBuilder.CHROOT_PATH
+                RootShell.executeSync("mkdir -p '$root/home/flux/.config/gh'")
+                val copied = RootShell.copyIntoChroot(tmp, guestPath)
+                try { tmp.delete() } catch (_: Exception) {}
+                if (copied.exitCode != 0) {
+                    log("inject: stage token failed")
+                    return false
+                }
+                val cap = RootShell.captureInChroot(
+                    GhGuestCommands.authLoginWithTokenFile(guestPath),
+                    user = "flux",
+                    timeoutMs = 90_000L,
+                    context = ctx
+                )
+                cap.stdout.lineSequence().forEach { line ->
+                    val safe = if (line.contains(token)) "***" else line
+                    if (safe.isNotBlank()) log(safe)
+                }
+                return cap.exitCode == 0
+            }
+
+            // proot: host-visible rootfs
+            val home = ProjectPathResolver.guestHomeDir(ctx, method)
+            val tokenFile = File(home, ".config/gh/.nc_token_inject")
             tokenFile.parentFile?.mkdirs()
             tokenFile.writeText(token.trim() + "\n")
-            val guestPath = "/home/flux/.config/gh/.nc_token_inject"
             val (args, env) = fluxCmd(ctx, GhGuestCommands.authLoginWithTokenFile(guestPath), method)
             mergeGhEnv(env)
             val (exit, out) = ShellCommandRunner.runCaptureExit(ctx, args, env)
@@ -513,12 +710,10 @@ object GitHubCliService {
                 val safe = if (line.contains(token)) "***" else line
                 if (safe.isNotBlank()) log(safe)
             }
-            // cleanup host-side if guest rm failed
             try { tokenFile.delete() } catch (_: Exception) {}
             exit == 0
         } catch (e: Exception) {
             log("inject: ${e.message}")
-            try { tokenFile.delete() } catch (_: Exception) {}
             false
         }
     }
@@ -679,8 +874,22 @@ object GitHubCliService {
         }
     }
 
+    /**
+     * Best-effort `gh auth setup-git`. Never block auth success.
+     * Chroot: RootShell timed (full Terminal chroot was hanging after hosts.yml write).
+     */
     private fun runSetupGit(ctx: Context, method: String) {
         try {
+            if (method == "chroot") {
+                if (!RootShell.isRootAvailable()) return
+                RootShell.captureInChroot(
+                    GhGuestCommands.authSetupGit(),
+                    user = "flux",
+                    timeoutMs = 25_000L,
+                    context = ctx
+                )
+                return
+            }
             val (args, env) = fluxCmd(ctx, GhGuestCommands.authSetupGit(), method)
             mergeGhEnv(env)
             ShellCommandRunner.runCaptureExit(ctx, args, env)

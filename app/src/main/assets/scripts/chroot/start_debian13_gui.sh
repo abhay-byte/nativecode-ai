@@ -55,34 +55,11 @@ if command -v chcon >/dev/null 2>&1; then
   chcon -R u:object_r:tmpfs:s0 "$TARGET_PREFIX/tmp" 2>/dev/null || true
 fi
 
-echo "[1/5] Mounts..."
-/system/bin/mount -o remount,dev,suid /data 2>/dev/null \
-  || $BB mount -o remount,dev,suid /data 2>/dev/null || true
-
-$BB mount --bind /dev "$DEBIANPATH/dev" 2>/dev/null || true
-$BB mount --bind /sys "$DEBIANPATH/sys" 2>/dev/null || true
-$BB mount -t proc proc "$DEBIANPATH/proc" 2>/dev/null || true
-$BB mount -t devpts devpts "$DEBIANPATH/dev/pts" 2>/dev/null || true
-mkdir -p "$DEBIANPATH/dev/shm"
-$BB mount -t tmpfs -o size=512M,mode=1777 tmpfs "$DEBIANPATH/dev/shm" 2>/dev/null || true
-
-# Sticky disk /tmp — never full-bind host tmp over it
-mkdir -p "$DEBIANPATH/tmp" "$DEBIANPATH/mnt/host-tmp"
-if grep -q " $DEBIANPATH/tmp " /proc/mounts 2>/dev/null; then
-  # Older installs may have host-tmp bound on /tmp; detach for sticky policy
-  $BB umount "$DEBIANPATH/tmp" 2>/dev/null || $BB umount -l "$DEBIANPATH/tmp" 2>/dev/null || true
-fi
-chmod 1777 "$DEBIANPATH/tmp" 2>/dev/null || true
-$BB mount --bind "$TARGET_PREFIX/tmp" "$DEBIANPATH/mnt/host-tmp" 2>/dev/null || true
-
-mkdir -p "$DEBIANPATH/sdcard"
-$BB mount --bind /sdcard "$DEBIANPATH/sdcard" 2>/dev/null || true
-
-# X11 socket: bind only .X11-unix into sticky /tmp
-echo "[2/5] X11 socket bind..."
-mkdir -p "$TARGET_PREFIX/tmp/.X11-unix" "$DEBIANPATH/tmp/.X11-unix"
+HELPER="${HELPER:-/data/local/tmp/nativecode_chroot.sh}"
+echo "[1/5] Mounts (SSOT if available)..."
+# Wait for host Loader to create X0 before --x11 bind
+mkdir -p "$TARGET_PREFIX/tmp/.X11-unix" 2>/dev/null || true
 chmod 1777 "$TARGET_PREFIX/tmp/.X11-unix" 2>/dev/null || true
-# Wait for host Loader to create X0
 i=0
 while [ $i -lt 15 ]; do
   if [ -S "$TARGET_PREFIX/tmp/.X11-unix/X0" ]; then
@@ -95,17 +72,49 @@ done
 if [ ! -S "$TARGET_PREFIX/tmp/.X11-unix/X0" ]; then
   echo "NativeCode: [WARN] host X0 not seen yet — continuing"
 fi
-# Refresh bind if already mounted
-if grep -q " $DEBIANPATH/tmp/.X11-unix " /proc/mounts 2>/dev/null; then
-  $BB umount "$DEBIANPATH/tmp/.X11-unix" 2>/dev/null || $BB umount -l "$DEBIANPATH/tmp/.X11-unix" 2>/dev/null || true
+
+if [ -f "$HELPER" ]; then
+  export NC_CHROOT="$DEBIANPATH"
+  export NC_PREFIX="$TARGET_PREFIX"
+  export NC_HOST_TMP="${TARGET_PREFIX}/tmp"
+  sh "$HELPER" mount --x11 || true
+  echo "[2/5] X11 via nativecode_chroot mount --x11"
+else
+  /system/bin/mount -o remount,dev,suid /data 2>/dev/null \
+    || $BB mount -o remount,dev,suid /data 2>/dev/null || true
+  $BB mount --bind /dev "$DEBIANPATH/dev" 2>/dev/null || true
+  $BB mount --bind /sys "$DEBIANPATH/sys" 2>/dev/null || true
+  $BB mount -t proc proc "$DEBIANPATH/proc" 2>/dev/null || true
+  $BB mount -t devpts devpts "$DEBIANPATH/dev/pts" 2>/dev/null || true
+  mkdir -p "$DEBIANPATH/dev/shm"
+  $BB mount -t tmpfs -o size=512M,mode=1777 tmpfs "$DEBIANPATH/dev/shm" 2>/dev/null || true
+  mkdir -p "$DEBIANPATH/tmp" "$DEBIANPATH/mnt/host-tmp"
+  if grep -q " $DEBIANPATH/tmp " /proc/mounts 2>/dev/null; then
+    $BB umount "$DEBIANPATH/tmp" 2>/dev/null || $BB umount -l "$DEBIANPATH/tmp" 2>/dev/null || true
+  fi
+  chmod 1777 "$DEBIANPATH/tmp" 2>/dev/null || true
+  $BB mount --bind "$TARGET_PREFIX/tmp" "$DEBIANPATH/mnt/host-tmp" 2>/dev/null || true
+  mkdir -p "$DEBIANPATH/sdcard"
+  $BB mount --bind /sdcard "$DEBIANPATH/sdcard" 2>/dev/null || true
+  echo "[2/5] X11 socket bind (legacy)..."
+  mkdir -p "$DEBIANPATH/tmp/.X11-unix"
+  if grep -q " $DEBIANPATH/tmp/.X11-unix " /proc/mounts 2>/dev/null; then
+    $BB umount "$DEBIANPATH/tmp/.X11-unix" 2>/dev/null || $BB umount -l "$DEBIANPATH/tmp/.X11-unix" 2>/dev/null || true
+  fi
+  $BB mount --bind "$TARGET_PREFIX/tmp/.X11-unix" "$DEBIANPATH/tmp/.X11-unix" 2>/dev/null \
+    || mount --bind "$TARGET_PREFIX/tmp/.X11-unix" "$DEBIANPATH/tmp/.X11-unix" 2>/dev/null || true
 fi
-$BB mount --bind "$TARGET_PREFIX/tmp/.X11-unix" "$DEBIANPATH/tmp/.X11-unix" 2>/dev/null \
-  || mount --bind "$TARGET_PREFIX/tmp/.X11-unix" "$DEBIANPATH/tmp/.X11-unix" 2>/dev/null || true
 
 echo "[3/5] Kill stale XFCE in chroot..."
-$BB chroot "$DEBIANPATH" /bin/su - root -c \
-  "killall -9 xfce4-session xfwm4 xfdesktop xfce4-panel dbus-launch dbus-daemon 2>/dev/null; true" \
-  >/dev/null 2>&1
+if [ -f "$HELPER" ]; then
+  sh "$HELPER" sh --user root -- \
+    "killall -9 xfce4-session xfwm4 xfdesktop xfce4-panel dbus-launch dbus-daemon 2>/dev/null; true" \
+    >/dev/null 2>&1 || true
+else
+  $BB chroot "$DEBIANPATH" /bin/su - root -c \
+    "killall -9 xfce4-session xfwm4 xfdesktop xfce4-panel dbus-launch dbus-daemon 2>/dev/null; true" \
+    >/dev/null 2>&1
+fi
 
 echo "[4/5] GPU mode + launch XFCE as $USERNAME..."
 # Guest script: sticky /tmp X11 + host-tmp VirGL + gpu_mode file

@@ -4,6 +4,12 @@ How to reach both Linux environments installed by **NativeCode** (`com.ivarna.na
 
 **Safety:** inspection and interactive login only. Do **not** use ADB to kill processes, delete rootfs trees, uninstall packages, or force-wipe app data unless you intend to destroy the env.
 
+> **HARD RULE (2026-07-31):** Agent ADB chroot stress **hard-crashed** a KernelSU device (mount storm + nested `su` + multi-runner spam).  
+> Read **[`chroot-adb-device-crash-postmortem.md`](./chroot-adb-device-crash-postmortem.md)** before any live chroot.  
+> Forbidden: loop `run_debian13_root.sh` / remount-bind stacks, nested `su` inside chroot, parallel mount jobs, retries after ADB dies.  
+> Default: read-only file checks. Live chroot: **one** trivial host-timeouted command max, then stop.  
+> **SSOT design + wire map + safe test log:** [`nativecode-chroot-ssot.md`](./nativecode-chroot-ssot.md) · plan: [`docs/plan/chroot-ssot-shell-runner.md`](../plan/chroot-ssot-shell-runner.md)
+
 ---
 
 ## Device connect
@@ -76,9 +82,19 @@ Both should report `Debian GNU/Linux 13 (trixie)` when installed.
 
 ## 1. Chroot shell (KernelSU / Magisk root)
 
-Needs **root** on the adb shell. App session path: mount binds + `busybox chroot` + `su - flux` (see `ChrootCommandBuilder`).
+Needs **root** on the adb shell. App SSOT: `/data/local/tmp/nativecode_chroot.sh` (idempotent mounts + login/sh/exec/b64).  
+Kotlin hub: `ChrootCommandBuilder` / `RootShell.executeInChroot` → helper only. **Do not** re-stack raw mounts.
 
-### One-shot command
+### Preferred (SSOT helper) — one probe max
+
+```bash
+# after app stages helper (open chroot session once) or: adb push … /data/local/tmp/nativecode_chroot.sh
+timeout 12 adb shell 'sh /data/local/tmp/nativecode_chroot.sh sh --user root -- true'
+timeout 12 adb shell 'sh /data/local/tmp/nativecode_chroot.sh sh --user flux -- "whoami; id -u"'
+# interactive (PTY): adb shell -t 'sh /data/local/tmp/nativecode_chroot.sh login --user flux'
+```
+
+### Legacy one-shot (avoid if helper present)
 
 ```bash
 SERIAL=192.168.1.78:41417
@@ -100,8 +116,10 @@ busybox chroot $CHROOT /bin/su - flux -c 'whoami; pwd; head -5 /etc/os-release; 
 ### Interactive login
 
 ```bash
+# Prefer SSOT:
+#   adb shell -t 'sh /data/local/tmp/nativecode_chroot.sh login --user flux'
 adb -s "$SERIAL" shell
-# then on device (as root):
+# then on device (as root) — legacy:
 CHROOT=/data/local/tmp/chrootDebian13
 /system/bin/mount -o remount,dev,suid /data >/dev/null 2>&1 || busybox mount -o remount,dev,suid /data >/dev/null 2>&1 || true
 busybox mount --bind /dev  $CHROOT/dev  >/dev/null 2>&1 || true
@@ -115,6 +133,7 @@ busybox chroot $CHROOT /bin/su - flux
 ### Root inside chroot
 
 ```bash
+# Prefer: sh /data/local/tmp/nativecode_chroot.sh login --user root
 busybox chroot $CHROOT /bin/bash -l
 # or
 busybox chroot $CHROOT /bin/su -

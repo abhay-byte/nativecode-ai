@@ -283,34 +283,91 @@ object RootShell {
     }
 
     /**
-     * Run a command inside the Debian 13 chroot as [user].
-     * Mount policy matches ChrootCommandBuilder / setup script:
-     * sticky disk /tmp (no app-tmp bind onto /tmp), optional /mnt/host-tmp bridge.
+     * Single shell snippet that runs [cmd] as root — for TerminalSession / `sh -c` only.
+     * Probes su once if cache empty (may block briefly — call off hot UI loops when possible).
+     * Escapes [cmd] in single quotes so `;` `&&` `$` inside the guest chain stay intact.
+     */
+    fun shellRootCommand(cmd: String): String {
+        val escaped = cmd.replace("'", "'\\''")
+        val inv = cachedSuInvocation ?: resolveSuInvocation()
+        return when {
+            inv != null && inv.size >= 3 && inv[2].startsWith("SU_WRAP:") -> {
+                val suBin = inv[2].removePrefix("SU_WRAP:")
+                "$suBin -c '$escaped'"
+            }
+            inv != null && inv.isNotEmpty() && inv.last() == "-c" -> {
+                // e.g. [/system/bin/su, -c] or [su, 0, -c]
+                val prefix = inv.dropLast(1).joinToString(" ")
+                "$prefix -c '$escaped'"
+            }
+            else -> "/system/bin/su -c '$escaped'"
+        }
+    }
+
+    /**
+     * Run a command inside the Debian 13 chroot as [user] via SSOT helper.
+     * Mounts + single-layer guest entry live in nativecode_chroot.sh (no Kotlin mount clone).
+     * [chrootPath] is accepted for API stability; helper uses NC_CHROOT when non-default needed.
+     * Pass [context] so the helper is staged from assets when missing (onboarding / first run).
      */
     fun executeInChroot(
         cmd: String,
         user: String = "flux",
-        chrootPath: String = "/data/local/tmp/chrootDebian13",
+        chrootPath: String = ChrootCommandBuilder.CHROOT_PATH,
         onLine: (String) -> Unit = {},
-        onDone: (Int) -> Unit = {}
+        onDone: (Int) -> Unit = {},
+        context: Context? = null
     ) {
-        // Ensure filesystems are mounted — without this /dev/null is inaccessible and apt fails.
-        // Never bind host/app tmp onto chroot /tmp (SELinux + _apt mkstemp).
-        // Prefer /system/bin/mount — busybox often cannot resolve /data on KSU (sudo stays nosuid).
-        val mounts = listOf(
-            "/system/bin/mount -o remount,dev,suid /data >/dev/null 2>&1 || busybox mount -o remount,dev,suid /data >/dev/null 2>&1 || true",
-            "busybox mount --bind /dev $chrootPath/dev 2>/dev/null || true",
-            "busybox mount --bind /sys $chrootPath/sys 2>/dev/null || true",
-            "busybox mount -t proc proc $chrootPath/proc 2>/dev/null || true",
-            "busybox mount -t devpts devpts $chrootPath/dev/pts 2>/dev/null || true",
-            "mkdir -p $chrootPath/dev/shm && busybox mount -t tmpfs -o size=512M,mode=1777 tmpfs $chrootPath/dev/shm 2>/dev/null || true",
-            "mkdir -p $chrootPath/tmp $chrootPath/mnt/host-tmp $chrootPath/sdcard",
-            "busybox umount $chrootPath/tmp 2>/dev/null || true",
-            "chmod 1777 $chrootPath/tmp 2>/dev/null || true",
-            "busybox mount --bind /sdcard $chrootPath/sdcard 2>/dev/null || true"
-        ).joinToString("; ")
-        val inner = "$mounts; busybox chroot $chrootPath /bin/su - $user -c \"$cmd\""
-        execute(inner, onLine, onDone)
+        context?.let { ChrootCommandBuilder.ensureHelperScript(it) }
+        val u = if (user == "root") "root" else "flux"
+        val b64 = android.util.Base64.encodeToString(
+            cmd.toByteArray(Charsets.UTF_8),
+            android.util.Base64.NO_WRAP
+        )
+        execute(buildChrootHelperCmd(u, b64, chrootPath), onLine, onDone)
+    }
+
+    /**
+     * Blocking capture inside chroot (bg thread only). Prefer for probe/status.
+     * [timeoutMs] 0 = wait forever; >0 abort (exit -2).
+     * Pass [context] to stage helper from assets when missing.
+     */
+    fun captureInChroot(
+        cmd: String,
+        user: String = "flux",
+        chrootPath: String = ChrootCommandBuilder.CHROOT_PATH,
+        timeoutMs: Long = 60_000L,
+        context: Context? = null
+    ): CaptureResult {
+        context?.let { ChrootCommandBuilder.ensureHelperScript(it) }
+        val u = if (user == "root") "root" else "flux"
+        val b64 = android.util.Base64.encodeToString(
+            cmd.toByteArray(Charsets.UTF_8),
+            android.util.Base64.NO_WRAP
+        )
+        return captureResult(buildChrootHelperCmd(u, b64, chrootPath), timeoutMs)
+    }
+
+    /**
+     * Self-heal: if helper missing under /data/local/tmp, copy from app home/staged
+     * (deployScripts must place nativecode_chroot.sh there). Then `sh helper b64 …`.
+     */
+    private fun buildChrootHelperCmd(user: String, b64: String, chrootPath: String): String {
+        val helper = ChrootCommandBuilder.CHROOT_HELPER
+        val pkg = "com.ivarna.nativecode"
+        val envPrefix =
+            if (chrootPath == ChrootCommandBuilder.CHROOT_PATH) ""
+            else "NC_CHROOT='$chrootPath' "
+        // Bootstrap before invoke — fixes onboarding/gh when no terminal session ran yet
+        return envPrefix +
+            "if [ ! -f $helper ]; then " +
+            "for _s in " +
+            "/data/data/$pkg/files/home/nativecode_chroot.sh " +
+            "/data/data/$pkg/files/staged_scripts/nativecode_chroot.sh; do " +
+            "[ -f \"\$_s\" ] && cp -f \"\$_s\" $helper && chmod 755 $helper && break; " +
+            "done; fi; " +
+            "if [ -f $helper ]; then sh $helper b64 --user $user -- $b64; " +
+            "else echo '[RootShell] missing $helper — reinstall chroot or open a chroot session once' >&2; exit 127; fi"
     }
 
     // ─────────────────────────────────────────────────────────────────────────

@@ -22,13 +22,24 @@ object ProjectManager {
     ) {
         val repoName = repoNameFromUrl(gitUrl)
         val dest = "/home/flux/repos/$repoName"
-        // Absolute dest avoids ~ expand edge cases; rmdir empty shell if present
+        val urlQ = shellQuote(gitUrl.trim())
+        val destQ = shellQuote(dest)
+        // Absolute dest; rmdir empty shell if present.
+        // Progress uses CR — convert to NL so runStreamed (readLine) updates UI.
+        // GIT_TERMINAL_PROMPT=0 avoids hung credential prompts (no TTY).
+        // Leading `export` injects `$` so chroot stages script (safe quoting + noprofile).
         val gitCmd =
-            "mkdir -p /home/flux/repos && " +
-                "if [ -d '$dest' ] && [ ! -d '$dest/.git' ]; then rmdir '$dest' 2>/dev/null || true; fi && " +
-                "git clone --progress ${shellQuote(gitUrl)} '$dest' 2>&1"
+            "export HOME=/home/flux GIT_TERMINAL_PROMPT=0 GIT_PAGER=cat; " +
+                "mkdir -p /home/flux/repos && " +
+                "if [ -d $destQ ] && [ ! -d $destQ/.git ]; then rmdir $destQ 2>/dev/null || true; fi && " +
+                "git clone --progress $urlQ $destQ 2>&1 | tr '\\r' '\\n'"
         val (args, envMap) = LinuxCommandBuilder.build(ctx, gitCmd, method = method)
-        ShellCommandRunner.runStreamed(ctx, args, envMap, onLine = onProgress, onDone = onDone)
+        val env = HashMap(envMap).apply {
+            put("HOME", "/home/flux")
+            put("GIT_TERMINAL_PROMPT", "0")
+            put("GIT_PAGER", "cat")
+        }
+        ShellCommandRunner.runStreamed(ctx, args, env, onLine = onProgress, onDone = onDone)
     }
 
     /** Creates a directory inside the Debian environment for [method].

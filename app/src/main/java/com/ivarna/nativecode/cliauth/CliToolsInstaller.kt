@@ -77,7 +77,8 @@ object CliToolsInstaller {
                     cmd = "bash /tmp/$SCRIPT",
                     user = "root",
                     onLine = { line -> onLine(line + "\n") },
-                    onDone = onDone
+                    onDone = onDone,
+                    context = ctx
                 )
             } catch (e: Exception) {
                 Log.e(TAG, "chroot install failed", e)

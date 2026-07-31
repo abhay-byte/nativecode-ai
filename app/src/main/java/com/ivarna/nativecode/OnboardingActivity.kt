@@ -2774,12 +2774,13 @@ class OnboardingActivity : AppCompatActivity() {
                 return@execute
             }
 
-            // 3. Run inside chroot
+            // 3. Run inside chroot (stage SSOT helper from assets if needed)
             RootShell.executeInChroot(
                 cmd = cmd,
                 user = "root",
                 onLine = { line -> appendSetupLog(line + "\n") },
-                onDone = onDone
+                onDone = onDone,
+                context = this
             )
         }
     }
@@ -2800,13 +2801,15 @@ class OnboardingActivity : AppCompatActivity() {
                 "stop_debian13_gui.sh",
                 "setup_cli_tools.sh",
                 "setup_debian13_chroot.sh",
-                "uninstall_debian13_chroot.sh"
+                "uninstall_debian13_chroot.sh",
+                "nativecode_chroot.sh"
             )
             for (script in scripts) {
                 val assetPath = when {
                     script.contains("chroot") ||
                         script == "start_debian13_gui.sh" ||
-                        script == "stop_debian13_gui.sh" -> "scripts/chroot/$script"
+                        script == "stop_debian13_gui.sh" ||
+                        script == "nativecode_chroot.sh" -> "scripts/chroot/$script"
                     else -> "scripts/$script"
                 }
                 val out = File(homeDir, script)

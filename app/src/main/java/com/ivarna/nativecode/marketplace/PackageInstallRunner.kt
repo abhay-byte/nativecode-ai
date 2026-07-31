@@ -2,13 +2,13 @@ package com.ivarna.nativecode.marketplace
 
 import android.content.Context
 import android.util.Log
+import com.ivarna.nativecode.RootShell
 import com.ivarna.nativecode.terminal.ChrootCommandBuilder
 import com.ivarna.nativecode.terminal.HostCommandBuilder
 import com.ivarna.nativecode.terminal.LinuxCommandBuilder
 import com.ivarna.nativecode.terminal.ShellCommandRunner
 import com.ivarna.nativecode.terminal.TermuxHostPaths
 import java.io.File
-import java.util.concurrent.TimeUnit
 
 /**
  * Resolve marketplace deps, stage scripts into guest `/tmp/nc-mp`, run install/uninstall.
@@ -353,19 +353,19 @@ object PackageInstallRunner {
             return Result.failure(IllegalStateException("Host package cache missing: $hostPkgDir"))
         }
         if (method == "chroot") {
-            // Guest /tmp = CHROOT/tmp (not app tmp). Stage with su like repairs chroot_guest.
+            // Guest /tmp = CHROOT/tmp (disk). Stage via RootShell (KSU/Magisk su SSOT).
             val destPkg = "${ChrootCommandBuilder.CHROOT_PATH}/tmp/nc-mp/$id"
             val destLib = "${ChrootCommandBuilder.CHROOT_PATH}/tmp/nc-mp/lib"
             val srcPkg = hostPkgDir.absolutePath
             val srcLib = libHost.absolutePath
-            val script = """
-                mkdir -p '$destPkg' '$destLib'
-                cp -a '$srcPkg'/. '$destPkg'/
-                if [ -d '$srcLib' ]; then cp -a '$srcLib'/. '$destLib'/; fi
-                chmod -R a+rX '$destPkg' '$destLib' 2>/dev/null || true
-                chmod +x '$destPkg'/*.sh '$destLib'/*.sh 2>/dev/null || true
-                test -f '$destPkg/install.sh' && test -f '$destLib/nc_mp_common.sh'
-            """.trimIndent().replace("\n", "; ")
+            val script = (
+                "mkdir -p '$destPkg' '$destLib' && " +
+                    "cp -a '$srcPkg'/. '$destPkg'/ && " +
+                    "if [ -d '$srcLib' ]; then cp -a '$srcLib'/. '$destLib'/; fi && " +
+                    "chmod -R a+rX '$destPkg' '$destLib' 2>/dev/null || true; " +
+                    "chmod +x '$destPkg'/*.sh '$destLib'/*.sh 2>/dev/null || true; " +
+                    "test -f '$destPkg/install.sh' && test -f '$destLib/nc_mp_common.sh'"
+                )
             val code = runSu(script)
             if (code != 0) {
                 return Result.failure(
@@ -413,20 +413,15 @@ object PackageInstallRunner {
         }
     }
 
+    /** Host-as-root only (stage into chroot tree). Prefer RootShell su discovery over hardcode. */
     private fun runSu(script: String): Int {
         return try {
-            val pb = ProcessBuilder("/system/bin/su", "-c", script)
-            pb.redirectErrorStream(true)
-            val p = pb.start()
-            val out = p.inputStream.bufferedReader().use { it.readText() }
-            val ok = p.waitFor(60, TimeUnit.SECONDS)
-            if (!ok) {
-                p.destroy()
-                Log.w(TAG, "su stage timeout: $out")
+            if (!RootShell.isRootAvailable()) {
+                Log.w(TAG, "runSu: no root")
                 return -1
             }
-            val code = p.exitValue()
-            if (code != 0) Log.w(TAG, "su stage exit=$code out=${out.take(400)}")
+            val code = RootShell.executeSync(script)
+            if (code != 0) Log.w(TAG, "su stage exit=$code")
             code
         } catch (e: Exception) {
             Log.w(TAG, "runSu failed", e)
