@@ -30,7 +30,7 @@ NativeCode transforms a phone or tablet into a portable Linux workstation — a 
 - **Debian 13 (Trixie) Linux container** — native glibc userland with `apt`, package management, and a full Linux environment.
 - **Two isolation modes** — user-space **PRoot** (no root required) and kernel-space **Chroot** (for rooted devices).
 - **XFCE4 desktop GUI** — integrated Termux-X11 display server with VirGL GPU acceleration.
-- **AI CLI engine** — run Claude Code, Codex, OpenCode, Aider, and more inside the native terminal.
+- **AI CLI engine** — run Claude Code, Codex, OpenCode, Agy, Grok, Qwen, and Kiro inside the native terminal.
 - **Preconfigured runtimes** — Node.js 26 LTS, Python 3.12, GCC, and standard package managers.
 - **Git workspace** — multi-repo project tree, real-time status, visual diff inspector, and branch switching, plus GitHub CLI integration.
 - **Software marketplace** — browse and install packages from an in-app catalog sourced from [nativecode-marketplace](https://github.com/abhay-byte/nativecode-marketplace).
@@ -94,7 +94,7 @@ flowchart TB
     MKT -->|raw.githubusercontent.com| MP[(nativecode-marketplace repo)]
     TERM -->|PRoot bind / chroot| DISTRO
     USER --> DISTRO
-    DISTRO --> AI["AI CLIs — Claude Code, Codex, OpenCode, Aider"]
+    DISTRO --> AI["AI CLIs — Claude Code, Codex, OpenCode, Agy, Grok, Qwen, Kiro"]
     DISTRO --> X11["Termux-X11 + VirGL — XFCE4 desktop"]
 ```
 

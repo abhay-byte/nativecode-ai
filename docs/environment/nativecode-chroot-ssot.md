@@ -1,17 +1,17 @@
 # NativeCode Chroot SSOT component
 
-**Status:** Implemented (v2.1); **ADB smoke PASS**; UI M1–M7 pending  
- 
-**Date:** 2026-07-31  
-**Plan:** [`docs/plan/chroot-ssot-shell-runner.md`](../plan/chroot-ssot-shell-runner.md)  
-**Guest env fix:** [`docs/plan/chroot-ssot-guest-env-fix.md`](../plan/chroot-ssot-guest-env-fix.md)  
+**Status:** Implemented (**v2.2**); helper ADB smoke PASS; UI M1–M10 needs signed APK  
+**Date:** 2026-08-01  
+**Plan (hub):** [`docs/plan/chroot-ssot-shell-runner.md`](../plan/chroot-ssot-shell-runner.md)  
+**Guest env (v2.1 PATH):** [`docs/plan/chroot-ssot-guest-env-fix.md`](../plan/chroot-ssot-guest-env-fix.md) — **partial**; superseded for TTY/git  
+**TTY / workdir / git (v2.2):** [`docs/plan/chroot-ssot-interactive-tty-and-git.md`](../plan/chroot-ssot-interactive-tty-and-git.md)  
 **Crash rules:** [`chroot-adb-device-crash-postmortem.md`](./chroot-adb-device-crash-postmortem.md)  
 **ADB guide:** [`adb-shell-access.md`](./adb-shell-access.md)  
 
 **Hard constraints**
 - **Proot untouched** — only chroot.
 - Live ADB: no mount storms, no nested-runner loops, host `timeout` always.
-- Implementation must make mounts **idempotent** (device already stacks mounts today).
+- Mounts **idempotent**; devpts heal is **one** umount+remount when `ptmxmode=000` only.
 
 ---
 
@@ -20,16 +20,17 @@
 One on-device shell helper that owns:
 
 1. **Busybox resolve** (KSU/Magisk/system — never app busybox)  
-2. **Idempotent mounts** (skip if already mounted)  
+2. **Idempotent mounts** (+ controlled devpts heal)  
 3. **chroot(2) entry** as `flux` or `root`  
-4. **Safe guest command modes** (login / sh / exec / b64)
+4. **Safe guest command modes** (login / sh / exec / b64)  
+5. **Guest env contract** (`env -i` + Debian PATH; TTY-safe b64)
 
 Kotlin and other scripts **must not** re-implement mounts or raw `busybox chroot` for session/exec.
 
 | Item | Value |
 |------|--------|
 | Asset (source) | `app/src/main/assets/scripts/chroot/nativecode_chroot.sh` |
-| Version stamp | `nativecode-chroot v2.1` (must match `ChrootCommandBuilder.CHROOT_HELPER_VERSION`) |
+| Version stamp | `nativecode-chroot v2.2` (must match `ChrootCommandBuilder.CHROOT_HELPER_VERSION`) |
 | On-device path | `/data/local/tmp/nativecode_chroot.sh` |
 | Rootfs | `/data/local/tmp/chrootDebian13` |
 | Host tmp bridge | `/data/data/com.ivarna.nativecode/files/usr/tmp` → guest `/mnt/host-tmp` |
@@ -37,14 +38,22 @@ Kotlin and other scripts **must not** re-implement mounts or raw `busybox chroot
 | Default user | `flux` (uid 1000, shell zsh) |
 | Session host exec | `/system/bin/sh` + WINCH trap (SELinux) |
 
+### Version history (helper stamp)
+
+| Stamp | What |
+|-------|------|
+| v1 | SSOT hub: mounts + login/sh/exec/b64 |
+| v2.1 | Guest `env -i` + Debian PATH + absolute `/usr/bin/base64` |
+| **v2.2** | TTY-safe b64 (no stdin pipe); `login --workdir`; devpts `ptmxmode` heal; Kotlin `'` → b64 |
+
 ---
 
-## 2. Public CLI (target)
+## 2. Public CLI
 
 ```text
 nativecode_chroot.sh version
 nativecode_chroot.sh mount [--x11]
-nativecode_chroot.sh login [--user flux|root] [--shell zsh|bash]
+nativecode_chroot.sh login [--user flux|root] [--shell zsh|bash] [--workdir PATH]
 nativecode_chroot.sh sh    [--user flux|root] -- 'shell string'
 nativecode_chroot.sh exec  [--user flux|root] -- CMD [ARGS...]
 nativecode_chroot.sh b64   [--user flux|root] -- BASE64_PAYLOAD
@@ -57,43 +66,75 @@ nativecode_chroot.sh b64   [--user flux|root] -- BASE64_PAYLOAD
 | `NC_CHROOT` | `/data/local/tmp/chrootDebian13` |
 | `NC_PACKAGE` | `com.ivarna.nativecode` |
 | `NC_HOST_TMP` | `/data/data/$NC_PACKAGE/files/usr/tmp` |
+| `NC_PREFIX` | `/data/data/$NC_PACKAGE/files/usr` |
 | `NC_BB` | auto-detect |
+| `NC_SHELL` | default login shell hint (`zsh`) |
 
 ### Semantics
 
 | Mode | Use |
 |------|-----|
-| `mount` | Ensure binds only; safe to call often **after** idempotent impl |
-| `login` | Interactive login shell (terminal cards) |
-| `sh` | One shell string as user (repairs, simple tools) |
-| `exec` | Argv-preserving command (future) |
-| `b64` | Kotlin complex cmds / `RootShell` — no quote hell |
+| `mount` | Ensure binds only; safe to call often after idempotent impl |
+| `login` | Interactive login shell; optional `--workdir` (project workspace cwd) |
+| `sh` | One shell string as user (re-encodes to b64 when host `base64` exists) |
+| `exec` | Argv-preserving command (AI `launch_tool` bare path) |
+| `b64` | Kotlin complex cmds / git / `RootShell` — no quote hell |
 
-### Guest env contract (v2.1)
+### Guest env contract (v2.2)
 
-All guest entry modes (`login` / `sh` / `exec` / `b64`) go through `guest_chroot_env`:
+All guest entry modes go through `guest_chroot_env`:
 
 ```text
-busybox chroot $NC_CHROOT /usr/bin/env -i PATH=… HOME=… USER=… … <guest binary>
+busybox chroot $NC_CHROOT /usr/bin/env -i PATH=… HOME=… USER=… TERM=… … <guest binary>
 ```
+
+#### PATH / env (since v2.1)
 
 | Rule | Detail |
 |------|--------|
 | Clean env | `env -i` — **never** inherit Android `PATH` (`/system/bin:…`) or `LD_*` |
 | Debian PATH (root) | `/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin` |
 | Debian PATH (flux) | `/home/flux/.local/bin:/home/flux/bin:/home/flux/.cargo/bin:/opt/nodejs/bin:` + root PATH |
-| `guest_b64` decode | absolute `/usr/bin/base64` (fallback `/bin/base64`) — not bare `base64` |
-| `guest_b64` exec | `{ echo P \| /usr/bin/base64 -d \|\| …; } \| /bin/bash` — brace group so success path still runs script |
-| Outer ProcessBuilder | keeps Android PATH for host `su` / `sh` only — **not** applied inside chroot |
-| Proot | **unchanged** — already uses `env -i` + Debian PATH |
+| Also set | `HOME` `USER` `LOGNAME` `TERM` `LANG` `LC_ALL` `TMPDIR=/tmp` `XDG_RUNTIME_DIR=/tmp` `DEBIAN_FRONTEND=noninteractive`; flux also `NVM_DIR` |
+| Outer ProcessBuilder | Android PATH for host `su` / `sh` only — **not** inside chroot |
+| Proot | **unchanged** — already `env -i` + Debian PATH |
 
-Without this contract: root `b64` dies (`base64: command not found`), SoftMgr scan empty, rooted login profile `id` fails, guest git probes fail.
+Without PATH contract: root `b64` dies (`base64: command not found`), SoftMgr empty, rooted profile `id` fails.
 
-### Compat wrappers (optional one release)
+#### TTY / `guest_b64` (v2.2 — critical)
+
+| Rule | Detail |
+|------|--------|
+| Decode | absolute `/usr/bin/base64` then `/bin/base64` — never bare `base64` |
+| **No stdin pipe** | **Forbidden:** `{ decode; } \| /bin/bash` — steals stdin; breaks TUI (`/dev/tty`, bubbletea, grok ENXIO) |
+| **Required shape** | decode payload → guest temp file `/tmp/.nc_b64_$$` → `bash --noprofile --norc $file` → `rm` (preserves fds 0/1/2) |
+| `guest_sh` | host-encode then `guest_b64` when possible |
+| Capture cmds | SoftMgr / git / apt — no TTY needed; same path OK |
+| Interactive tools | TerminalSession PTY must reach guest; use `login` / `exec` / TTY-safe `b64` |
+
+#### Login workdir (v2.2)
+
+| Rule | Detail |
+|------|--------|
+| Flag | `login --workdir /home/flux/repos/…` (no single quotes in path) |
+| Behavior | `cd` then interactive shell (`zsh -l` / `bash -l`) under single `su -` / root |
+| Kotlin | `mkdir -p DIR && cd DIR && exec zsh` → `login --user … --workdir DIR` (not non-interactive b64) |
+| Workspace | flux project shell uses workdir; shell-root often `workDir=null` → home login |
+
+#### Kotlin simple vs b64 (v2.2)
+
+| Rule | Detail |
+|------|--------|
+| `isSimpleGuestCmd` | reject `$` `` ` `` `"` `'` `\n` `\` — **including single quote** |
+| Why `'` | git paths use `cd '/path'`; nested `su -c '…'` + `sh -- '…'` breaks → false **NOT A GIT REPOSITORY** |
+| Force b64 | all `GitGuestCommands.*`, complex scripts, quoted paths |
+| Tools | bare `/tmp/launch_tool.sh TOOL` → helper `exec`; with cwd → TTY-safe `b64` |
+
+### Compat wrappers (optional)
 
 | Old | Forwards to |
 |-----|-------------|
-| `run_debian13_root.sh …` | `nativecode_chroot.sh sh --user root -- '…'` (fix quotes) |
+| `run_debian13_root.sh …` | `nativecode_chroot.sh sh --user root -- '…'` |
 | `enter_debian13.sh` | `login --user flux` |
 | `enter_debian13_root.sh` | `login --user root` |
 
@@ -101,12 +142,12 @@ Without this contract: root `b64` dies (`base64: command not found`), SoftMgr sc
 
 ## 3. Mount policy (SSOT)
 
-Order (skip if target already in `/proc/mounts`):
+Order (skip if target already in `/proc/mounts`, except devpts heal):
 
 1. Soft remount `/data` `dev,suid` (`/system/bin/mount` then busybox)  
 2. bind `/dev`, `/sys`  
 3. `proc` on `$CH/proc`  
-4. `devpts` on `$CH/dev/pts`  
+4. **`ensure_devpts`** on `$CH/dev/pts` (see below)  
 5. `tmpfs` 512M on `$CH/dev/shm`  
 6. Sticky `$CH/tmp`: if wrong mount → umount once; `chmod 1777`  
 7. bind `NC_HOST_TMP` → `$CH/mnt/host-tmp`  
@@ -115,6 +156,15 @@ Order (skip if target already in `/proc/mounts`):
 10. `--x11` only: bind `$PREFIX/tmp/.X11-unix` → `$CH/tmp/.X11-unix`
 
 **Never** bind host tmp onto guest `/tmp` (breaks apt/`_apt` mkstemp).
+
+### devpts (v2.2)
+
+| Rule | Detail |
+|------|--------|
+| Target opts | `newinstance,ptmxmode=0666,mode=0620` (fallback without `newinstance`) |
+| Heal | if `$CH/dev/pts/ptmx` mode is `0`/`000` (or missing) → **one** umount + remount with opts |
+| Do not use `test -w` as root | root often “passes” on mode `000` — check numeric mode (`stat -c '%a'`) |
+| Host `/dev/ptmx` | usually OK via `/dev` bind (`crw-rw-rw-`); still heal guest `pts/ptmx` for apps that open it |
 
 ---
 
@@ -240,42 +290,46 @@ App / services
           └─ helper mount --x11 + sh/login flux
 
 nativecode_chroot.sh
-  ensure_mounts (idempotent)
+  ensure_mounts (idempotent) + ensure_devpts heal
   guest_chroot_env → env -i + Debian PATH + chroot
+  login [--workdir] | exec | b64→tempfile→bash (TTY-safe)
   root: bash/zsh; flux: su - $user  (single layer)
 ```
 
 ---
 
-## 7. Kotlin thin builder sketch (impl note)
+## 7. Kotlin thin builder (v2.2 shape)
 
 ```kotlin
-// ChrootCommandBuilder — target shape (not committed)
+// ChrootCommandBuilder — live shape (abbrev)
 const val CHROOT_HELPER = "/data/local/tmp/nativecode_chroot.sh"
+const val CHROOT_HELPER_VERSION = "nativecode-chroot v2.2"
 
 fun build(ctx, shellCmd, user): Pair<Array<String>, HashMap<…>> {
   ensureLauncherScript(ctx)
-  ensureHelperScript(ctx) // stage from assets if missing/stale version
+  ensureHelperScript(ctx) // restage if stamp mismatch
 
+  val workdir = parseInteractiveWorkdir(shellCmd) // mkdir&&cd&&exec zsh
+  val tool = parseToolExec(shellCmd)               // launch_tool.sh …
   val rootInner = when {
-    isInteractive(shellCmd) ->
-      "exec $CHROOT_HELPER login --user $user"
-    isSimple(shellCmd) ->
-      "exec $CHROOT_HELPER sh --user $user -- '${esc(shellCmd)}'"
+    interactive || workdir != null ->
+      "exec $CHROOT_HELPER login --user $u --shell …" +
+        (workdir?.let { " --workdir '$it'" } ?: "")
+    tool != null && tool.dir == null ->
+      "exec $CHROOT_HELPER exec --user $u -- ${tool.argv}"
+    tool != null ->
+      "exec $CHROOT_HELPER b64 --user $u -- ${b64("cd … && exec ${tool.argv}")}"
+    isSimpleGuestCmd(shellCmd) ->  // no $ ` " ' \n \
+      "exec $CHROOT_HELPER sh --user $u -- '${esc(shellCmd)}'"
     else ->
-      "exec $CHROOT_HELPER b64 --user $user -- ${b64(shellCmd)}"
+      "exec $CHROOT_HELPER b64 --user $u -- ${b64(shellCmd)}"
   }
   val winch = "trap '…WINCH…' WINCH; ${RootShell.shellRootCommand(rootInner)}"
-  return arrayOf(SESSION_EXEC, "-c", winch) to envMap(user)
+  return arrayOf(SESSION_EXEC, "-c", winch) to outerEnv(user) // Android PATH outer only
 }
 ```
 
-`RootShell.executeInChroot`:
-
-```kotlin
-val inner = "$CHROOT_HELPER b64 --user $user -- $b64"
-execute(inner, …)
-```
+`RootShell.executeInChroot` / `captureInChroot`: still `helper b64 --user U -- $payload` (TTY-safe decode on guest).
 
 ---
 
@@ -329,12 +383,32 @@ $BB chroot $CH /bin/su - flux -c "whoami; id -u; pwd; echo HOME=\$HOME; echo FLU
 timeout 12 adb shell '/data/local/tmp/run_debian13_root.sh /bin/true'
 ```
 
-After SSOT ships:
+Preferred helper probes (no legacy runner):
 
 ```bash
-timeout 12 adb shell '/data/local/tmp/nativecode_chroot.sh sh --user root -- true'
-timeout 12 adb shell '/data/local/tmp/nativecode_chroot.sh sh --user flux -- "whoami; id -u"'
+H=/data/local/tmp/nativecode_chroot.sh
+timeout 12 adb shell "sh $H version"   # expect: nativecode-chroot v2.2
+timeout 12 adb shell "sh $H sh --user root -- true"
+timeout 12 adb shell "sh $H sh --user flux -- 'whoami; id -u'"
+# git / b64 (alphabet payload only):
+# timeout 20 adb shell "sh $H b64 --user flux -- \$B64"
+# workdir login (short; use host timeout; avoid unattended interactive):
+# timeout 12 adb shell -tt "printf 'pwd; exit\n' | sh $H login --user flux --shell bash --workdir /home/flux/repos/…"
 ```
+
+### 8.6 v2.2 smoke (2026-07-31 / 2026-08-01)
+
+| ID | Test | Result |
+|----|------|--------|
+| V0 | helper version | `nativecode-chroot v2.2` |
+| V1 | flux git status via **b64** | `__STATUS__` / `__NUMSTAT__` (no `__NOGIT__`) |
+| V2 | b64 under `adb -tt` | **`STDIN_TTY`** (pipe-era was always not-a-tty) |
+| V3 | devpts after `mount` | `ptmxmode=666`; pts/ptmx `crw-rw-rw-` |
+| V4 | `login --workdir` + `pwd` | project path + `flux` |
+| V5 | `exec` + `launch_tool.sh agy --help` | help text, exit 0 |
+| V6 | b64 + `launch_tool.sh grok --help` | help text, exit 0 |
+| V7 | open `/dev/tty` under adb | may still ENXIO (no controlling tty in adb chain); app TerminalSession differs |
+| V8 | debug APK install | **blocked** release sig on device — UI matrix manual after signed install |
 
 ---
 
@@ -346,13 +420,13 @@ timeout 12 adb shell '/data/local/tmp/nativecode_chroot.sh sh --user flux -- "wh
 - [x] `MainActivity` chroot_guest → helper  
 - [x] setup install helper + uninstall list  
 - [x] GUI optional `mount --x11`  
-- [x] **v2.1:** guest `env -i` + Debian PATH + absolute base64 + R-B1 brace pipe; version stamp  
-- [x] compileDebugKotlin  
-- [ ] Manual app: shell flux, shell-root, SoftMgr, marketplace, git, tools  
-- [x] **One** light adb probe via helper (v2.1: version, root PATH/b64, flux whoami/git)  
-- [x] Confirm **zero** proot diffs (proot assets/jni untouched)  
-- [ ] Update this doc status → **shipped** after UI M1–M7  
-
+- [x] **v2.1:** guest `env -i` + Debian PATH + absolute base64  
+- [x] **v2.2:** TTY-safe `guest_b64`; `login --workdir`; devpts heal; Kotlin `'` / workdir / tool exec  
+- [x] compileDebugKotlin (v2.2)  
+- [x] Light ADB smoke V0–V6  
+- [x] Confirm **zero** proot asset diffs for this work  
+- [ ] Manual UI M1–M10 after **signed** APK (git DIFF, flux project shell, AI TUIs)  
+- [ ] Mark **shipped** after UI pass  
 
 ---
 
@@ -362,9 +436,10 @@ timeout 12 adb shell '/data/local/tmp/nativecode_chroot.sh sh --user flux -- "wh
 |----------|--------|
 | Enough info to build component? | **Yes** |
 | All wire points mapped? | **Yes** (§5) |
-| Safe patterns proven on device? | **Yes** (root + flux) |
-| Code in tree? | **Yes** (v2.1 helper + hub + guest env) |
-| Device smoke done? | **ADB PASS** (UI pending) |
+| Guest env contract documented? | **Yes** (§2 v2.2) |
+| Safe patterns proven on device? | **Yes** (helper V0–V6) |
+| Code in tree? | **Yes** (v2.2 helper + CCB; may be uncommitted) |
+| Device smoke done? | **Helper ADB PASS**; **UI pending** signed install |
 
 ---
 

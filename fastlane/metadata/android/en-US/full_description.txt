@@ -5,7 +5,7 @@ Key Features:
 - Debian 13 (Trixie) Linux container — native glibc userland with apt and the full package manager
 - Two isolation modes — PRoot (no root required, recommended) and Chroot (kernel-space, for rooted devices)
 - XFCE4 desktop GUI — integrated Termux-X11 display server with VirGL GPU acceleration
-- AI CLI engine — run Claude Code, Codex, OpenCode, Aider and more in the native terminal
+- AI CLI engine — run Claude Code, Codex, OpenCode, Agy, Grok, Qwen and Kiro in the native terminal
 - Software marketplace — browse and install curated packages from an in-app catalog
 - Git workspace — multi-repo project tree, real-time status, visual diff inspector, branch switching, GitHub CLI integration
 - Pre-configured runtimes — Node.js 26 LTS, Python 3.12, GCC and standard package managers
