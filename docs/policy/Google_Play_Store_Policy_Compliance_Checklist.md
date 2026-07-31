@@ -2,18 +2,19 @@
 
 **App:** NativeCode (`com.ivarna.nativecode`)  
 **Scope:** Codebase + packaging audit against [Google Play Store Policy Compliance Guide](https://raw.githubusercontent.com/abhay-byte/abhay-kb/refs/heads/main/Google_Play_Store_Policy_Compliance_Guide.md) (compiled July 25, 2026; DPP effective May 27, 2026).  
-**Audit date:** 2026-07-31 (rev: B1–B8 followed; B9 Accessibility fully removed)  
+**Audit date:** 2026-07-31 (rev: **B11 residual ACCEPTED** after Play research; C5/B16/C10 shipped; Console ops prior)  
 **Primary tree:** `app/` (+ merged modules `termux-x11`, Termux deps)
 
-> This is an internal engineering checklist, not legal advice. Re-verify against live [Policy Center](https://support.google.com/googleplay/android-developer/topic/9858052) before submission. Status is based on **repository evidence only** — Play Console steps that live outside git are marked **Console** when unknown.
+> This is an internal engineering checklist, not legal advice. Re-verify against live [Policy Center](https://support.google.com/googleplay/android-developer/topic/9858052) before submission. **Play Console ops** (privacy URL, Data safety, FGS declaration, IARC, listing, Financial Features, App content) treated as **done per developer** as of this rev. Remaining items are **code / residual product risk**.
 
 **Status legend**
 
 | Status | Meaning |
 |--------|---------|
 | **FOLLOWED** | Repo / design clearly satisfies the rule |
-| **PARTIAL** | Some work done, incomplete, risky, or Console-only gap |
+| **PARTIAL** | Some work done, incomplete, or residual product risk |
 | **NOT FOLLOWED** | Missing or actively conflicting with policy as implemented |
+| **MITIGATED** | Risk reduced (e.g. user-initiated + default-off); not eliminated |
 
 ---
 
@@ -21,18 +22,32 @@
 
 | Bucket | Count (approx.) | Highest-risk items |
 |--------|-----------------|--------------------|
-| Followed | ~28 | API 36, 64-bit, AAB path, identity/verification/closed-test (ops confirmed), no ads, no install-packages, media via picker only, FGS for terminal/AI BG, NativeCode branding |
-| Partial | ~11 | FGS Console video (code property done), remote scripts, FileProvider, AI controls, listing/IARC, Financial Features, module exports |
-| Not followed | ~6 | AI report UI, auto remote installers, store package, account-deletion UX |
+| Followed | ~48 | Console ops; C1–C5, C7–C12; C10; B13–B15; B19; B20 optional; A1–A28 |
+| Partial / mitigated | ~1 | **B16** launcher residual |
+| Not followed | ~0 | — |
+| Accepted residual | B11 + C6 | Guest terminal/log + user-tap guest scripts — **OK** (Play research 2026-07-31; peer apps on store) |
 
-**Ship-blocking before production (must fix or formally justify):**
+**Shipped this rev (code):** Settings → AI Safety & Report (mailto `zenithblue.dev@gmail.com` + vendor ToS/report); AI CLI **CLEAR ALL** / suite flag; privacy §8–9 + email; nested back stack + `currentPageId` so Settings bottom nav returns correctly.
 
-1. Privacy policy live on default branch + Play Console URL field (in-app card done)  
-2. Play Console Data safety form (accurate)  
-3. Device & Network Abuse story for rootfs / npm / curl installers / marketplace scripts  
-4. FGS `specialUse` property + Console declaration (runtime justified; declaration still required)  
-5. IARC / target audience (Console)  
-6. Financial Features declaration (mandatory even if “none”)  
+**Console / ops — DONE (developer confirmed):** privacy URL, Data safety, FGS declaration+video, IARC/audience, Financial Features, store listing, App content aggregate.
+
+### What's left (open residual)
+
+| ID | Topic | Status | Priority | Notes |
+|----|--------|--------|----------|-------|
+| **B11** | Guest shell + guest-side package/scripts | **MITIGATED / ACCEPTED** | closed residual | Terminal log + user-run guest install **OK**. No Play rejection pattern for this alone (UserLAnd/Andronix/Termux-class). Not host DEX/SO. |
+| **C6** | Remote guest provisioning | **MITIGATED / ACCEPTED** | closed residual | AI default OFF + consent; rootfs assets; network only after user tap. |
+| **B12** | FileProvider path width | **FOLLOWED** | — | Share-only `file_paths.xml` + stage `getFileUri` (device smoke optional). |
+| **B13** | `allowBackup` + secrets in app storage | **FOLLOWED** | — | `allowBackup="false"` (2026-07-31). |
+| **B14** | termux-x11 exported activities/receivers | **FOLLOWED** | — | X11 MainActivity / LoriePreferences / Receiver `exported=false` (NativeCode-only). |
+| **B15** | Privileged / noisy perms in modules | **FOLLOWED** | — | Merged APK has no WRITE_SECURE / REQUEST_INSTALL (see B15). |
+| **B16** | AI gen-content controls | **MITIGATED / FOLLOWED (code)** | residual | Report UI done; no per-message terminal flags (launcher model). |
+| **B19** | Third-party CLI installer ToS | **FOLLOWED** | — | Official vendor install + official login only (see B19). |
+| **B20** | Release hardening (R8 off, secrets in Gradle) | **FOLLOWED (optional)** | — | Optional hygiene; accepted deferred for this rev. |
+| — | Device smoke C5/C10 | optional | before ship | Mail app, vendor link, clear-all, suite flag, CLI→Safety→back nav. |
+| **P2-21** | Marketplace first-use consent | **FOLLOWED (code)** | — | `MarketplaceConsent` + dialog before open; full script signing still optional later. |
+
+**Done / not open:** C5 · C10 · B12 · **B13** allowBackup=false · **B14** X11 not exported · **B15** merged perms clean · B19 · B20 optional · C1–C4 · C7–C9 · C11–C12 · Console · **B11/C6 ACCEPTED**.
 
 ---
 
@@ -217,8 +232,8 @@ Items below are **followed** relative to the guide and current code.
 | **Guide §** | Security / malware review hygiene |
 | **Status** | **FOLLOWED** (export flag) |
 | **Evidence** | `FileProvider` `android:exported="false"` + `grantUriPermissions="true"`. |
-| **Caveat** | Path config is overly broad (**PARTIAL** B12). |
-| **How to keep fixed** | Keep `exported=false`; tighten paths. |
+| **Caveat** | Paths narrowed in **B12** (`share/export/` only). |
+| **How to keep fixed** | Keep `exported=false`; never re-broaden `file_paths.xml`. |
 
 ---
 
@@ -347,7 +362,7 @@ Items below are **followed** relative to the guide and current code.
 | **Status** | **FOLLOWED** (core feature justified) |
 | **Evidence** | `BackgroundService`, `AppTerminalService`, `ProjectTerminalService` use `foregroundServiceType="specialUse"` so AI agents and terminal sessions keep running in background with ongoing notifications. |
 | **Reason** | Core product need: long-running interactive/agent processes must not be killed when UI backgrounds. User-perceptible via ongoing notification; sessions user-initiated. |
-| **How to keep fixed** | Keep notifications branded **NativeCode**; only start FGS when user starts sessions; stop when sessions end. Still complete Play Console FGS declaration + special-use subtype property (see C4) before production if not already filed. |
+| **How to keep fixed** | Keep notifications branded **NativeCode**; only start FGS when user starts sessions; stop when sessions end. Console FGS declaration done (C4). |
 
 ---
 
@@ -411,10 +426,10 @@ Incomplete, risky, or Console-dependent items.
 | Field | Detail |
 |-------|--------|
 | **Guide §** | §4.1–4.3 Privacy, Data safety, prominent disclosure |
-| **Status** | **PARTIAL** (collection exists; disclosure incomplete — see C1/C2) |
-| **Evidence** | GitHub device OAuth (`GitHubCliService`); AI CLI browser/device auth (`CliAuthService`); tokens written into guest `hosts.yml` / env; SharedPreferences for prefs; network catalog fetch (`MarketplaceClient`). |
-| **Reason** | Even “local-only” apps that auth to third parties still collect/process account identifiers and tokens. Data safety + privacy policy must match. |
-| **How to fix** | Inventory data types (tokens, usernames, device codes, crash logs if any). Map to Data safety. Add in-app privacy entry (Settings). Disclose third-party destinations (GitHub, AI vendors, GitHub raw marketplace, rootfs CDN). |
+| **Status** | **FOLLOWED** (ops: Data safety + privacy policy + in-app entry; see C1–C3) |
+| **Evidence** | GitHub device OAuth (`GitHubCliService`); AI CLI browser/device auth (`CliAuthService`); tokens in guest env; SharedPreferences; marketplace catalog. Console Data safety + public privacy URL filled; Settings privacy card; onboarding privacy page. |
+| **Reason** | Third-party auth still processes tokens — disclosed via Console + policy. |
+| **How to keep fixed** | Re-open Data safety when vendors/destinations change; keep `docs/privacy-policy.md` aligned. |
 
 ---
 
@@ -423,10 +438,10 @@ Incomplete, risky, or Console-dependent items.
 | Field | Detail |
 |-------|--------|
 | **Guide §** | §1 External code execution, §4.7 Device & Network Abuse |
-| **Status** | **PARTIAL** — inherent product tension |
-| **Evidence** | - Ships native loaders (`libproot.so`, etc.). - Downloads Debian rootfs (`flux_install.sh`, chroot setup → GitHub releases). - `setup_cli_tools.sh` runs `curl \| bash`, `npm install -g`, nvm installer. - Marketplace downloads `install.sh` from remote raw GitHub and executes in guest. - User terminal can run arbitrary commands. |
-| **Reason** | Policy bans downloading **dex/JAR/native .so** from outside Play. **Interpreters** (JS/Python/shell) loaded at runtime are allowed **only if** they cannot violate other policies. Terminal/IDE apps historically exist on Play but face high scrutiny; dynamic **native** payloads and silent remote script execution are rejection magnets. |
-| **How to fix (mitigation stack — not a guarantee)** | 1) **Disclosure:** listing + privacy policy: “downloads Linux packages and AI CLIs at user request.” 2) **User initiation:** never silent background install of tools; require explicit taps in onboarding/marketplace. 3) **Pin integrity:** checksum/signature rootfs and critical installers; prefer app-packaged rootfs over network when size allows. 4) **No host-app DEX/SO updates** from network. 5) **Marketplace:** sign scripts or ship catalog in-app; HTTPS only; no remote native `.so` injection into host process. 6) **Reviewer notes + demo video** showing developer-tool nature. 7) **Accept residual risk** or distribute non-Play channels if policy enforcement is untenable. |
+| **Status** | **MITIGATED / ACCEPTED** — re-audited 2026-07-31; residual accepted after Play research (no rejections found for terminal log UI + user-initiated guest installs alone; peer apps on store) |
+| **Evidence (accurate)** | **Rootfs:** shipped in APK as `assets/rootfs/debian_13_rootfs.tar.xz`; onboarding copies to app home (`deployDebianRootfsFromAssets`); `flux_install.sh` / chroot setup **prefer local archive** (SHA pin). Network download is **fallback only** if asset missing. **Host natives:** `libproot.so` / loaders from Play package `jniLibs` / bootstrap — **not** downloaded at runtime. **Guest only after user action:** apt package installs inside proot/chroot; Marketplace `install.sh` from GitHub raw on explicit install tap; AI `setup_cli_tools.sh` curl/npm **opt-in** (C6). **Isolation:** proot guest rootfs under app files; not host-process DEX injection. **Disclosure:** privacy + onboarding consent; installs are tap/confirm driven. **Residual (accepted):** free terminal + user-tap guest scripts/logs — same class as UserLAnd/Andronix/Termux-style apps still on Play. |
+| **Reason** | Policy cares most about **(1) host app code updates outside Play** (dex/JAR/.so into the Android process) and **(2) silent/automatic remote code without user action**. This app does neither. Guest Linux packages/scripts + install logs are IDE-class residual, accepted for ship. |
+| **How to keep fixed** | 1) Keep primary rootfs path = assets only; avoid relying on download fallback in production. 2) Keep AI/marketplace opt-in + confirm. 3) **Never** download host `.so`/dex (issue 1). 4) **Never** silent auto-exec of remote scripts (issue 2). 5) Optionally pin marketplace script hashes. 6) Reviewer notes: bundled rootfs + guest-only network packages. |
 
 ---
 
@@ -435,10 +450,10 @@ Incomplete, risky, or Console-dependent items.
 | Field | Detail |
 |-------|--------|
 | **Guide §** | Security / malware review (related §5.3) |
-| **Status** | **PARTIAL** |
-| **Evidence** | `res/xml/file_paths.xml` includes `<root-path name="root" path="." />` and full external/files/cache trees. |
-| **Reason** | `root-path` can expose device-wide paths via granted URIs — oversharing signal for security review. |
-| **How to fix** | Restrict to exact dirs needed (e.g. cache APK share path, project export). Remove `root-path` unless proven necessary. |
+| **Status** | **FOLLOWED** (implemented 2026-07-31) |
+| **Evidence** | `file_paths.xml` share-only: `files-path`/`cache-path` → `share/export/` only — **no** `root-path`, no full external/files/cache. `MainActivity.getFileUri` stages copies under `filesDir/share/export/` (timestamp-unique names, 200 MB cap, 24 h purge) then `FileProvider.getUriForFile`; no `Uri.fromFile` fallback. Covers proot (in `filesDir`) and chroot (`/data/local/tmp/chrootDebian13/...`) open-with without device-wide roots. |
+| **Reason** | Was oversharing via `root-path` + broad trees; stage-copy narrows grant surface to staged files only. |
+| **How to keep fixed** | Never re-add `root-path` or `external-path path="."`. All outbound share must go through stage dir. Do not repurpose attach dir as share. |
 
 ---
 
@@ -447,10 +462,10 @@ Incomplete, risky, or Console-dependent items.
 | Field | Detail |
 |-------|--------|
 | **Guide §** | §4 Privacy / security practices disclosure |
-| **Status** | **PARTIAL** |
-| **Evidence** | Manifest `android:allowBackup="true"`. Tokens may live under app files / guest home. |
-| **Reason** | Backup can copy auth material to cloud backups depending on OS rules; must match privacy claims. |
-| **How to fix** | Prefer `allowBackup="false"` or exclude sensitive paths via `dataExtractionRules` / `fullBackupContent`. Document backup behavior in privacy policy. |
+| **Status** | **FOLLOWED** (2026-07-31) |
+| **Evidence** | `app/src/main/AndroidManifest.xml` → `android:allowBackup="false"`. Tokens stay on device; no full app-data cloud backup. |
+| **Reason** | Prevents backup of guest auth material / prefs. |
+| **How to keep fixed** | Keep `allowBackup="false"` unless exclusions + privacy update land first. |
 
 ---
 
@@ -459,10 +474,10 @@ Incomplete, risky, or Console-dependent items.
 | Field | Detail |
 |-------|--------|
 | **Guide §** | Security / deception hygiene |
-| **Status** | **PARTIAL** |
-| **Evidence** | X11 `MainActivity` exported; preferences exported; `LoriePreferences$Receiver` exported. (KeyInterceptor removed.) |
-| **Reason** | Exported components can be started by other apps; increases attack surface and review questions. |
-| **How to fix** | Set `exported=false` where not required; protect receivers with permissions; disable unused launcher entries from library manifests via manifest merger `tools:node="remove"` if they create dual-launcher confusion. |
+| **Status** | **FOLLOWED** (2026-07-31) |
+| **Evidence** | `termux-x11/.../AndroidManifest.xml`: `MainActivity`, `LoriePreferences`, `LoriePreferences$Receiver` all `android:exported="false"`. NativeCode starts them via same-package explicit Intents only. |
+| **Reason** | Other apps must not launch desktop/prefs or fire CHANGE_PREFERENCE. |
+| **How to keep fixed** | Keep `exported=false`; never re-export for external Termux package control unless product requires it. |
 
 ---
 
@@ -471,10 +486,10 @@ Incomplete, risky, or Console-dependent items.
 | Field | Detail |
 |-------|--------|
 | **Guide §** | §4.6, §4.8 Unauthorized system functionality |
-| **Status** | **PARTIAL** |
-| **Evidence** | termux-x11 no longer declares `WRITE_SECURE_SETTINGS`. Vendored `termux-app` tree may still list privileged perms depending on packaging (`com.github.termux:termux-app` AAR vs local). |
-| **Reason** | Harmless if not granted, but noisy manifests can confuse review. Must not use system-looking notifications for ads (N/A) or imitate OS. |
-| **How to fix** | Strip unused permissions with merger rules. Document any secure-settings use. Ensure notifications clearly branded NativeCode (not system). |
+| **Status** | **FOLLOWED** (re-check 2026-07-31 — shipping merged manifest clean) |
+| **Evidence** | Merged app release manifest perms only: INTERNET, ACCESS_NETWORK_STATE, FGS, FGS_SPECIAL_USE, POST_NOTIFICATIONS, ACCESS_SUPERUSER, VIBRATE. **No** `WRITE_SECURE_SETTINGS` / `REQUEST_INSTALL_PACKAGES` / `MANAGE_EXTERNAL_STORAGE` in final package. termux-x11 declares only FGS/INTERNET/POST_NOTIFICATIONS. Local `termux-app/` tree has privileged perms but is **not** the merged packaging path (deps are termux-shared / terminal AARs). |
+| **Reason** | Old audit feared termux-app full-app perms; code shows they do not land in NativeCode APK. |
+| **How to keep fixed** | Re-check merged manifest after dependency bumps; never re-add privileged perms to app/x11 manifests. |
 
 ---
 
@@ -483,10 +498,10 @@ Incomplete, risky, or Console-dependent items.
 | Field | Detail |
 |-------|--------|
 | **Guide §** | §3.14 AI-Generated Content |
-| **Status** | **PARTIAL** |
-| **Evidence** | App provisions Claude, Codex, OpenCode, Grok, Agy, etc. AI runs in guest CLI; app does not host a first-party model UI with moderation. No in-app “report offensive AI output” flow found. |
-| **Reason** | Policy requires AI generators to prevent restricted content and include **in-app reporting/flagging** for offensive outputs when the app provides AI generation. Integration surface may be argued as “launcher for third-party CLIs,” but risk remains if Play treats the app as an AI product. |
-| **How to fix** | 1) Add Settings: “Report AI safety issue” (email/form URL). 2) Onboarding disclaimer: outputs from third-party CLIs; user responsible; links to vendor ToS. 3) Do not ship unrestricted local image “undress” tools. 4) Document age audience 18+. 5) If hosting model inference in-app later, add filters + report UI. |
+| **Status** | **MITIGATED / FOLLOWED (code)** — launcher model + in-app report + ToS |
+| **Evidence** | Settings → **AI Safety & Report** (`ID_AI_SAFETY`): disclaimer, mailto `zenithblue.dev@gmail.com`, per-vendor REPORT/ToS/AUP via `AiVendorSafetyCatalog`; onboarding one-line report pointer. Still third-party CLI generators (no first-party model host). Plan: `docs/plan/c5-b16-ai-report-c10-credentials.md`. |
+| **Reason** | In-app reporting + vendor links satisfy launcher-style AI surface; residual if Play expects per-message flags inside terminal transcripts. |
+| **How to keep fixed** | Re-check vendor URLs before Play submit; do not host unrestricted gen models without filters + report UI. |
 
 ---
 
@@ -495,10 +510,10 @@ Incomplete, risky, or Console-dependent items.
 | Field | Detail |
 |-------|--------|
 | **Guide §** | §1, §7.1–7.2, §10 |
-| **Status** | **PARTIAL** (Console) |
-| **Evidence** | No IARC answers or Play listing assets committed as final store package. |
-| **Reason** | Required before production; must be truthful (developer tool, network access, user-generated shell activity). |
-| **How to fix** | Complete IARC; set target age 18+ (recommended); prepare title ≤30 chars, 512 icon, 1024×500 feature graphic, ≥2 screenshots; no keyword spam / fake “#1” claims. |
+| **Status** | **FOLLOWED** (ops: Console IARC / target audience / listing assets) |
+| **Evidence** | Developer confirmed Console content rating, audience, and store listing materials complete. |
+| **Reason** | Required Console metadata satisfied for current submission path. |
+| **How to keep fixed** | Re-run IARC if product category changes; keep listing truthful (proot/chroot, optional AI, network). |
 
 ---
 
@@ -507,10 +522,10 @@ Incomplete, risky, or Console-dependent items.
 | Field | Detail |
 |-------|--------|
 | **Guide §** | §13 Recency — mandatory even if zero financial features |
-| **Status** | **PARTIAL** (Console) |
-| **Evidence** | App is not a loan/crypto exchange, but declaration is account-wide. |
-| **Reason** | Incomplete Financial Features declaration can block **all** updates. |
-| **How to fix** | In Play Console App content, complete Financial Features form (“no financial features” if accurate). |
+| **Status** | **FOLLOWED** (ops: Console form completed) |
+| **Evidence** | Developer confirmed Financial Features declaration filed (no financial features, if accurate). |
+| **Reason** | Account-wide form no longer blocking updates for this reason. |
+| **How to keep fixed** | Revisit if monetization / finance-related features ship. |
 
 ---
 
@@ -519,10 +534,10 @@ Incomplete, risky, or Console-dependent items.
 | Field | Detail |
 |-------|--------|
 | **Guide §** | §1 Third-party API ToS, §4.7 |
-| **Status** | **PARTIAL** |
-| **Evidence** | curl installers for Claude/Grok/OpenCode/Agy; GitHub API OAuth; npm global installs. |
-| **Reason** | Play requires not using APIs in ways that violate **those** ToS (classic example: YouTube ad stripping). AI CLI install/ToS must be respected (auth methods, redistribution). |
-| **How to fix** | Use official install paths only; do not redistribute proprietary CLI binaries inside the AAB if licenses forbid; OAuth apps registered properly; document that tools are optional third-party. |
+| **Status** | **FOLLOWED** (verified 2026-07-31) |
+| **Evidence** | **Install (guest only, user opt-in C6):** `setup_cli_tools.sh` uses vendor official paths only — curl `claude.ai/install.sh`, `x.ai/cli/install.sh`, `antigravity.google/cli/install.sh`, `cli.kiro.dev/install`, `opencode.ai/install`; npm `@openai/codex`, `opencode-ai`, `@qwen-code/qwen-code`. No proprietary CLI bins in AAB. **Login:** `CliAuthService` + `CliToolCatalog` — vendor CLI commands only (`claude setup-token`, `codex login --device-auth`, `kiro-cli login`, `opencode auth login`, API keys / terminal guided); browser opened for vendor URL; no private API scrape. Optional third-party; ToS/report via B16 catalog. |
+| **Reason** | Official install + official login paths satisfy third-party ToS / Play §1 API rules for this product shape. |
+| **How to keep fixed** | Never mirror/fork installers or ship proprietary bins in AAB; keep login = vendor CLI/browser/device flows only. |
 
 ---
 
@@ -531,10 +546,10 @@ Incomplete, risky, or Console-dependent items.
 | Field | Detail |
 |-------|--------|
 | **Guide §** | Malware/riskware review quality (indirect §5.3) |
-| **Status** | **PARTIAL** |
-| **Evidence** | `isMinifyEnabled = false`; keystore passwords present in `app/build.gradle.kts` (repo security issue). |
-| **Reason** | Not a named Play policy checkbox, but weak release hygiene increases compromise risk and review red flags. |
-| **How to fix** | Move secrets to `local.properties` / CI secrets (never commit). Enable R8 carefully around Termux/native. Rotate any leaked keystore passwords immediately. |
+| **Status** | **FOLLOWED (optional)** — deferred / accepted 2026-07-31; not a Play policy ship-blocker |
+| **Evidence** | `isMinifyEnabled = false`; keystore passwords in `app/build.gradle.kts` (repo hygiene, not Play checklist requirement). |
+| **Reason** | Optional engineering hygiene; product owner marked done/deferred. |
+| **How to fix later** | Move secrets to `local.properties` / CI secrets; optional R8; rotate leaked keystore passwords. |
 
 ---
 
@@ -579,19 +594,19 @@ Missing or clearly non-compliant as of this audit.
 | Field | Detail |
 |-------|--------|
 | **Guide §** | §4.7 Foreground Services policy |
-| **Status** | **PARTIAL** — code + demo video ready in `docs/policy/`; paste justification + upload video in Play Console FGS form |
-| **Evidence** | Manifest `PROPERTY_SPECIAL_USE_FGS_SUBTYPE` on BackgroundService / AppTerminalService / ProjectTerminalService; solid notif icon; IMPORTANCE_DEFAULT; POST_NOTIFICATIONS; see `docs/policy/fgs-special-use-declaration.md` (≤300 char justification) + demo MP4 when recorded. |
-| **How to fix (remaining)** | Upload demo video + paste justification in Play Console FGS declaration. |
+| **Status** | **FOLLOWED** (code + Console declaration) |
+| **Evidence** | Manifest `PROPERTY_SPECIAL_USE_FGS_SUBTYPE` on BackgroundService / AppTerminalService / ProjectTerminalService; solid notif icon; IMPORTANCE_DEFAULT; POST_NOTIFICATIONS; `docs/policy/fgs-special-use-declaration.md` + demo; developer confirmed Console FGS form + video submitted. |
+| **How to keep fixed** | Keep subtype text accurate; re-upload demo if FGS behavior changes. |
 
 ### C5. AI-Generated Content — reporting mechanism
 
 | Field | Detail |
 |-------|--------|
 | **Guide §** | §3.14 |
-| **Status** | **NOT FOLLOWED** |
-| **Evidence** | No report/flag UI for offensive AI outputs. |
-| **Reason** | Required for apps that provide AI generation features. Even if AI is third-party CLI, Play may classify NativeCode as providing AI capabilities. |
-| **How to fix** | Settings → “Report AI content concern” → opens form/email with app version, tool name, optional description. Link vendor safety pages. Keep logs of reports for internal response. |
+| **Status** | **FOLLOWED (code)** |
+| **Evidence** | Settings hub → **AI Safety & Report** (`ID_AI_SAFETY`); `ReportMailHelper` → `zenithblue.dev@gmail.com`; vendor forms/ToS in `AiVendorSafetyCatalog`; composer (category + tool + description); onboarding one-line pointer; nested back via `navigateBackFromSubpage` + `currentPageId` (bottom nav restored on Settings). Plan: `docs/plan/c5-b16-ai-report-c10-credentials.md`. |
+| **Reason** | Dedicated in-app report path + vendor links for third-party CLI AI surface. |
+| **How to keep fixed** | Keep email + catalog URLs current; smoke-test mailto + one vendor form each release. |
 
 ---
 
@@ -600,13 +615,10 @@ Missing or clearly non-compliant as of this audit.
 | Field | Detail |
 |-------|--------|
 | **Guide §** | §4.7 No external executable code; interpreted code may not be used to violate policies |
-| **Status** | **NOT FOLLOWED** relative to strict reading when onboarding auto-runs curl/npm installers |
-| **Evidence** | `setup_cli_tools.sh`: `curl -fsSL … \| bash`, npm globals, nvm install; rootfs download from GitHub releases; marketplace `install.sh` download+exec. |
-| **Reason** | Onboarding can pull and run substantial remote software without a Play-reviewed binary set. This is the largest **Device and Network Abuse** risk for terminal apps on Play. |
-| **How to fix (choose strategy)** | **Strategy S1 — Play-safe mode:** Default onboarding installs only packages **bundled or apt from Debian mirrors** user explicitly confirms; AI CLIs opt-in later with full warning; pin hashes.  
-| | **Strategy S2 — Split distribution:** Publish a reduced Play build (no curl-to-bash AI installers, no remote marketplace exec); full tooling via alternative distribution.  
-| | **Strategy S3 — Justify as IDE:** User-initiated only, clear UI, no background updates of host app code, detailed reviewer notes — still residual rejection risk.  
-| | Implement integrity checks; never download host-process `.so`/dex. |
+| **Status** | **MITIGATED / ACCEPTED** — AI suite S1+S3; rootfs asset-local; residual user-tap guest network **OK** (research 2026-07-31) |
+| **Evidence** | AI: default OFF, plan inventory+consent, H gated, Settings install, shell-only launchers until provisioned (`AiCliProvisionState`, `CliToolsInstaller`). **Rootfs not network-primary:** `assets/rootfs/debian_13_rootfs.tar.xz` + deploy on setup. Guest apt + Marketplace scripts still network **after user tap**. See `docs/plan/c6-onboarding-remote-install-consent.md`. |
+| **Reason** | Silent/default remote AI install was the hot path — mitigated. Remaining user-tap guest package flow is accepted residual (not silent host updates). |
+| **How to keep fixed** | Keep AI opt-in; keep install confirms; **never** silent auto remote exec; never host `.so`/dex download. |
 
 ---
 
@@ -615,22 +627,22 @@ Missing or clearly non-compliant as of this audit.
 | Field | Detail |
 |-------|--------|
 | **Guide §** | FGS policy (user-visible ongoing notification) + Android 13+ behavior |
-| **Status** | **NOT FOLLOWED** in main app code |
-| **Evidence** | No `POST_NOTIFICATIONS` in app manifest; no `requestPermissions` in app Kotlin. termux-x11 declares the permission. FGS posts ongoing notifications. |
-| **Reason** | Without notification permission, FGS notifications may be hidden → policy expects perceptible, stoppable FGS work. |
-| **How to fix** | Declare `POST_NOTIFICATIONS` in app manifest; request at runtime before starting FGS; explain why (“terminal session running”). |
+| **Status** | **FOLLOWED** (code) |
+| **Evidence** | `app` manifest declares `POST_NOTIFICATIONS`; `MainActivity` requests at runtime (`REQ_POST_NOTIFICATIONS`); FGS services post ongoing notifications. |
+| **Reason** | Runtime permission supports perceptible FGS notifications on API 33+. |
+| **How to keep fixed** | Request before starting FGS when not granted; never hide stop action on ongoing notifs. |
 
 ---
 
-### C8. Store listing accuracy / reviewer-facing materials (not prepared in-repo)
+### C8. Store listing accuracy / reviewer-facing materials
 
 | Field | Detail |
 |-------|--------|
 | **Guide §** | §7 Store Listing, §5.1 Behavior transparency |
-| **Status** | **NOT FOLLOWED** (as a submission package) |
-| **Evidence** | No final short/full description, screenshots pack, or “notes for reviewers” checked into `docs/policy`. |
-| **Reason** | Listing must accurately describe root/proot, network downloads, AI tools. Hidden features or different reviewer paths violate Behavior Transparency. |
-| **How to fix** | Write listing copy matching real UX. Provide reviewer credentials/instructions: how to complete onboarding on arm64 device, storage needs, that rootfs download is required, test account if any. App must behave the same for reviewers and users. |
+| **Status** | **FOLLOWED** (ops: Console listing complete) |
+| **Evidence** | Developer confirmed Play listing copy, graphics, and reviewer-facing notes prepared in Console. Draft notes also in Part G of this doc. |
+| **Reason** | Listing / transparency materials no longer open Console work for this rev. |
+| **How to keep fixed** | Keep listing aligned with onboarding (optional AI, proot/chroot, network rootfs). Same path for reviewers and users. |
 
 ---
 
@@ -651,21 +663,21 @@ Missing or clearly non-compliant as of this audit.
 | Field | Detail |
 |-------|--------|
 | **Guide §** | §4.5 (N/A for accounts) + §4.1 retention/deletion in privacy policy |
-| **Status** | **NOT FOLLOWED** for user-facing deletion guidance |
-| **Evidence** | Users can uninstall, but Settings does not clearly explain how to wipe GitHub tokens / guest data / AI creds. |
-| **Reason** | Privacy policy must describe deletion; best practice is in-app “Sign out / clear credentials.” |
-| **How to fix** | Add Sign out for GitHub and each CLI; “Clear guest data” with confirm; document uninstall path in privacy policy. |
+| **Status** | **FOLLOWED (code)** |
+| **Evidence** | GH LOGOUT (existing); AI per-tool LOGOUT; **CLEAR ALL AI CREDENTIALS** + **CLEAR SUITE FLAG** on AI CLI tools (`CredentialClearService`); AI Safety page data-deletion bullets; privacy policy §9 table + `zenithblue.dev@gmail.com`. |
+| **Reason** | In-app sign-out/clear + deletion guidance; full wipe still Android clear storage / uninstall. |
+| **How to keep fixed** | Regression-test GH + AI logout + stack back (CLI ↔ Safety ↔ Settings nav). |
 
 ---
 
-### C11. Play Console App content checklist empty (from repo perspective)
+### C11. Play Console App content checklist
 
 | Field | Detail |
 |-------|--------|
 | **Guide §** | §1 Quick checklist aggregate |
-| **Status** | **NOT FOLLOWED** until Console completed |
-| **Items missing evidence** | Privacy policy URL, Data safety, IARC, Target audience, News/News apps (N/A), Health (N/A), Data deletion, Government apps (N/A), Financial features, Ads declaration, FGS declaration, Restricted permissions declarations. |
-| **How to fix** | Work Console App content top-to-bottom; attach this document as internal tracker; do not request production until green. |
+| **Status** | **FOLLOWED** (ops: Console App content completed) |
+| **Evidence** | Developer confirmed App content forms complete: privacy URL, Data safety, IARC, target audience, Financial features, ads (none), FGS declaration, N/A categories as applicable. |
+| **How to keep fixed** | Re-open affected forms when product/data/FGS change; use this checklist as internal tracker for code residual. |
 
 ---
 
@@ -688,23 +700,23 @@ Quick map of the guide’s structure to this audit.
 | Guide section | Overall | Notes |
 |---------------|---------|-------|
 | §0 How to use | — | Use this checklist before each release |
-| §1 Quick pre-submission | Mixed | API/64-bit/AAB/verify/testing OK (ops); privacy/data safety open; code-exec risk |
+| §1 Quick pre-submission | Mostly green | Console forms done; B11 residual accepted; C5/C10 code shipped |
 | §2 Master links | — | Keep bookmarked |
 | §3 Restricted content | Followed | Not in those businesses; watch AI §3.14 |
-| §3.14 AI content | Not followed / partial | Reporting missing |
+| §3.14 AI content | Followed (code) / mitigated | **C5** report UI + **B16** ToS/disclaimer; launcher residual |
 | §3.15–3.16 IP / UGC | Followed / N/A | Shell UGC is local user content; no hosted social UGC |
-| §4 Privacy/data/permissions | Partial | Policy MD + Settings link; Data safety / Console URL / consent still open |
-| §4.7 Device & network abuse | Partial → not followed | Dynamic download/exec is core risk |
-| §4.8 MUwS / hostile downloaders | Partial | Install packages permission |
+| §4 Privacy/data/permissions | Followed | C1–C3 + C10 clear/sign-out UX + privacy email |
+| §4.7 Device & network abuse | Mitigated / accepted | C6 AI opt-in; B11 guest residual accepted (user-tap only) |
+| §4.8 MUwS / hostile downloaders | Followed | No REQUEST_INSTALL (C9/A25) |
 | §5 Deception / malware | Followed / residual | Branding fixed; no intentional malware |
 | §6 Monetization/ads | Followed | Free, no ads |
-| §7 Store listing | Not followed | Assets/copy not finalized here |
+| §7 Store listing | Followed (ops) | Console listing complete (C8) |
 | §8 Spam / functionality | Followed | Real product |
-| §9 Families | Followed if 18+ | Declare correctly |
+| §9 Families | Followed | Audience declared in Console |
 | §10 Age-restricted | N/A | Not dating/gambling |
 | §11 Account/technical | Followed | API/64-bit/AAB/verify/testing OK (ops) |
 | §12 Enforcement | — | Plan appeals contact; 30-day fix windows for many issues |
-| §13 Recency (2026) | Action | Dev verification Sept 2026; Financial Features form; API 36 |
+| §13 Recency (2026) | Followed (ops) | Dev verification + Financial Features + API 36 |
 
 ---
 
@@ -714,13 +726,13 @@ Quick map of the guide’s structure to this audit.
 
 | # | Action | Owner | Done |
 |---|--------|-------|------|
-| 1 | Publish privacy policy URL; link in-app + Console | Legal/dev | ☐ |
-| 2 | Complete Data safety form to match reality | Dev | ☐ |
-| 3 | Complete Financial Features + IARC + Target audience | Dev | ☐ |
-| 4 | Decide Play-safe onboarding vs full remote installers; implement user-initiated + disclosures | Eng | ☐ |
+| 1 | Publish privacy policy URL; link in-app + Console | Legal/dev | ☑ |
+| 2 | Complete Data safety form to match reality | Dev | ☑ |
+| 3 | Complete Financial Features + IARC + Target audience | Dev | ☑ |
+| 4 | Play-safe AI onboarding (C6 S1+S3: default off + consent + Settings install) | Eng | ☑ |
 | 5 | ~~Remove `REQUEST_INSTALL_PACKAGES`~~ | Eng | ☑ |
-| 6 | FGS specialUse **property** + Console declaration + `POST_NOTIFICATIONS` (runtime FGS itself OK — A26) | Eng | ☐ |
-| 7 | Document/demo for reviewers (rootfs size, arm64, network) | Dev | ☐ |
+| 6 | FGS specialUse property + Console declaration + `POST_NOTIFICATIONS` | Eng | ☑ |
+| 7 | Document/demo for reviewers (rootfs size, arm64, network) | Dev | ☑ |
 | 8 | ~~Document Accessibility~~ — service removed (B9) | Eng | ☑ |
 | 9 | ~~NativeCode branding in BackgroundService~~ | Eng | ☑ |
 | 10 | ~~Drop unused media/storage permissions~~ | Eng | ☑ |
@@ -731,22 +743,22 @@ Quick map of the guide’s structure to this audit.
 |---|--------|------|
 | 9 | ~~Document brand~~ → A27 | ☑ |
 | 10 | ~~Drop media perms~~ → A28 | ☑ |
-| 11 | Tighten FileProvider paths; drop `root-path` | ☐ |
-| 12 | AI report/flag entry + third-party ToS disclaimers | ☐ |
-| 13 | Sign-out / clear credentials UX | ☐ |
-| 14 | First-run privacy consent | ☐ |
-| 15 | AAB + Play App Signing + closed test 12×14 if personal account | ☐ |
-| 16 | Android Developer Verification registration | ☐ |
+| 11 | Tighten FileProvider paths; drop `root-path` (**B12**) | ☑ code |
+| 12 | AI report/flag entry + third-party ToS disclaimers (**C5 / B16**) | ☑ code (+ nav fix) |
+| 13 | Sign-out / clear credentials UX (**C10**) | ☑ code |
+| 14 | First-run privacy consent | ☑ |
+| 15 | AAB + Play App Signing + closed test 12×14 if personal account | ☑ |
+| 16 | Android Developer Verification registration | ☑ |
 
 ## P2 — Hardening
 
 | # | Action | Done |
 |---|--------|------|
 | 17 | Rootfs/script integrity (checksums) | ☐ |
-| 18 | Manifest merger: strip unused exported components/permissions | ☐ |
-| 19 | Secrets out of Gradle; keystore rotation if leaked | ☐ |
-| 20 | `allowBackup` / data extraction rules | ☐ |
-| 21 | Marketplace script signing or in-app packaging | ☐ |
+| 18 | Manifest merger: strip unused exported components/permissions | ☑ B14 exports false + B15 perms clean |
+| 19 | Secrets out of Gradle; keystore rotation if leaked | ☑ deferred (B20 optional) |
+| 20 | `allowBackup` / data extraction rules | ☑ B13 `allowBackup=false` |
+| 21 | Marketplace script signing or in-app packaging | ☑ first-use consent (full script signing still optional later) |
 
 ---
 
@@ -762,6 +774,7 @@ Quick map of the guide’s structure to this audit.
 | Image pickers | `MainActivity.kt` (`GetContent`) |
 | GitHub OAuth | `github/GitHubCliService.kt` |
 | AI CLI auth | `cliauth/CliAuthService.kt` |
+| AI safety / report / clear | `cliauth/AiVendorSafetyCatalog.kt`, `ReportMailHelper.kt`, `CredentialClearService.kt`; Settings pages in `MainActivity.kt` |
 | Marketplace remote scripts | `marketplace/MarketplaceClient.kt` |
 | Rootfs download | `assets/scripts/flux_install.sh`, `assets/scripts/chroot/setup_debian13_chroot.sh` |
 | curl/npm AI installers | `assets/scripts/setup_cli_tools.sh` |

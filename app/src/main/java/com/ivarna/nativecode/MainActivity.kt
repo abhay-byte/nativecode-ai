@@ -144,9 +144,15 @@ class MainActivity : AppCompatActivity() {
     /** AI CLI browser login page (Settings Hub → AI CLI LOGIN). */
     private lateinit var cliAuthScrollView: ScrollView
     private var cliAuthListContainer: LinearLayout? = null
+    private var cliAuthInstallHost: LinearLayout? = null
+    private var cliAuthCredentialsHost: LinearLayout? = null
     private var cliAuthMethodBadge: TextView? = null
     private var cliAuthSession: com.ivarna.nativecode.cliauth.CliAuthSession? = null
     private var cliAuthOverlay: FrameLayout? = null
+    /** Settings → AI Safety & Report (C5 / B16). */
+    private lateinit var aiSafetyScrollView: ScrollView
+    private var aiSafetyVendorList: LinearLayout? = null
+    private var aiSafetyMethodBadge: TextView? = null
     /** Repairs page: host | guest | chroot */
     private var repairsSelectedTab: String = "host"
     private var repairsRootOk: Boolean? = null
@@ -215,6 +221,8 @@ class MainActivity : AppCompatActivity() {
     private var projectCreateSelectedMethod: String = "proot"
     private var projectCreateProotChip: TextView? = null
     private var projectCreateChrootChip: TextView? = null
+    /** null = not probed yet this session; seeded from prefs then live RootShell.probe */
+    private var createChrootRootOk: Boolean? = null
     // GitHub Connect (Create + Settings)
     private var ghCreateSubtitle: TextView? = null
     private var ghCreateActionBtn: TextView? = null
@@ -225,6 +233,7 @@ class MainActivity : AppCompatActivity() {
     private var ghRepoListLayout: LinearLayout? = null
     private var ghRepoCountTv: TextView? = null
     private var ghRepoPanelOpen: Boolean = false
+    private var ghReposLoading: Boolean = false
     private var ghReposForMethod: List<GhRepo> = emptyList()
     private var ghSelectedRepo: GhRepo? = null
     private var ghAuthSession: GhAuthSession? = null
@@ -308,6 +317,10 @@ class MainActivity : AppCompatActivity() {
         private const val PREF_CHROOT_PROC_COUNT = "chroot_proc_count"
         private const val PREF_CHROOT_PROC_LAST_MS = "chroot_proc_last_ms"
         private const val REQ_POST_NOTIFICATIONS = 4401
+        /** B12 outbound share stage under filesDir (and optional cache twin). */
+        private const val SHARE_EXPORT_REL = "share/export"
+        private const val SHARE_MAX_BYTES = 200L * 1024 * 1024
+        private const val SHARE_MAX_AGE_MS = 24L * 60 * 60 * 1000
     }
 
     private val executor = Executors.newCachedThreadPool()
@@ -332,6 +345,7 @@ class MainActivity : AppCompatActivity() {
     private val ID_MARKETPLACE = 17
     private val ID_MP_INSTALLER = 18
     private val ID_CLI_AUTH = 19
+    private val ID_AI_SAFETY = 20
     
     private var fileViewerBackPage = ID_FILES
     private var diffViewerBackPage = ID_GIT
@@ -506,6 +520,8 @@ class MainActivity : AppCompatActivity() {
 
     // History tracking for back button support
     private val pageStack = java.util.Stack<Int>()
+    /** Actually visible page — SSOT for nav chrome (stack can lag after bad backs). */
+    private var currentPageId: Int = 1
 
     // ── Linux isolation method ────────────────────────────────────────────────────
 
@@ -593,7 +609,7 @@ class MainActivity : AppCompatActivity() {
                 gitDiffTopBar?.setPadding(dp(12), dp(10), dp(12), dp(10))
             }
             
-            val currentPage = if (pageStack.isNotEmpty()) pageStack.peek() else ID_HOME
+            val currentPage = currentPageId
             val showGlobalNav = (currentPage == ID_HOME || currentPage == ID_PROJECTS_LIST || currentPage == ID_TERMINAL || currentPage == ID_SETTINGS)
             val showProjectNav = (currentPage == ID_PROJECT_WORKSPACE || currentPage == ID_PROJECT_SETTINGS || currentPage == ID_PROJECT_DIR_TREE || currentPage == ID_PROJECT_GIT_DIFF)
             val isLandscape = resources.displayMetrics.widthPixels > resources.displayMetrics.heightPixels
@@ -866,6 +882,7 @@ class MainActivity : AppCompatActivity() {
                 pageStack.push(id)
             }
         }
+        currentPageId = id
 
         updateNavigationVisibility(id)
         updateCustomBottomNavSelection(id)
@@ -903,6 +920,9 @@ class MainActivity : AppCompatActivity() {
         }
         if (::cliAuthScrollView.isInitialized) {
             cliAuthScrollView.visibility = View.GONE
+        }
+        if (::aiSafetyScrollView.isInitialized) {
+            aiSafetyScrollView.visibility = View.GONE
         }
         if (::prootSettingsScrollView.isInitialized) {
             prootSettingsScrollView.visibility = View.GONE
@@ -1065,6 +1085,12 @@ class MainActivity : AppCompatActivity() {
                     refreshCliAuthPage()
                 }
             }
+            ID_AI_SAFETY -> {
+                if (::aiSafetyScrollView.isInitialized) {
+                    aiSafetyScrollView.visibility = View.VISIBLE
+                    refreshAiSafetyPage()
+                }
+            }
             ID_SCRIPT_INSTALL -> {
                 if (::scriptInstallLayout.isInitialized) {
                     scriptInstallLayout.visibility = View.VISIBLE
@@ -1076,6 +1102,8 @@ class MainActivity : AppCompatActivity() {
                     if (::projectCreateScrollView.isInitialized) {
                         projectCreateScrollView.visibility = View.VISIBLE
                     }
+                    // Live root probe (Settings Chroot gate) + paint chips
+                    probeCreateChrootRoot()
                     refreshProjectCreateMethodChips()
                     refreshCreateGithubUi()
                 }
@@ -1158,36 +1186,40 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onBackPressed() {
+        // File / diff overlays first — never fall through to workspace → projects list
+        if (::fileViewerRootContainer.isInitialized && fileViewerRootContainer.visibility == View.VISIBLE) {
+            dismissFileViewer()
+            return
+        }
+        if (::diffViewerRootContainer.isInitialized && diffViewerRootContainer.visibility == View.VISIBLE) {
+            dismissDiffViewer()
+            return
+        }
+
         if (::projectSettingsContainer.isInitialized && projectSettingsContainer.visibility == View.VISIBLE) {
-            navigateToPage(ID_PROJECT_WORKSPACE)
+            navigateToPage(ID_PROJECT_WORKSPACE, false)
             return
         }
 
         if (::projectDirTreeContainer.isInitialized && projectDirTreeContainer.visibility == View.VISIBLE) {
-            navigateToPage(ID_PROJECT_WORKSPACE)
+            navigateToPage(ID_PROJECT_WORKSPACE, false)
             return
         }
 
         if (::projectGitDiffContainer.isInitialized && projectGitDiffContainer.visibility == View.VISIBLE) {
-            navigateToPage(ID_PROJECT_WORKSPACE)
+            navigateToPage(ID_PROJECT_WORKSPACE, false)
             return
         }
 
         if (::projectWorkspaceContainer.isInitialized && projectWorkspaceContainer.visibility == View.VISIBLE) {
-            navigateToPage(ID_PROJECTS_LIST)
+            navigateToPage(ID_PROJECTS_LIST, false)
             return
         }
 
         if ((::projectCreateContainer.isInitialized && projectCreateContainer.visibility == View.VISIBLE) ||
             (::projectCreateScrollView.isInitialized && projectCreateScrollView.visibility == View.VISIBLE)
         ) {
-            navigateToPage(ID_PROJECTS_LIST)
-            return
-        }
-
-        if ((::fileViewerRootContainer.isInitialized && fileViewerRootContainer.visibility == View.VISIBLE) || (::diffViewerRootContainer.isInitialized && diffViewerRootContainer.visibility == View.VISIBLE)) {
-            val prevPage = if (::fileViewerRootContainer.isInitialized && fileViewerRootContainer.visibility == View.VISIBLE) fileViewerBackPage else diffViewerBackPage
-            navigateToPage(prevPage)
+            navigateToPage(ID_PROJECTS_LIST, false)
             return
         }
 
@@ -1213,33 +1245,38 @@ class MainActivity : AppCompatActivity() {
         }
 
         if (::prootSettingsScrollView.isInitialized && prootSettingsScrollView.visibility == View.VISIBLE) {
-            navigateToPage(ID_SETTINGS)
+            navigateBackFromSubpage(ID_PROOT_SETTINGS)
             return
         }
 
         if (::chrootSettingsScrollView.isInitialized && chrootSettingsScrollView.visibility == View.VISIBLE) {
-            navigateToPage(ID_SETTINGS)
+            navigateBackFromSubpage(ID_CHROOT_SETTINGS)
             return
         }
 
         if (::softwareManagerScrollView.isInitialized && softwareManagerScrollView.visibility == View.VISIBLE) {
-            navigateToPage(ID_SETTINGS)
+            navigateBackFromSubpage(ID_SOFTWARE_MANAGER)
             return
         }
 
         if (::marketplaceScrollView.isInitialized && marketplaceScrollView.visibility == View.VISIBLE) {
-            navigateToPage(ID_SETTINGS)
+            navigateBackFromSubpage(ID_MARKETPLACE)
             return
         }
 
         if (::scriptsScrollView.isInitialized && scriptsScrollView.visibility == View.VISIBLE) {
-            navigateToPage(ID_SETTINGS)
+            navigateBackFromSubpage(ID_SCRIPTS)
             return
         }
 
         if (::cliAuthScrollView.isInitialized && cliAuthScrollView.visibility == View.VISIBLE) {
             dismissCliAuthOverlay()
-            navigateToPage(ID_SETTINGS)
+            navigateBackFromSubpage(ID_CLI_AUTH)
+            return
+        }
+
+        if (::aiSafetyScrollView.isInitialized && aiSafetyScrollView.visibility == View.VISIBLE) {
+            navigateBackFromSubpage(ID_AI_SAFETY)
             return
         }
 
@@ -1282,7 +1319,7 @@ class MainActivity : AppCompatActivity() {
         if (id == ID_SCRIPTS || id == ID_SCRIPT_INSTALL || id == ID_PROJECT_CREATE ||
             id == ID_CHROOT_SETTINGS || id == ID_PROOT_SETTINGS ||
             id == ID_SOFTWARE_MANAGER || id == ID_MARKETPLACE || id == ID_MP_INSTALLER ||
-            id == ID_CLI_AUTH
+            id == ID_CLI_AUTH || id == ID_AI_SAFETY
         ) {
             showGlobalNav = false
             showProjectNav = false
@@ -1328,28 +1365,49 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        val currentPage = if (pageStack.isNotEmpty()) pageStack.peek() else ID_HOME
+        // Use visible page, not stack peek (stack can lag after nested subpage backs).
+        val currentPage = currentPageId
 
         if (isLandscape && showGlobalNav && ::globalNavRail.isInitialized) {
             globalNavRail.setOnItemSelectedListener(null)
-            globalNavRail.selectedItemId = currentPage
+            if (globalNavRail.menu.findItem(currentPage) != null) {
+                globalNavRail.selectedItemId = currentPage
+            }
             setupGlobalNavRailListener()
         }
         if (isLandscape && showProjectNav && ::projectNavRail.isInitialized) {
             projectNavRail.setOnItemSelectedListener(null)
-            projectNavRail.selectedItemId = currentPage
+            if (projectNavRail.menu.findItem(currentPage) != null) {
+                projectNavRail.selectedItemId = currentPage
+            }
             setupProjectNavRailListener()
         }
         if (!isLandscape && showGlobalNav && ::bottomNavigation.isInitialized) {
             bottomNavigation.setOnItemSelectedListener(null)
-            bottomNavigation.selectedItemId = currentPage
+            if (bottomNavigation.menu.findItem(currentPage) != null) {
+                bottomNavigation.selectedItemId = currentPage
+            }
             setupBottomNavigationListener()
         }
         if (!isLandscape && showProjectNav && ::projectBottomNavigation.isInitialized) {
             projectBottomNavigation.setOnItemSelectedListener(null)
-            projectBottomNavigation.selectedItemId = currentPage
+            if (projectBottomNavigation.menu.findItem(currentPage) != null) {
+                projectBottomNavigation.selectedItemId = currentPage
+            }
             setupProjectBottomNavigationListener()
         }
+    }
+
+    /**
+     * Pop [pageId] off the stack and show the previous page (or [fallback]).
+     * Keeps stack aligned with visible UI so bottom nav / insets stay correct.
+     */
+    private fun navigateBackFromSubpage(pageId: Int, fallback: Int = ID_SETTINGS) {
+        while (pageStack.isNotEmpty() && pageStack.peek() == pageId) {
+            pageStack.pop()
+        }
+        val target = if (pageStack.isNotEmpty()) pageStack.peek() else fallback
+        navigateToPage(target, false)
     }
 
     private fun showExitConfirmDialog() {
@@ -1384,8 +1442,7 @@ class MainActivity : AppCompatActivity() {
                 val newWidth = right - left
                 val newHeight = bottom - top
                 if (newWidth != oldWidth || newHeight != oldHeight) {
-                    val currentPage = if (pageStack.isNotEmpty()) pageStack.peek() else ID_HOME
-                    updateNavigationVisibility(currentPage)
+                    updateNavigationVisibility(currentPageId)
                 }
             }
         }
@@ -1739,6 +1796,7 @@ class MainActivity : AppCompatActivity() {
         buildDiffViewerLayout()
         buildScriptsLayout()
         buildCliAuthPage()
+        buildAiSafetyPage()
         buildProotSettingsPage()
         buildChrootSettingsPage()
         buildSoftwareManagerPage()
@@ -1762,6 +1820,7 @@ class MainActivity : AppCompatActivity() {
         contentFrame.addView(diffViewerRootContainer)
         contentFrame.addView(scriptsScrollView)
         contentFrame.addView(cliAuthScrollView)
+        contentFrame.addView(aiSafetyScrollView)
         contentFrame.addView(prootSettingsScrollView)
         contentFrame.addView(chrootSettingsScrollView)
         contentFrame.addView(softwareManagerScrollView)
@@ -1903,6 +1962,16 @@ class MainActivity : AppCompatActivity() {
     private fun createNewTerminalSession(type: String = "shell") {
         if (sessionsList.size >= 10) {
             Toast.makeText(this, "Maximum 10 tabs allowed", Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (ToolLauncherCatalog.isAiToolType(type) &&
+            !AiCliProvisionState.shouldShowAiToolLaunchers(this)
+        ) {
+            Toast.makeText(
+                this,
+                "Install AI CLI tools in Settings → AI CLI tools",
+                Toast.LENGTH_LONG
+            ).show()
             return
         }
         if (type == "codex" && LinuxCommandBuilder.currentMethod == "chroot") {
@@ -2112,24 +2181,52 @@ class MainActivity : AppCompatActivity() {
 
         data class TermToolDef(val type: String, val label: String, val desc: String)
 
-        val shellTools = listOf(
-            TermToolDef("shell", "Debian Shell", "User: flux"),
-            TermToolDef("shell-root", "Debian Shell Rooted", "User: root")
-        )
-        val freeTools = listOf(
-            TermToolDef("opencode", "opencode", "Claude Agent")
-        )
-        val paidTools = listOf(
-            TermToolDef("codex",       "codex",       "OpenAI Codex"),
-            TermToolDef("agy",         "agy",         "Antigravity"),
-            TermToolDef("claude-code", "claude-code", "Claude Code"),
-            TermToolDef("qwen-code",   "qwen-code",   "Qwen Code"),
-            TermToolDef("grok",        "grok",        "Grok CLI"),
-            TermToolDef("kiro",        "kiro",        "Kiro CLI")
-        ).let { list ->
-            if (LinuxCommandBuilder.currentMethod == "chroot")
-                list.filter { it.type != "codex" }
-            else list
+        fun fromCatalog(list: List<LauncherToolDef>) =
+            list.map { TermToolDef(it.type, it.label, it.desc) }
+
+        val showAi = AiCliProvisionState.shouldShowAiToolLaunchers(this)
+        val method = LinuxCommandBuilder.currentMethod
+        val shellTools = fromCatalog(ToolLauncherCatalog.shellTools())
+        val freeTools = fromCatalog(ToolLauncherCatalog.freeTools())
+        val paidTools = fromCatalog(ToolLauncherCatalog.paidTools(method))
+
+        if (!showAi) {
+            val banner = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                background = cyberBrutalistBg(
+                    fillColor = NC.SURFACE_CONTAINER,
+                    strokeColor = NC.OUTLINE_VAR,
+                    shadowColor = NC.SHADOW_DARK,
+                    offsetDp = 4,
+                    cornerRadiusDp = 0
+                )
+                setPadding(dp(14), dp(12), dp(14), dp(12))
+                layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply {
+                    bottomMargin = dp(12)
+                }
+                isClickable = true
+                isFocusable = true
+                setOnClickListener {
+                    if (pageStack.isEmpty() || pageStack.peek() != ID_CLI_AUTH) {
+                        pageStack.push(ID_CLI_AUTH)
+                    }
+                    navigateToPage(ID_CLI_AUTH)
+                }
+            }
+            banner.addView(TextView(this).apply {
+                text = "AI CLI tools not installed"
+                textSize = 13f
+                setTextColor(NC.PRIMARY)
+                typeface = Typeface.DEFAULT_BOLD
+            })
+            banner.addView(TextView(this).apply {
+                text = "Tap → Settings · AI CLI tools · Install  (shells always available)"
+                textSize = 11f
+                setTextColor(NC.ON_SURF_VAR)
+                typeface = Typeface.MONOSPACE
+                setPadding(0, dp(4), 0, 0)
+            })
+            container.addView(banner)
         }
 
         fun makeToolCard(tool: TermToolDef): LinearLayout {
@@ -2246,9 +2343,11 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // Order: Free → Paid → Debian Shell last (system shell under AI tools)
-        addSection("FREE CLI TOOLS", "// OPEN SOURCE / FREE", freeTools)
-        addSection("PAID CLI TOOLS", "// PRO / SUBSCRIPTION", paidTools)
+        // C6: AI Free/Paid only when suite provisioned for current method
+        if (showAi) {
+            addSection("FREE CLI TOOLS", "// OPEN SOURCE / FREE", freeTools)
+            addSection("PAID CLI TOOLS", "// PRO / SUBSCRIPTION", paidTools)
+        }
         addSection("DEBIAN SHELL", "// SYSTEM SHELL", shellTools)
 
         scrollView.addView(container)
@@ -2291,26 +2390,52 @@ class MainActivity : AppCompatActivity() {
     )
 
     private fun populateWorkspaceHubTools(host: LinearLayout) {
-        // Same categories + order as Terminal tool selector
-        val freeTools = listOf(
-            WorkspaceAiToolDef("opencode", "opencode", "Claude Agent")
-        )
-        val paidTools = listOf(
-            WorkspaceAiToolDef("codex", "codex", "OpenAI Codex"),
-            WorkspaceAiToolDef("agy", "agy", "Antigravity"),
-            WorkspaceAiToolDef("claude-code", "claude-code", "Claude Code"),
-            WorkspaceAiToolDef("qwen-code", "qwen-code", "Qwen Code"),
-            WorkspaceAiToolDef("grok", "grok", "Grok CLI"),
-            WorkspaceAiToolDef("kiro", "kiro", "Kiro CLI")
-        ).let { list ->
-            if (LinuxCommandBuilder.currentMethod == "chroot")
-                list.filter { it.type != "codex" }
-            else list
+        // Same categories + order as Terminal tool selector (ToolLauncherCatalog SSOT)
+        fun fromCatalog(list: List<LauncherToolDef>) =
+            list.map { WorkspaceAiToolDef(it.type, it.label, it.desc) }
+
+        val showAi = AiCliProvisionState.shouldShowAiToolLaunchers(this)
+        val method = LinuxCommandBuilder.currentMethod
+        val freeTools = fromCatalog(ToolLauncherCatalog.freeTools())
+        val paidTools = fromCatalog(ToolLauncherCatalog.paidTools(method))
+        val shellTools = fromCatalog(ToolLauncherCatalog.shellTools())
+
+        if (!showAi) {
+            val banner = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                background = cyberBrutalistBg(
+                    fillColor = NC.SURFACE_CONTAINER,
+                    strokeColor = NC.OUTLINE_VAR,
+                    shadowColor = NC.SHADOW_DARK,
+                    offsetDp = 4,
+                    cornerRadiusDp = 0
+                )
+                setPadding(dp(14), dp(12), dp(14), dp(12))
+                layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply {
+                    bottomMargin = dp(12)
+                }
+                setOnClickListener {
+                    if (pageStack.isEmpty() || pageStack.peek() != ID_CLI_AUTH) {
+                        pageStack.push(ID_CLI_AUTH)
+                    }
+                    navigateToPage(ID_CLI_AUTH)
+                }
+            }
+            banner.addView(TextView(this).apply {
+                text = "AI CLI tools not installed"
+                textSize = 13f
+                setTextColor(NC.PRIMARY)
+                typeface = Typeface.DEFAULT_BOLD
+            })
+            banner.addView(TextView(this).apply {
+                text = "Settings → AI CLI tools → Install"
+                textSize = 11f
+                setTextColor(NC.ON_SURF_VAR)
+                typeface = Typeface.MONOSPACE
+                setPadding(0, dp(4), 0, 0)
+            })
+            host.addView(banner)
         }
-        val shellTools = listOf(
-            WorkspaceAiToolDef("shell", "Debian Shell", "User: flux"),
-            WorkspaceAiToolDef("shell-root", "Debian Shell Rooted", "User: root")
-        )
 
         fun makeToolCard(tool: WorkspaceAiToolDef): LinearLayout {
             val card = LinearLayout(this).apply {
@@ -2453,8 +2578,10 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        addSection("FREE CLI TOOLS", "// OPEN SOURCE / FREE", freeTools)
-        addSection("PAID CLI TOOLS", "// PRO / SUBSCRIPTION", paidTools)
+        if (showAi) {
+            addSection("FREE CLI TOOLS", "// OPEN SOURCE / FREE", freeTools)
+            addSection("PAID CLI TOOLS", "// PRO / SUBSCRIPTION", paidTools)
+        }
         addSection("DEBIAN SHELL", "// SYSTEM SHELL", shellTools)
     }
 
@@ -3795,6 +3922,10 @@ class MainActivity : AppCompatActivity() {
         settingsHubLayout.addView(buildCliAuthSectionButton())
         settingsHubLayout.addView(spacer(16))
 
+        // AI Safety & Report (C5 / B16) + C10 deletion pointers
+        settingsHubLayout.addView(buildAiSafetySectionButton())
+        settingsHubLayout.addView(spacer(16))
+
         // Proot Settings — size-only (app storage rootfs); above chroot
         settingsHubLayout.addView(buildProotSettingsSectionButton())
         settingsHubLayout.addView(spacer(16))
@@ -3942,6 +4073,10 @@ class MainActivity : AppCompatActivity() {
             )
             setPadding(dp(16), dp(16), dp(16), dp(16))
             setOnClickListener {
+                if (pageId == ID_MARKETPLACE) {
+                    openMarketplace()
+                    return@setOnClickListener
+                }
                 if (pageStack.isEmpty() || pageStack.peek() != pageId) {
                     pageStack.push(pageId)
                 }
@@ -4063,13 +4198,13 @@ class MainActivity : AppCompatActivity() {
                 layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
             }
             details.addView(TextView(this@MainActivity).apply {
-                text = "AI CLI LOGIN"
+                text = "AI CLI TOOLS"
                 textSize = 15f
                 setTextColor(Color.WHITE)
                 typeface = Typeface.DEFAULT_BOLD
             })
             details.addView(TextView(this@MainActivity).apply {
-                text = "Browser / device-code sign-in for coding agents"
+                text = "Install suite · browser / device-code sign-in"
                 textSize = 11f
                 setTextColor(NC.ON_SURF_VAR)
                 typeface = Typeface.MONOSPACE
@@ -4083,6 +4218,15 @@ class MainActivity : AppCompatActivity() {
             addView(details)
             addView(arrow)
         }
+    }
+
+    private fun buildAiSafetySectionButton(): View {
+        return settingsHubNavRow(
+            iconRes = R.drawable.ic_shield_thick,
+            title = "AI SAFETY & REPORT",
+            subtitle = "Flag output · vendor ToS · contact",
+            pageId = ID_AI_SAFETY
+        )
     }
 
     private fun buildScriptsSectionButton(): View {
@@ -4535,16 +4679,7 @@ class MainActivity : AppCompatActivity() {
             )
             setPadding(dp(16), dp(16), dp(16), dp(16))
             setOnClickListener {
-                val url = "https://github.com/abhay-byte/nativecode-ai/blob/master/docs/privacy-policy.md"
-                try {
-                    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-                } catch (e: Exception) {
-                    Toast.makeText(
-                        this@MainActivity,
-                        "No browser available to open privacy policy",
-                        Toast.LENGTH_SHORT
-                    ).show()
-                }
+                openPrivacyPolicyUrl()
             }
             setOnTouchListener { v, event ->
                 when (event.action) {
@@ -4636,10 +4771,7 @@ class MainActivity : AppCompatActivity() {
             layoutParams = LinearLayout.LayoutParams(dp(36), dp(36)).apply { rightMargin = dp(8) }
             contentDescription = "Back"
             setOnClickListener {
-                if (pageStack.isNotEmpty() && pageStack.peek() == ID_SCRIPTS) {
-                    pageStack.pop()
-                }
-                navigateToPage(ID_SETTINGS, false)
+                navigateBackFromSubpage(ID_SCRIPTS)
             }
             background = GradientDrawable().apply {
                 shape = GradientDrawable.RECTANGLE
@@ -4866,11 +4998,34 @@ class MainActivity : AppCompatActivity() {
      * With root: pick target. Without root: proot only.
      */
     private fun runGuestRepairScript(scriptName: String) {
+        if (scriptName == "setup_cli_tools.sh") {
+            confirmAiCliScriptRun {
+                if (repairsRootOk == true) {
+                    showGuestRunTargetDialog(scriptName)
+                } else {
+                    runScriptInTerminal(scriptName, "proot")
+                }
+            }
+            return
+        }
         if (repairsRootOk == true) {
             showGuestRunTargetDialog(scriptName)
         } else {
             runScriptInTerminal(scriptName, "proot")
         }
+    }
+
+    private fun confirmAiCliScriptRun(onConfirm: () -> Unit) {
+        showBrutalistConfirmDialog(
+            title = "INSTALL AI CLI TOOLS?",
+            message =
+                "setup_cli_tools.sh installs Node/NVM and third-party AI CLIs " +
+                    "inside the Debian guest (network). Guest-only — not a host APK update.",
+            confirmLabel = "RUN",
+            cancelLabel = "CANCEL",
+            destructive = false,
+            onConfirm = onConfirm
+        )
     }
 
     /** Brutalist picker: PROOT vs CHROOT for guest repair scripts. */
@@ -5325,6 +5480,34 @@ class MainActivity : AppCompatActivity() {
                              scriptInstallBackBtn.visibility = View.VISIBLE
                          }
                      }
+                     // C6: mark AI suite provisioned for the method that ran the install
+                     if (scriptName == "setup_cli_tools.sh") {
+                         val provisionMethod = when (runMode) {
+                             "chroot_guest", "chroot" -> "chroot"
+                             else -> "proot"
+                         }
+                         val ok = session.exitStatus == 0
+                         CliToolsInstaller.finishProvision(
+                             this@MainActivity,
+                             provisionMethod,
+                             if (ok) 0 else 1
+                         )
+                         if (ok) {
+                             refreshToolCardsForMethod()
+                             if (::cliAuthScrollView.isInitialized &&
+                                 cliAuthScrollView.visibility == View.VISIBLE
+                             ) {
+                                 refreshCliAuthPage(force = true)
+                             } else {
+                                 rebuildCliAuthInstallCard()
+                             }
+                             Toast.makeText(
+                                 this@MainActivity,
+                                 "AI CLI tools provisioned ($provisionMethod)",
+                                 Toast.LENGTH_LONG
+                             ).show()
+                         }
+                     }
                      // Chroot uninstall: flip prefs + refresh Settings card when rootfs gone
                      if (scriptName == "uninstall_debian13_chroot.sh" && pendingChrootUninstall) {
                          pendingChrootUninstall = false
@@ -5432,16 +5615,23 @@ class MainActivity : AppCompatActivity() {
 
     private fun showFileViewer(name: String, backPage: Int = ID_FILES) {
         fileViewerBackPage = backPage
-        if (backPage == ID_PROJECT_DIR_TREE) {
+        if (backPage == ID_PROJECT_DIR_TREE ||
+            backPage == ID_PROJECT_WORKSPACE ||
+            backPage == ID_PROJECT_GIT_DIFF ||
+            backPage == ID_PROJECT_SETTINGS
+        ) {
             unifiedHeader.visibility = View.GONE
-            projectBottomNavigation.visibility = View.VISIBLE
-            bottomNavigation.visibility = View.GONE
+            if (::projectBottomNavigation.isInitialized) projectBottomNavigation.visibility = View.VISIBLE
+            if (::bottomNavigation.isInitialized) bottomNavigation.visibility = View.GONE
+            if (::customProjectBottomNav.isInitialized) customProjectBottomNav.visibility = View.VISIBLE
+            if (::customBottomNav.isInitialized) customBottomNav.visibility = View.GONE
             fileViewerTopBar.visibility = View.VISIBLE
             updateProjectSubpageTopBar(fileViewerTopBar)
         } else {
             unifiedHeader.visibility = View.VISIBLE
-            projectBottomNavigation.visibility = View.GONE
-            bottomNavigation.visibility = View.VISIBLE
+            if (::projectBottomNavigation.isInitialized) projectBottomNavigation.visibility = View.GONE
+            if (::bottomNavigation.isInitialized) bottomNavigation.visibility = View.VISIBLE
+            if (::customProjectBottomNav.isInitialized) customProjectBottomNav.visibility = View.GONE
             fileViewerTopBar.visibility = View.GONE
         }
         homeScrollView.visibility = View.GONE
@@ -5458,6 +5648,9 @@ class MainActivity : AppCompatActivity() {
         if (::diffViewerRootContainer.isInitialized) {
             diffViewerRootContainer.visibility = View.GONE
         }
+        if (::projectsListContainer.isInitialized) {
+            projectsListContainer.visibility = View.GONE
+        }
 
         if (::projectGitDiffContainer.isInitialized) projectGitDiffContainer.visibility = View.GONE
         if (::projectWorkspaceContainer.isInitialized) projectWorkspaceContainer.visibility = View.GONE
@@ -5466,8 +5659,57 @@ class MainActivity : AppCompatActivity() {
 
         fileViewerRootContainer.visibility = View.VISIBLE
         fileViewerScrollView.visibility = View.VISIBLE
+        // Keep project context on stack/nav (file viewer is overlay, not a stack page)
+        if (backPage == ID_PROJECT_DIR_TREE ||
+            backPage == ID_PROJECT_WORKSPACE ||
+            backPage == ID_PROJECT_GIT_DIFF ||
+            backPage == ID_PROJECT_SETTINGS
+        ) {
+            currentPageId = backPage
+            updateCustomBottomNavSelection(backPage)
+        }
+
+        // Drop IME from directory search so binary/code pages don't open with keyboard
+        currentFocus?.clearFocus()
+        try {
+            val imm = getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
+            imm.hideSoftInputFromWindow(fileViewerRootContainer.windowToken, 0)
+        } catch (_: Exception) { }
 
         renderFileViewerContent(name, backPage)
+    }
+
+    /**
+     * Close file viewer overlay and return to [fileViewerBackPage] (directory tree when
+     * opened from project Directory). Does **not** pop pageStack to projects list.
+     */
+    private fun dismissFileViewer() {
+        if (!::fileViewerRootContainer.isInitialized) return
+        fileViewerRootContainer.visibility = View.GONE
+        val target = when (fileViewerBackPage) {
+            ID_PROJECT_DIR_TREE,
+            ID_PROJECT_WORKSPACE,
+            ID_PROJECT_GIT_DIFF,
+            ID_PROJECT_SETTINGS,
+            ID_FILES -> fileViewerBackPage
+            else -> ID_PROJECT_DIR_TREE
+        }
+        // pushToStack=false: stay on same stack entry (DIR_TREE), never jump to projects
+        navigateToPage(target, false)
+    }
+
+    private fun dismissDiffViewer() {
+        if (!::diffViewerRootContainer.isInitialized) return
+        diffViewerRootContainer.visibility = View.GONE
+        val target = when (diffViewerBackPage) {
+            ID_PROJECT_DIR_TREE,
+            ID_PROJECT_WORKSPACE,
+            ID_PROJECT_GIT_DIFF,
+            ID_PROJECT_SETTINGS,
+            ID_FILES -> diffViewerBackPage
+            else -> ID_PROJECT_GIT_DIFF
+        }
+        navigateToPage(target, false)
     }
 
     private fun renderFileViewerContent(pathStr: String, backPage: Int) {
@@ -5480,58 +5722,115 @@ class MainActivity : AppCompatActivity() {
             targetFile = File(projectHost, pathStr)
         }
 
-        val headerCard = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(16), dp(12), dp(16), dp(8))
-        }
-        val headerRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-        val titleTv = TextView(this).apply {
-            text = "FILE VIEWER"
-            textSize = 18f
-            setTextColor(NC.PRIMARY)
-            typeface = Typeface.DEFAULT_BOLD
-            layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
-        }
-        val relativePathStr = if (targetFile.absolutePath.contains(projectHost.absolutePath)) {
+        val relativePathStr = if (targetFile.absolutePath.startsWith(projectHost.absolutePath)) {
             targetFile.absolutePath.removePrefix(projectHost.absolutePath).trimStart('/')
         } else {
             targetFile.name
         }
-        val subTv = TextView(this).apply {
+
+        // ── Header (ui_design: 16px margin, sharp, mono labels; no horizontal overflow) ──
+        val headerCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(12), dp(16), dp(12))
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
+        }
+
+        // Row 1: [← back] FILE VIEWER
+        val titleRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
+        }
+        val inPageBack = ImageView(this).apply {
+            setImageResource(R.drawable.ic_arrow_back)
+            setColorFilter(NC.PRIMARY)
+            setPadding(dp(8), dp(8), dp(8), dp(8))
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                setColor(NC.SURFACE_CONTAINER)
+                setStroke(dp(1), NC.OUTLINE_VAR)
+            }
+            layoutParams = LinearLayout.LayoutParams(dp(36), dp(36)).apply { rightMargin = dp(12) }
+            contentDescription = "Back"
+            isClickable = true
+            isFocusable = true
+            // Always dismiss overlay → directory (not projects list)
+            setOnClickListener { dismissFileViewer() }
+            setOnTouchListener { v, event ->
+                when (event.action) {
+                    MotionEvent.ACTION_DOWN -> {
+                        v.translationX = dp(2).toFloat()
+                        v.translationY = dp(2).toFloat()
+                    }
+                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                        v.translationX = 0f
+                        v.translationY = 0f
+                    }
+                }
+                false
+            }
+        }
+        val titleTv = TextView(this).apply {
+            text = "FILE VIEWER"
+            textSize = 16f
+            setTextColor(NC.PRIMARY)
+            typeface = Typeface.MONOSPACE
+            paint.isFakeBoldText = true
+            maxLines = 1
+            isSingleLine = true
+            layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
+        }
+        titleRow.addView(inPageBack)
+        titleRow.addView(titleTv)
+
+        // Row 2: // path… (weight) + COPY PATH (fixed)
+        val pathRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(10) }
+        }
+        val pathTv = TextView(this).apply {
             text = "// $relativePathStr"
-            textSize = 10f
+            textSize = 11f
             setTextColor(NC.ON_SURF_VAR)
             typeface = Typeface.MONOSPACE
+            maxLines = 2
+            ellipsize = android.text.TextUtils.TruncateAt.MIDDLE
+            setTextIsSelectable(true)
+            layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
         }
         val copyPathHeaderBtn = TextView(this).apply {
             text = "COPY PATH"
             textSize = 10f
-            setTextColor(NC.PRIMARY)
-            typeface = Typeface.DEFAULT_BOLD
-            background = roundedBg(NC.SURFACE_VAR, NC.BORDER, dp(4))
-            setPadding(dp(8), dp(4), dp(8), dp(4))
+            setTextColor(Color.parseColor("#0A0A0A"))
+            typeface = Typeface.MONOSPACE
+            paint.isFakeBoldText = true
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                setColor(NC.PRIMARY_CON)
+            }
+            setPadding(dp(10), dp(6), dp(10), dp(6))
             layoutParams = LinearLayout.LayoutParams(WRAP, WRAP).apply { leftMargin = dp(8) }
             setOnClickListener {
                 copyToClipboard("File Path", targetFile.absolutePath)
             }
         }
-        headerRow.addView(titleTv)
-        headerRow.addView(subTv)
-        headerRow.addView(copyPathHeaderBtn)
+        pathRow.addView(pathTv)
+        pathRow.addView(copyPathHeaderBtn)
+
         val divider = View(this).apply {
-            layoutParams = LinearLayout.LayoutParams(MATCH, dp(1)).apply { topMargin = dp(8) }
+            layoutParams = LinearLayout.LayoutParams(MATCH, dp(1)).apply { topMargin = dp(12) }
             setBackgroundColor(NC.OUTLINE_VAR)
         }
-        headerCard.addView(headerRow)
+        headerCard.addView(titleRow)
+        headerCard.addView(pathRow)
         headerCard.addView(divider)
         fileViewerContainer.addView(headerCard)
 
         val contentWrapper = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(16), dp(8), dp(16), dp(16))
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
         }
         fileViewerContainer.addView(contentWrapper)
 
@@ -5857,15 +6156,23 @@ class MainActivity : AppCompatActivity() {
     private fun buildCodeViewerCard(file: File): LinearLayout {
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            background = roundedBg(NC.LOGBG, NC.BORDER_VAR, dp(12))
+            // ui_design: sharp 0, surface panel
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                setColor(Color.parseColor("#0A0A0A"))
+                setStroke(dp(1), NC.OUTLINE_VAR)
+            }
             layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
+            clipChildren = true
+            clipToPadding = true
         }
 
         val header = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setBackgroundColor(NC.SURFACE)
-            setPadding(dp(12), dp(8), dp(12), dp(8))
+            setBackgroundColor(NC.SURFACE_CONTAINER)
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
         }
 
         val fileContentStr = try {
@@ -5886,19 +6193,27 @@ class MainActivity : AppCompatActivity() {
         val lines = fileContentStr.lines()
 
         val fileNameTv = TextView(this).apply {
-            text = "${file.name} (${lines.size} L • ${formatFileSize(file.length())})"
+            text = "${file.name} (${lines.size} L · ${formatFileSize(file.length())})"
             textSize = 12f
-            setTextColor(NC.ON_SURFACE)
+            setTextColor(Color.parseColor("#FAFAFA"))
             typeface = Typeface.MONOSPACE
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
             layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
         }
 
         val copyBtn = TextView(this).apply {
             text = "COPY"
             textSize = 10f
-            setTextColor(NC.ON_SURFACE)
-            background = roundedBg(NC.SURFACE_VAR, NC.BORDER, dp(4))
-            setPadding(dp(8), dp(4), dp(8), dp(4))
+            setTextColor(Color.parseColor("#0A0A0A"))
+            typeface = Typeface.MONOSPACE
+            paint.isFakeBoldText = true
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                setColor(NC.PRIMARY_CON)
+            }
+            setPadding(dp(10), dp(6), dp(10), dp(6))
+            layoutParams = LinearLayout.LayoutParams(WRAP, WRAP).apply { leftMargin = dp(8) }
             setOnClickListener {
                 val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                 val clip = ClipData.newPlainText("File content", fileContentStr)
@@ -5912,29 +6227,40 @@ class MainActivity : AppCompatActivity() {
 
         val codeScroll = HorizontalScrollView(this).apply {
             setPadding(dp(12), dp(12), dp(12), dp(12))
+            isHorizontalScrollBarEnabled = true
+            isFillViewport = false
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
         }
         val codeLines = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
+            layoutParams = FrameLayout.LayoutParams(WRAP, WRAP)
         }
 
         val maxLinesToShow = 1000
         val displayLines = if (lines.size > maxLinesToShow) lines.take(maxLinesToShow) else lines
 
         for ((idx, line) in displayLines.withIndex()) {
-            val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                layoutParams = LinearLayout.LayoutParams(WRAP, WRAP)
+            }
             val num = TextView(this).apply {
                 text = "${idx + 1}".padStart(4, ' ')
                 textSize = 11f
                 setTextColor(NC.OUTLINE)
                 typeface = Typeface.MONOSPACE
                 setPadding(0, 0, dp(10), 0)
+                // fixed gutter so long lines don't shove numbers
+                minWidth = dp(36)
             }
             val code = TextView(this).apply {
-                text = line
+                text = line.ifEmpty { " " }
                 textSize = 11f
-                setTextColor(NC.ON_SURFACE)
+                setTextColor(Color.parseColor("#FAFAFA"))
                 typeface = Typeface.MONOSPACE
                 setTextIsSelectable(true)
+                isSingleLine = true
+                setHorizontallyScrolling(true)
             }
             row.addView(num)
             row.addView(code)
@@ -5962,14 +6288,18 @@ class MainActivity : AppCompatActivity() {
             orientation = LinearLayout.VERTICAL
             background = cyberBrutalistBg(
                 fillColor = NC.SURFACE_LOW,
-                strokeColor = NC.BORDER,
+                strokeColor = NC.OUTLINE_VAR,
                 shadowColor = NC.SHADOW_DARK,
                 offsetDp = 6,
                 cornerRadiusDp = 0,
-                rightFaceColor = NC.BORDER
+                rightFaceColor = NC.OUTLINE_VAR
             )
             setPadding(dp(16), dp(16), dp(16), dp(16))
-            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply {
+                // room for two-tone extrusion
+                bottomMargin = dp(8)
+                rightMargin = dp(4)
+            }
         }
 
         val iconIv = ImageView(this).apply {
@@ -5982,22 +6312,26 @@ class MainActivity : AppCompatActivity() {
 
         val titleTv = TextView(this).apply {
             text = file.name
-            textSize = 15f
-            setTextColor(Color.WHITE)
+            textSize = 14f
+            setTextColor(Color.parseColor("#FAFAFA"))
             typeface = Typeface.MONOSPACE
             paint.isFakeBoldText = true
+            maxLines = 3
+            ellipsize = android.text.TextUtils.TruncateAt.MIDDLE
         }
 
         val descTv = TextView(this).apply {
-            text = "Binary File • ${formatFileSize(file.length())}\nDirect preview not available for this file type."
+            text = "Binary File · ${formatFileSize(file.length())}\nDirect preview not available for this file type."
             textSize = 11f
             setTextColor(NC.ON_SURF_VAR)
             typeface = Typeface.MONOSPACE
-            setPadding(0, dp(4), 0, dp(16))
+            setPadding(0, dp(6), 0, dp(16))
         }
 
         val openExtBtn = primaryButton("OPEN WITH EXTERNAL APP") {
             openExternalFile(file)
+        }.apply {
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
         }
 
         card.addView(iconIv)
@@ -6034,7 +6368,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun openHtmlFile(file: File) {
-        val uri = getFileUri(file)
+        val uri = getFileUri(file) ?: return
         val intent = Intent(Intent.ACTION_VIEW).apply {
             setDataAndType(uri, "text/html")
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -6047,7 +6381,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun installApkFile(file: File) {
-        val uri = getFileUri(file)
+        val uri = getFileUri(file) ?: return
         val intent = Intent(Intent.ACTION_VIEW).apply {
             setDataAndType(uri, "application/vnd.android.package-archive")
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -6060,7 +6394,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun openExternalFile(file: File, mimeType: String = "*/*") {
-        val uri = getFileUri(file)
+        val uri = getFileUri(file) ?: return
         val intent = Intent(Intent.ACTION_VIEW).apply {
             setDataAndType(uri, mimeType)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -6072,15 +6406,67 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun getFileUri(file: File): Uri {
+    /** B12: only files under filesDir/share/export may leave via FileProvider. */
+    private fun shareStagingDir(): File =
+        File(filesDir, SHARE_EXPORT_REL).also { it.mkdirs() }
+
+    private fun isUnderShareDir(file: File): Boolean {
+        val share = try {
+            shareStagingDir().canonicalFile
+        } catch (_: Exception) {
+            shareStagingDir().absoluteFile
+        }
+        val target = try {
+            file.canonicalFile
+        } catch (_: Exception) {
+            file.absoluteFile
+        }
+        val sharePath = share.path
+        return target.path == sharePath || target.path.startsWith(sharePath + File.separator)
+    }
+
+    private fun purgeOldShareExports() {
+        val cutoff = System.currentTimeMillis() - SHARE_MAX_AGE_MS
+        shareStagingDir().listFiles()?.forEach { f ->
+            if (f.isFile && f.lastModified() < cutoff) {
+                runCatching { f.delete() }
+            }
+        }
+    }
+
+    private fun stageForShare(source: File): File {
+        require(source.isFile) { "not a file" }
+        if (source.length() > SHARE_MAX_BYTES) {
+            throw IllegalArgumentException(
+                "File too large to share (${formatFileSize(source.length())}; max ${formatFileSize(SHARE_MAX_BYTES)})"
+            )
+        }
+        purgeOldShareExports()
+        val safeName = source.name.replace(Regex("[^A-Za-z0-9._-]"), "_")
+        val dest = File(shareStagingDir(), "${System.currentTimeMillis()}_$safeName")
+        source.copyTo(dest, overwrite = true)
+        return dest
+    }
+
+    /**
+     * Stages [file] under app-private share/export (proot or chroot host paths),
+     * then returns a FileProvider content URI. Never uses root-path or Uri.fromFile.
+     */
+    private fun getFileUri(file: File): Uri? {
         return try {
+            if (!file.isFile) {
+                Toast.makeText(this, "File not found", Toast.LENGTH_SHORT).show()
+                return null
+            }
+            val staged = if (isUnderShareDir(file)) file else stageForShare(file)
             androidx.core.content.FileProvider.getUriForFile(
                 this,
                 "$packageName.fileprovider",
-                file
+                staged
             )
         } catch (e: Exception) {
-            Uri.fromFile(file)
+            Toast.makeText(this, "Unable to share file: ${e.message}", Toast.LENGTH_SHORT).show()
+            null
         }
     }
 
@@ -6109,40 +6495,59 @@ class MainActivity : AppCompatActivity() {
         val tabBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            background = roundedBg(NC.SURFACE_LOW, NC.BORDER, dp(8))
+            // ui_design: sharp 0, surface container track
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                setColor(NC.SURFACE_CONTAINER)
+                setStroke(dp(1), NC.OUTLINE_VAR)
+            }
             setPadding(dp(4), dp(4), dp(4), dp(4))
-            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(12) }
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(16) }
         }
 
         val previewTab = TextView(this).apply {
             text = "PREVIEW"
             textSize = 12f
-            typeface = Typeface.DEFAULT_BOLD
+            typeface = Typeface.MONOSPACE
+            paint.isFakeBoldText = true
             gravity = Gravity.CENTER
-            setPadding(dp(16), dp(8), dp(16), dp(8))
-            layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
+            setPadding(dp(16), dp(10), dp(16), dp(10))
+            layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f).apply { rightMargin = dp(4) }
         }
 
         val sourceTab = TextView(this).apply {
             text = "SOURCE"
             textSize = 12f
-            typeface = Typeface.DEFAULT_BOLD
+            typeface = Typeface.MONOSPACE
+            paint.isFakeBoldText = true
             gravity = Gravity.CENTER
-            setPadding(dp(16), dp(8), dp(16), dp(8))
-            layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
+            setPadding(dp(16), dp(10), dp(16), dp(10))
+            layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f).apply { leftMargin = dp(4) }
         }
 
         fun updateTabs() {
             if (isPreviewMode) {
-                previewTab.setTextColor(NC.ON_PRIMARY)
-                previewTab.background = roundedBg(NC.PRIMARY, NC.PRIMARY, dp(6))
-                sourceTab.setTextColor(NC.ON_SURF_VAR)
-                sourceTab.background = null
+                previewTab.setTextColor(Color.parseColor("#0A0A0A"))
+                previewTab.background = GradientDrawable().apply {
+                    shape = GradientDrawable.RECTANGLE
+                    setColor(NC.PRIMARY_CON)
+                }
+                sourceTab.setTextColor(Color.parseColor("#FAFAFA"))
+                sourceTab.background = GradientDrawable().apply {
+                    shape = GradientDrawable.RECTANGLE
+                    setColor(NC.SURFACE_HIGH)
+                }
             } else {
-                sourceTab.setTextColor(NC.ON_PRIMARY)
-                sourceTab.background = roundedBg(NC.PRIMARY, NC.PRIMARY, dp(6))
-                previewTab.setTextColor(NC.ON_SURF_VAR)
-                previewTab.background = null
+                sourceTab.setTextColor(Color.parseColor("#0A0A0A"))
+                sourceTab.background = GradientDrawable().apply {
+                    shape = GradientDrawable.RECTANGLE
+                    setColor(NC.PRIMARY_CON)
+                }
+                previewTab.setTextColor(Color.parseColor("#FAFAFA"))
+                previewTab.background = GradientDrawable().apply {
+                    shape = GradientDrawable.RECTANGLE
+                    setColor(NC.SURFACE_HIGH)
+                }
             }
         }
         updateTabs()
@@ -6224,15 +6629,17 @@ class MainActivity : AppCompatActivity() {
                 color: #60f99e;
                 font-family: monospace;
                 padding: 2px 6px;
-                border-radius: 4px;
+                border-radius: 0;
                 font-size: 0.9em;
+                word-break: break-word;
               }
               pre {
                 background-color: #0e0e0e;
                 border: 1px solid #3c4a3f;
                 padding: 12px;
-                border-radius: 8px;
+                border-radius: 0;
                 overflow-x: auto;
+                max-width: 100%;
               }
               pre code { background: transparent; padding: 0; color: #e5e2e1; }
               blockquote {
@@ -7416,6 +7823,10 @@ class MainActivity : AppCompatActivity() {
                 false
             }
             setOnClickListener {
+                if (pageId == ID_MARKETPLACE) {
+                    openMarketplace()
+                    return@setOnClickListener
+                }
                 if (pageStack.isEmpty() || pageStack.peek() != pageId) {
                     pageStack.push(pageId)
                 }
@@ -7766,10 +8177,7 @@ class MainActivity : AppCompatActivity() {
             layoutParams = LinearLayout.LayoutParams(dp(36), dp(36)).apply { rightMargin = dp(8) }
             contentDescription = "Back"
             setOnClickListener {
-                if (pageStack.isNotEmpty() && pageStack.peek() == ID_PROOT_SETTINGS) {
-                    pageStack.pop()
-                }
-                navigateToPage(ID_SETTINGS, false)
+                navigateBackFromSubpage(ID_PROOT_SETTINGS)
             }
             background = GradientDrawable().apply {
                 shape = GradientDrawable.RECTANGLE
@@ -8121,11 +8529,7 @@ class MainActivity : AppCompatActivity() {
             layoutParams = LinearLayout.LayoutParams(dp(36), dp(36)).apply { rightMargin = dp(8) }
             contentDescription = "Back"
             setOnClickListener {
-                // Prefer explicit Settings return (sub-page)
-                if (pageStack.isNotEmpty() && pageStack.peek() == ID_CHROOT_SETTINGS) {
-                    pageStack.pop()
-                }
-                navigateToPage(ID_SETTINGS, false)
+                navigateBackFromSubpage(ID_CHROOT_SETTINGS)
             }
             background = GradientDrawable().apply {
                 shape = GradientDrawable.RECTANGLE
@@ -8967,7 +9371,7 @@ class MainActivity : AppCompatActivity() {
         val intent = Intent(this, OnboardingActivity::class.java).apply {
             putExtra("force_onboarding", true)
             putExtra("preferred_isolation", "chroot")
-            putExtra("target_page", 5) // Environment Setup (full install log; after privacy page)
+            putExtra("target_page", 6) // Environment Setup (after plan page insert)
             putExtra("auto_start_setup", true)
         }
         startActivity(intent)
@@ -9604,6 +10008,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun onChrootUninstalled(fromCallback: Boolean) {
+        AiCliProvisionState.clearAiCliProvisioned(this, "chroot")
         if (LinuxCommandBuilder.currentMethod == "chroot") {
             LinuxCommandBuilder.currentMethod = "proot"
             getSharedPreferences("nativecode_prefs", MODE_PRIVATE)
@@ -9611,6 +10016,8 @@ class MainActivity : AppCompatActivity() {
             if (::homeContainerLabel.isInitialized) {
                 homeContainerLabel.text = ProjectPathResolver.methodLabel()
             }
+            refreshToolCardsForMethod()
+        } else {
             refreshToolCardsForMethod()
         }
         clearChrootInfoCache()
@@ -9889,10 +10296,7 @@ class MainActivity : AppCompatActivity() {
             layoutParams = LinearLayout.LayoutParams(dp(36), dp(36)).apply { rightMargin = dp(8) }
             contentDescription = "Back"
             setOnClickListener {
-                if (pageStack.isNotEmpty() && pageStack.peek() == pageId) {
-                    pageStack.pop()
-                }
-                navigateToPage(ID_SETTINGS, false)
+                navigateBackFromSubpage(pageId)
             }
             background = GradientDrawable().apply {
                 shape = GradientDrawable.RECTANGLE
@@ -10266,8 +10670,54 @@ class MainActivity : AppCompatActivity() {
         )
     }
 
+    /**
+     * First-use gate: remote catalog + install scripts from GitHub.
+     * Home + Settings entries call this; already-accepted skips dialog.
+     */
+    private fun openMarketplace() {
+        if (MarketplaceConsent.isAccepted(this)) {
+            goToMarketplace()
+            return
+        }
+        showBrutalistConfirmDialog(
+            title = "Marketplace consent",
+            message = "Marketplace loads a catalog and optional install scripts from " +
+                "GitHub (${MarketplacePaths.OWNER}/${MarketplacePaths.REPO}).\n\n" +
+                "Installs run inside your Linux guest (proot/chroot), may use network, " +
+                "and can change packages there.\n\n" +
+                "Third-party scripts — review package details before install. " +
+                "Not required for core NativeCode or Debian shells.\n\n" +
+                "Accept once to open Marketplace.",
+            confirmLabel = "I UNDERSTAND",
+            cancelLabel = "NOT NOW",
+            onConfirm = {
+                MarketplaceConsent.setAccepted(this, true)
+                goToMarketplace()
+            }
+        )
+    }
+
+    private fun goToMarketplace() {
+        if (pageStack.isEmpty() || pageStack.peek() != ID_MARKETPLACE) {
+            pageStack.push(ID_MARKETPLACE)
+        }
+        navigateToPage(ID_MARKETPLACE)
+    }
+
     private fun refreshMarketplacePage(force: Boolean) {
         mpEnvBadge?.text = envBadgeLabel()
+        if (!MarketplaceConsent.isAccepted(this)) {
+            mpStatusTv?.text = "Consent required"
+            mpListContainer?.removeAllViews()
+            mpListContainer?.addView(TextView(this).apply {
+                text = "Accept Marketplace consent to load the remote catalog."
+                setTextColor(NC.ON_SURF_VAR)
+                typeface = Typeface.MONOSPACE
+                textSize = 12f
+                setPadding(0, dp(8), 0, 0)
+            })
+            return
+        }
         if (mpLoading) return
         mpLoading = true
         mpStatusTv?.text = "Loading catalog…"
@@ -10822,6 +11272,10 @@ class MainActivity : AppCompatActivity() {
      * Prepare stage + open repairs script-runner terminal for marketplace install.
      */
     private fun runMarketplaceInstall(id: String) {
+        if (!MarketplaceConsent.isAccepted(this)) {
+            openMarketplace()
+            return
+        }
         val cat = mpCatalog ?: return
         val env = currentLinuxEnv()
         if (!AptInventoryService.guestReady(this, env)) {
@@ -11367,6 +11821,56 @@ class MainActivity : AppCompatActivity() {
     }
     private fun spacer(dp_: Int) = View(this).apply { layoutParams = LinearLayout.LayoutParams(MATCH, dp(dp_)) }
     private fun dp(v: Int) = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v.toFloat(), resources.displayMetrics).toInt()
+
+    /**
+     * Obsidian Terminal scrollbar (ui_design.md): sharp 3dp thumb Terminal Green on dark track.
+     * API 29+ uses custom drawables; older APIs keep system bar but still force-visible.
+     */
+    private fun applyDesignScrollbar(view: View) {
+        view.isVerticalScrollBarEnabled = true
+        view.isHorizontalScrollBarEnabled = false
+        view.scrollBarStyle = View.SCROLLBARS_INSIDE_OVERLAY
+        view.isScrollbarFadingEnabled = false
+        view.overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            view.verticalScrollbarThumbDrawable =
+                resources.getDrawable(R.drawable.scrollbar_thumb_vertical, theme)
+            view.verticalScrollbarTrackDrawable =
+                resources.getDrawable(R.drawable.scrollbar_track_vertical, theme)
+        }
+    }
+
+    /**
+     * ScrollView that wins nested vertical drags against an outer page ScrollView.
+     * Must use dispatchTouchEvent (not OnTouchListener): touches land on child rows,
+     * so a listener on the ScrollView never sees MOVE and the outer page steals scroll.
+     */
+    private class NestedInnerScrollView(context: android.content.Context) : ScrollView(context) {
+        private var lastY = 0f
+
+        override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+            when (ev.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    lastY = ev.y
+                    // Claim before outer ScrollView intercepts MOVE
+                    parent?.requestDisallowInterceptTouchEvent(true)
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    val dy = ev.y - lastY
+                    lastY = ev.y
+                    if (dy != 0f) {
+                        val dir = if (dy < 0f) 1 else -1
+                        // At edge in drag direction → let outer page scroll
+                        parent?.requestDisallowInterceptTouchEvent(canScrollVertically(dir))
+                    }
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    parent?.requestDisallowInterceptTouchEvent(false)
+                }
+            }
+            return super.dispatchTouchEvent(ev)
+        }
+    }
     private fun roundedBg(fill: Int, stroke: Int, r: Int) = GradientDrawable().apply { shape = GradientDrawable.RECTANGLE; setColor(fill); setStroke(dp(1), stroke); cornerRadius = r.toFloat() }
     private fun circleDrawable(color: Int) = android.graphics.drawable.ShapeDrawable(android.graphics.drawable.shapes.OvalShape()).apply { paint.color = color }
     private val MATCH = ViewGroup.LayoutParams.MATCH_PARENT
@@ -12635,20 +13139,70 @@ class MainActivity : AppCompatActivity() {
         chip.paint.isFakeBoldText = true
     }
 
+    /**
+     * Create-project Chroot selectable only when **both**:
+     * 1) root (su) available — same gate as Settings → Chroot / method switch
+     * 2) chroot installed (`.flux_configured` via [ProjectPathResolver.isChrootInstalled])
+     */
+    private fun isCreateChrootSelectable(): Boolean {
+        val installed = ProjectPathResolver.isChrootInstalled()
+        val rootOk = createChrootRootOk
+            ?: getSharedPreferences("nativecode_prefs", MODE_PRIVATE)
+                .getBoolean(PREF_CHROOT_ROOT_OK, false)
+        return installed && rootOk
+    }
+
+    private fun createChrootDisabledReason(): String {
+        val installed = ProjectPathResolver.isChrootInstalled()
+        val rootOk = createChrootRootOk
+            ?: getSharedPreferences("nativecode_prefs", MODE_PRIVATE)
+                .getBoolean(PREF_CHROOT_ROOT_OK, false)
+        return when {
+            !rootOk && !installed ->
+                "Chroot needs root + install (Settings → Chroot)"
+            !rootOk ->
+                "Root access (su) not detected via KernelSU/Magisk"
+            !installed ->
+                "Chroot not installed. Install via Settings → Chroot."
+            else ->
+                "Chroot unavailable"
+        }
+    }
+
+    private fun probeCreateChrootRoot() {
+        RootShell.probeRootAvailable { ok ->
+            createChrootRootOk = ok
+            // Keep prefs in sync for other UI (settings cache)
+            getSharedPreferences("nativecode_prefs", MODE_PRIVATE).edit()
+                .putBoolean(PREF_CHROOT_ROOT_OK, ok)
+                .apply()
+            refreshProjectCreateMethodChips()
+        }
+    }
+
     private fun refreshProjectCreateMethodChips() {
-        projectCreateSelectedMethod = LinuxCommandBuilder.currentMethod
-        if (projectCreateSelectedMethod == "chroot" && !ProjectPathResolver.isChrootInstalled()) {
+        // Seed root from prefs until live probe returns
+        if (createChrootRootOk == null) {
+            createChrootRootOk = getSharedPreferences("nativecode_prefs", MODE_PRIVATE)
+                .getBoolean(PREF_CHROOT_ROOT_OK, false)
+        }
+        val chrootOk = isCreateChrootSelectable()
+        // Snap off chroot if gates fail (root + install)
+        if (projectCreateSelectedMethod == "chroot" && !chrootOk) {
             projectCreateSelectedMethod = "proot"
         }
-        val chrootOk = ProjectPathResolver.isChrootInstalled()
         projectCreateProotChip?.let {
             styleCreateMethodChip(it, projectCreateSelectedMethod == "proot")
             it.isEnabled = true
+            it.isClickable = true
             it.alpha = 1f
         }
         projectCreateChrootChip?.let {
-            styleCreateMethodChip(it, projectCreateSelectedMethod == "chroot")
-            it.isEnabled = chrootOk
+            // Never paint selected if not selectable
+            styleCreateMethodChip(it, projectCreateSelectedMethod == "chroot" && chrootOk)
+            // Keep clickable so disabled taps can Toast why
+            it.isEnabled = true
+            it.isClickable = true
             it.alpha = if (chrootOk) 1f else 0.4f
         }
     }
@@ -12854,22 +13408,31 @@ class MainActivity : AppCompatActivity() {
         searchRow.addView(searchEt)
         panel.addView(searchRow)
 
-        val listScroll = ScrollView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(MATCH, dp(220))
-            isVerticalScrollBarEnabled = true
+        // Fixed-height host so measure never expands list to full content height
+        // (outer ScrollView measures children with UNSPECIFIED height).
+        val listHost = FrameLayout(this).apply {
+            layoutParams = LinearLayout.LayoutParams(MATCH, dp(240))
             background = GradientDrawable().apply {
                 shape = GradientDrawable.RECTANGLE
                 setColor(Color.parseColor("#0A0A0A"))
                 setStroke(dp(1), NC.OUTLINE_VAR)
             }
         }
+        val listScroll = NestedInnerScrollView(this).apply {
+            layoutParams = FrameLayout.LayoutParams(MATCH, MATCH)
+            isFillViewport = false
+            clipToPadding = true
+            setPadding(0, 0, dp(2), 0)
+            applyDesignScrollbar(this)
+        }
         val listLayout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(0, 0, 0, 0)
+            setPadding(0, 0, dp(4), 0) // room for 3dp design scrollbar
         }
         ghRepoListLayout = listLayout
-        listScroll.addView(listLayout)
-        panel.addView(listScroll)
+        listScroll.addView(listLayout, ViewGroup.LayoutParams(MATCH, WRAP))
+        listHost.addView(listScroll)
+        panel.addView(listHost)
         card.addView(panel)
 
         ghRepoCard = card
@@ -13061,10 +13624,13 @@ class MainActivity : AppCompatActivity() {
         ghRepoCard?.visibility = View.GONE
         closeGithubRepoPanel()
         ghSelectedRepo = null
+        ghReposLoading = false
         ghReposForMethod = emptyList()
         ghRepoSearchInput?.setText("")
         ghRepoTriggerLabel?.text = "Select a repository…"
         ghRepoTriggerLabel?.setTextColor(NC.ON_SURFACE)
+        ghRepoCountTv?.text = "0"
+        renderGithubRepoList("")
         GitHubCliService.cachedStatus(method)?.let { paintCreateGithubStatus(it) }
         GitHubCliService.probeStatus(this, method) { status ->
             if (projectCreateSelectedMethod != method) return@probeStatus
@@ -13111,12 +13677,20 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun loadCreateGithubRepos(method: String) {
+        ghReposLoading = true
+        ghReposForMethod = emptyList()
         ghRepoTriggerLabel?.text = "Loading repositories…"
         ghRepoTriggerLabel?.setTextColor(NC.ON_SURF_VAR)
+        ghRepoCountTv?.text = "…"
+        // Immediate loading UI (panel open or closed — visible once expanded)
+        renderGithubRepoList(ghRepoSearchInput?.text?.toString().orEmpty())
         GitHubCliService.listRepos(this, method) { result ->
-            if (projectCreateSelectedMethod != method) return@listRepos
+            if (projectCreateSelectedMethod != method) {
+                ghReposLoading = false
+                return@listRepos
+            }
+            ghReposLoading = false
             result.onSuccess { repos ->
-                ghReposForMethod = repos
                 bindGithubRepoPicker(repos)
             }.onFailure {
                 Toast.makeText(this, "Repo list: ${it.message}", Toast.LENGTH_SHORT).show()
@@ -13126,6 +13700,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun bindGithubRepoPicker(repos: List<GhRepo>) {
+        ghReposLoading = false
         ghReposForMethod = repos
         ghRepoCountTv?.text = "${repos.size}"
         // Keep selection if still in list
@@ -13147,6 +13722,46 @@ class MainActivity : AppCompatActivity() {
     private fun renderGithubRepoList(query: String) {
         val list = ghRepoListLayout ?: return
         list.removeAllViews()
+
+        if (ghReposLoading) {
+            ghRepoCountTv?.text = "…"
+            val loadingRow = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER
+                setPadding(dp(12), dp(28), dp(12), dp(28))
+                layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
+            }
+            loadingRow.addView(ProgressBar(this).apply {
+                isIndeterminate = true
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                    indeterminateTintList =
+                        android.content.res.ColorStateList.valueOf(NC.PRIMARY)
+                }
+                layoutParams = LinearLayout.LayoutParams(dp(36), dp(36)).apply {
+                    gravity = Gravity.CENTER_HORIZONTAL
+                    bottomMargin = dp(12)
+                }
+            })
+            loadingRow.addView(TextView(this).apply {
+                text = "// LOADING REPOS…"
+                textSize = 12f
+                setTextColor(NC.PRIMARY)
+                typeface = Typeface.MONOSPACE
+                gravity = Gravity.CENTER
+                paint.isFakeBoldText = true
+            })
+            loadingRow.addView(TextView(this).apply {
+                text = "fetching from gh…"
+                textSize = 10f
+                setTextColor(NC.ON_SURF_VAR)
+                typeface = Typeface.MONOSPACE
+                gravity = Gravity.CENTER
+                setPadding(0, dp(4), 0, 0)
+            })
+            list.addView(loadingRow)
+            return
+        }
+
         val q = query.trim().lowercase()
         val filtered = if (q.isEmpty()) {
             ghReposForMethod
@@ -13544,10 +14159,7 @@ class MainActivity : AppCompatActivity() {
             contentDescription = "Back"
             setOnClickListener {
                 dismissCliAuthOverlay()
-                if (pageStack.isNotEmpty() && pageStack.peek() == ID_CLI_AUTH) {
-                    pageStack.pop()
-                }
-                navigateToPage(ID_SETTINGS, false)
+                navigateBackFromSubpage(ID_CLI_AUTH)
             }
             background = GradientDrawable().apply {
                 shape = GradientDrawable.RECTANGLE
@@ -13573,19 +14185,35 @@ class MainActivity : AppCompatActivity() {
         headerTitleRow.addView(methodBadge)
         pageLayout.addView(headerTitleRow)
         pageLayout.addView(TextView(this).apply {
-            text = "// BROWSER / DEVICE-CODE SIGN-IN · PER ISOLATION"
+            text = "// INSTALL · BROWSER / DEVICE-CODE SIGN-IN · PER ISOLATION"
             textSize = 11f
             setTextColor(NC.ON_SURF_VAR)
             typeface = Typeface.MONOSPACE
             setPadding(0, dp(4), 0, dp(8))
         })
         pageLayout.addView(TextView(this).apply {
-            text = "Auth is per isolation (proot ≠ chroot). Install tools via onboarding first."
+            text = "Auth is per isolation (proot ≠ chroot). Suite install is optional (guest-only remotes)."
             textSize = 12f
             setTextColor(NC.OUTLINE)
             typeface = Typeface.MONOSPACE
             setPadding(0, 0, 0, dp(12))
         })
+
+        val installHost = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(12) }
+        }
+        cliAuthInstallHost = installHost
+        pageLayout.addView(installHost)
+        rebuildCliAuthInstallCard()
+
+        val credHost = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(12) }
+        }
+        cliAuthCredentialsHost = credHost
+        pageLayout.addView(credHost)
+        rebuildCliAuthCredentialsCard()
 
         val refreshBtn = secondaryButton("REFRESH STATUS") {
             refreshCliAuthPage(force = true)
@@ -13602,6 +14230,680 @@ class MainActivity : AppCompatActivity() {
         pageLayout.addView(list)
     }
 
+    /** C10 — clear-all AI creds + suite flag + link to AI Safety. */
+    private fun rebuildCliAuthCredentialsCard() {
+        val host = cliAuthCredentialsHost ?: return
+        host.removeAllViews()
+        val method = LinuxCommandBuilder.currentMethod
+        val card = glassCard()
+        card.addView(TextView(this).apply {
+            text = "CREDENTIALS / SIGN-OUT"
+            textSize = 14f
+            setTextColor(NC.PRIMARY)
+            typeface = Typeface.DEFAULT_BOLD
+            setPadding(0, 0, 0, dp(6))
+        })
+        card.addView(TextView(this).apply {
+            text = "Sign-out removes local tokens/keys for $method. " +
+                "Does not delete Debian packages or projects. GitHub is separate."
+            textSize = 11f
+            setTextColor(NC.ON_SURF_VAR)
+            typeface = Typeface.MONOSPACE
+            setLineSpacing(dp(2).toFloat(), 1.2f)
+            setPadding(0, 0, 0, dp(10))
+        })
+        card.addView(
+            primaryButton("CLEAR ALL AI CREDENTIALS") {
+                confirmClearAllAiCredentials()
+            }.apply {
+                layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(8) }
+                textSize = 12f
+            }
+        )
+        card.addView(
+            secondaryButton("CLEAR SUITE FLAG") {
+                confirmClearAiSuiteFlag()
+            }.apply {
+                layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(8) }
+                textSize = 12f
+            }
+        )
+        card.addView(
+            secondaryButton("AI SAFETY & REPORT") {
+                if (pageStack.isEmpty() || pageStack.peek() != ID_AI_SAFETY) {
+                    pageStack.push(ID_AI_SAFETY)
+                }
+                navigateToPage(ID_AI_SAFETY)
+            }.apply {
+                layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
+                textSize = 12f
+            }
+        )
+        host.addView(card)
+    }
+
+    private fun confirmClearAllAiCredentials() {
+        val method = LinuxCommandBuilder.currentMethod
+        showBrutalistConfirmDialog(
+            title = "CLEAR ALL AI CREDENTIALS?",
+            message =
+                "Logs out every AI CLI for ${method.uppercase()} and deletes stored API keys " +
+                    "under guest cli-auth.env for those tools. GitHub login is separate. Continue?",
+            confirmLabel = "CLEAR ALL",
+            cancelLabel = "CANCEL",
+            destructive = true
+        ) {
+            Toast.makeText(this, "Clearing AI credentials…", Toast.LENGTH_SHORT).show()
+            CredentialClearService.clearAllAiCredentials(this, method) { _, msg ->
+                runOnUiThread {
+                    Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
+                    refreshCliAuthPage(force = true)
+                }
+            }
+        }
+    }
+
+    private fun confirmClearAiSuiteFlag() {
+        val method = LinuxCommandBuilder.currentMethod
+        showBrutalistConfirmDialog(
+            title = "CLEAR AI SUITE FLAG?",
+            message =
+                "Hides Free/Paid AI launchers until you Install AI CLI tools again. " +
+                    "Bins may still exist in the $method guest. Continue?",
+            confirmLabel = "CLEAR FLAG",
+            cancelLabel = "CANCEL",
+            destructive = true
+        ) {
+            CredentialClearService.clearAiSuiteProvisionFlag(this, method)
+            rebuildCliAuthInstallCard()
+            rebuildCliAuthCredentialsCard()
+            refreshToolCardsForMethod()
+            Toast.makeText(
+                this,
+                "AI suite flag cleared — reinstall to show launchers",
+                Toast.LENGTH_LONG
+            ).show()
+        }
+    }
+
+    /** Install / re-install AI CLI suite card (C6). */
+    private fun rebuildCliAuthInstallCard() {
+        val host = cliAuthInstallHost ?: return
+        host.removeAllViews()
+        val provisioned = AiCliProvisionState.shouldShowAiToolLaunchers(this)
+        val method = LinuxCommandBuilder.currentMethod
+
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = cyberBrutalistBg(
+                fillColor = NC.SURFACE_CONTAINER,
+                strokeColor = if (provisioned) NC.OUTLINE_VAR else NC.PRIMARY,
+                shadowColor = NC.SHADOW_DARK,
+                offsetDp = 6,
+                cornerRadiusDp = 0
+            )
+            setPadding(dp(16), dp(14), dp(16), dp(14))
+        }
+        card.addView(TextView(this).apply {
+            text = if (provisioned) "RE-INSTALL / REPAIR AI CLI TOOLS" else "INSTALL AI CLI TOOLS"
+            textSize = 14f
+            setTextColor(NC.PRIMARY)
+            typeface = Typeface.DEFAULT_BOLD
+            setPadding(0, 0, 0, dp(6))
+        })
+        card.addView(TextView(this).apply {
+            text = "Runs setup_cli_tools.sh in $method guest (network; third-party curl/npm). " +
+                "Guest-only. Not required for Debian shells."
+            textSize = 11f
+            setTextColor(NC.ON_SURF_VAR)
+            typeface = Typeface.MONOSPACE
+            setPadding(0, 0, 0, dp(8))
+            setLineSpacing(dp(2).toFloat(), 1.2f)
+        })
+        InstallPlanCatalog.aiCliInventory().take(6).forEach { line ->
+            card.addView(TextView(this).apply {
+                text = "· ${line.label}"
+                textSize = 10f
+                setTextColor(NC.OUTLINE)
+                typeface = Typeface.MONOSPACE
+            })
+        }
+        val btnLabel = if (provisioned) "RE-INSTALL AI TOOLS" else "INSTALL AI TOOLS"
+        card.addView(
+            primaryButton(btnLabel) {
+                confirmAndInstallAiCliTools()
+            }.apply {
+                layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(12) }
+                textSize = 12f
+            }
+        )
+        host.addView(card)
+    }
+
+    private fun confirmAndInstallAiCliTools() {
+        val method = LinuxCommandBuilder.currentMethod
+        showBrutalistConfirmDialog(
+            title = "INSTALL AI CLI TOOLS?",
+            message =
+                "Runs setup_cli_tools.sh inside the current $method guest.\n\n" +
+                    "Uses network and third-party installers (npm/curl). " +
+                    "Does not modify the host APK. Debian shells work without this.",
+            confirmLabel = "INSTALL",
+            cancelLabel = "CANCEL",
+            destructive = false
+        ) {
+            val runMode = if (method == "chroot") "chroot_guest" else "proot"
+            runScriptInTerminal("setup_cli_tools.sh", runMode)
+        }
+    }
+
+    // ── AI Safety & Report (C5 / B16 + C10 pointers) ─────────────────────────
+
+    private fun buildAiSafetyPage() {
+        aiSafetyScrollView = ScrollView(this).apply {
+            layoutParams = FrameLayout.LayoutParams(MATCH, MATCH)
+            visibility = View.GONE
+            clipToPadding = false
+            setPadding(0, 0, 0, dp(80))
+            setBackgroundColor(NC.BG)
+        }
+        val pageLayout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(16), dp(16), dp(16))
+        }
+        aiSafetyScrollView.addView(pageLayout)
+
+        val headerTitleRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val pageBackBtn = ImageView(this).apply {
+            setImageResource(R.drawable.ic_arrow_back)
+            setColorFilter(NC.PRIMARY)
+            setPadding(dp(4), dp(4), dp(4), dp(4))
+            layoutParams = LinearLayout.LayoutParams(dp(36), dp(36)).apply { rightMargin = dp(8) }
+            contentDescription = "Back"
+            setOnClickListener {
+                navigateBackFromSubpage(ID_AI_SAFETY)
+            }
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                setColor(NC.SURFACE_CONTAINER)
+                setStroke(dp(1), NC.OUTLINE_VAR)
+            }
+        }
+        val titleTv = TextView(this).apply {
+            text = "AI SAFETY & REPORT"
+            textSize = 20f
+            setTextColor(NC.PRIMARY)
+            typeface = Typeface.DEFAULT_BOLD
+            layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
+        }
+        val methodBadge = textBadge(
+            LinuxCommandBuilder.currentMethod.uppercase(),
+            NC.SURFACE_HIGHEST,
+            NC.PRIMARY
+        )
+        aiSafetyMethodBadge = methodBadge
+        headerTitleRow.addView(pageBackBtn)
+        headerTitleRow.addView(titleTv)
+        headerTitleRow.addView(methodBadge)
+        pageLayout.addView(headerTitleRow)
+        pageLayout.addView(TextView(this).apply {
+            text = "// DISCLAIMER · REPORT · VENDOR ToS · DATA"
+            textSize = 11f
+            setTextColor(NC.ON_SURF_VAR)
+            typeface = Typeface.MONOSPACE
+            setPadding(0, dp(4), 0, dp(12))
+        })
+
+        // Disclaimer
+        pageLayout.addView(glassCard().apply {
+            addView(TextView(this@MainActivity).apply {
+                text = "DISCLAIMER"
+                textSize = 14f
+                setTextColor(NC.PRIMARY)
+                typeface = Typeface.DEFAULT_BOLD
+                setPadding(0, 0, 0, dp(6))
+            })
+            addView(TextView(this@MainActivity).apply {
+                text =
+                    "Third-party AI CLIs generate outputs under their own terms. " +
+                        "NativeCode does not host the model. You are responsible for prompts " +
+                        "and use. Intended for adult / professional use."
+                textSize = 12f
+                setTextColor(NC.ON_SURF_VAR)
+                typeface = Typeface.MONOSPACE
+                setLineSpacing(dp(2).toFloat(), 1.2f)
+            })
+        })
+        pageLayout.addView(spacer(12))
+
+        // Report to NativeCode
+        pageLayout.addView(glassCard().apply {
+            addView(TextView(this@MainActivity).apply {
+                text = "REPORT TO NATIVECODE"
+                textSize = 14f
+                setTextColor(NC.PRIMARY)
+                typeface = Typeface.DEFAULT_BOLD
+                setPadding(0, 0, 0, dp(6))
+            })
+            addView(TextView(this@MainActivity).apply {
+                text = "Email: ${AiVendorSafetyCatalog.NATIVECODE_REPORT_EMAIL}\n" +
+                    "App bugs that surface AI tools, or safety concerns for developer awareness. " +
+                    "Prefer vendor form when the issue is model output itself."
+                textSize = 11f
+                setTextColor(NC.ON_SURF_VAR)
+                typeface = Typeface.MONOSPACE
+                setLineSpacing(dp(2).toFloat(), 1.2f)
+                setPadding(0, 0, 0, dp(10))
+            })
+            addView(
+                primaryButton("REPORT ISSUE") {
+                    showAiReportComposer(preselectedToolId = null)
+                }.apply {
+                    layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
+                    textSize = 12f
+                }
+            )
+        })
+        pageLayout.addView(spacer(12))
+
+        // Vendor list
+        pageLayout.addView(glassCard().apply {
+            addView(TextView(this@MainActivity).apply {
+                text = "REPORT / ToS BY VENDOR"
+                textSize = 14f
+                setTextColor(NC.PRIMARY)
+                typeface = Typeface.DEFAULT_BOLD
+                setPadding(0, 0, 0, dp(8))
+            })
+            val list = LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.VERTICAL
+            }
+            aiSafetyVendorList = list
+            addView(list)
+        })
+        pageLayout.addView(spacer(12))
+
+        // Data / sign-out (C10)
+        pageLayout.addView(glassCard().apply {
+            addView(TextView(this@MainActivity).apply {
+                text = "YOUR DATA / SIGN-OUT"
+                textSize = 14f
+                setTextColor(NC.PRIMARY)
+                typeface = Typeface.DEFAULT_BOLD
+                setPadding(0, 0, 0, dp(6))
+            })
+            addView(TextView(this@MainActivity).apply {
+                text =
+                    "· GitHub: Settings hub → LOGOUT\n" +
+                        "· AI keys/sessions: AI CLI tools → LOGOUT / CLEAR ALL\n" +
+                        "· Full wipe: Android App info → Clear storage\n" +
+                        "· Uninstall removes app private data\n" +
+                        "· Chroot on shared storage: Chroot Settings uninstall"
+                textSize = 11f
+                setTextColor(NC.ON_SURF_VAR)
+                typeface = Typeface.MONOSPACE
+                setLineSpacing(dp(2).toFloat(), 1.25f)
+                setPadding(0, 0, 0, dp(10))
+            })
+            addView(
+                primaryButton("OPEN AI CLI TOOLS") {
+                    if (pageStack.isEmpty() || pageStack.peek() != ID_CLI_AUTH) {
+                        pageStack.push(ID_CLI_AUTH)
+                    }
+                    navigateToPage(ID_CLI_AUTH)
+                }.apply {
+                    layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(8) }
+                    textSize = 12f
+                }
+            )
+            addView(
+                secondaryButton("PRIVACY POLICY") {
+                    openPrivacyPolicyUrl()
+                }.apply {
+                    layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
+                    textSize = 12f
+                }
+            )
+        })
+
+        paintAiSafetyVendorList()
+    }
+
+    private fun refreshAiSafetyPage() {
+        aiSafetyMethodBadge?.text = LinuxCommandBuilder.currentMethod.uppercase()
+        paintAiSafetyVendorList()
+    }
+
+    private fun paintAiSafetyVendorList() {
+        val list = aiSafetyVendorList ?: return
+        list.removeAllViews()
+        val method = LinuxCommandBuilder.currentMethod
+        val vendors = AiVendorSafetyCatalog.forMethod(method)
+        if (vendors.isEmpty()) {
+            list.addView(TextView(this).apply {
+                text = "No vendor rows for $method"
+                textSize = 11f
+                setTextColor(NC.OUTLINE)
+                typeface = Typeface.MONOSPACE
+            })
+            return
+        }
+        vendors.forEachIndexed { index, links ->
+            if (index > 0) {
+                list.addView(View(this).apply {
+                    layoutParams = LinearLayout.LayoutParams(MATCH, dp(1)).apply {
+                        topMargin = dp(10)
+                        bottomMargin = dp(10)
+                    }
+                    setBackgroundColor(NC.OUTLINE_VAR)
+                })
+            }
+            list.addView(buildVendorSafetyRow(links))
+        }
+    }
+
+    private fun buildVendorSafetyRow(links: VendorSafetyLinks): LinearLayout {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(TextView(this@MainActivity).apply {
+                text = links.displayName
+                textSize = 14f
+                setTextColor(Color.WHITE)
+                typeface = Typeface.DEFAULT_BOLD
+            })
+            if (links.notes.isNotBlank()) {
+                addView(TextView(this@MainActivity).apply {
+                    text = links.notes
+                    textSize = 10f
+                    setTextColor(NC.OUTLINE)
+                    typeface = Typeface.MONOSPACE
+                    setPadding(0, dp(2), 0, dp(6))
+                })
+            }
+            val btnRow = LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+            }
+            var buttons = 0
+            fun addAction(label: String, action: () -> Unit) {
+                if (buttons > 0) {
+                    btnRow.addView(View(this@MainActivity).apply {
+                        layoutParams = LinearLayout.LayoutParams(dp(6), 1)
+                    })
+                }
+                btnRow.addView(
+                    secondaryButton(label, action).apply {
+                        layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
+                        textSize = 10f
+                        setPadding(dp(6), dp(10), dp(6), dp(10))
+                    }
+                )
+                buttons++
+            }
+            when {
+                !links.reportUrl.isNullOrBlank() ->
+                    addAction("REPORT") {
+                        openExternalUrl(links.reportUrl!!, "No browser for report link")
+                    }
+                !links.reportMailto.isNullOrBlank() ->
+                    addAction("REPORT") {
+                        val ok = ReportMailHelper.openVendorMailto(
+                            this@MainActivity,
+                            links.reportMailto!!,
+                            links.displayName
+                        )
+                        if (!ok) {
+                            Toast.makeText(
+                                this@MainActivity,
+                                "No mail app available",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                    }
+                else ->
+                    addAction("REPORT APP") {
+                        showAiReportComposer(preselectedToolId = links.toolId)
+                    }
+            }
+            if (!links.tosUrl.isNullOrBlank()) {
+                addAction("ToS") {
+                    openExternalUrl(links.tosUrl!!, "No browser for ToS")
+                }
+            }
+            if (!links.aupUrl.isNullOrBlank()) {
+                addAction("AUP") {
+                    openExternalUrl(links.aupUrl!!, "No browser for AUP")
+                }
+            }
+            addView(btnRow)
+        }
+    }
+
+    private fun openExternalUrl(url: String, failToast: String) {
+        try {
+            startActivity(
+                Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+            )
+        } catch (_: Exception) {
+            Toast.makeText(this, failToast, Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun openPrivacyPolicyUrl() {
+        val url = "https://github.com/abhay-byte/nativecode-ai/blob/master/docs/privacy-policy.md"
+        try {
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+        } catch (_: Exception) {
+            Toast.makeText(this, "No browser available to open privacy policy", Toast.LENGTH_SHORT)
+                .show()
+        }
+    }
+
+    /**
+     * Brutalist composer: category chips + optional tool + description → mailto.
+     */
+    private fun showAiReportComposer(preselectedToolId: String?) {
+        val dialog = android.app.Dialog(this, android.R.style.Theme_Translucent_NoTitleBar)
+        dialog.setCancelable(true)
+
+        val method = LinuxCommandBuilder.currentMethod
+        val tools = CliToolCatalog.forMethod(method)
+        val categories = listOf(
+            "Harmful content",
+            "Illegal content",
+            "Privacy",
+            "Other"
+        )
+        var selectedCategory = categories[0]
+        var selectedToolId: String? = preselectedToolId
+
+        val scrim = FrameLayout(this).apply {
+            setBackgroundColor(Color.parseColor("#CC0A0A0A"))
+            layoutParams = ViewGroup.LayoutParams(MATCH, MATCH)
+            setOnClickListener { dialog.dismiss() }
+        }
+
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = cyberBrutalistBg(
+                fillColor = NC.SURFACE_LOW,
+                strokeColor = NC.OUTLINE_VAR,
+                shadowColor = NC.SHADOW_DARK,
+                offsetDp = 6,
+                cornerRadiusDp = 0,
+                rightFaceColor = Color.parseColor("#3C4A3F")
+            )
+            setPadding(dp(20), dp(20), dp(20), dp(20))
+            layoutParams = FrameLayout.LayoutParams(MATCH, WRAP).apply {
+                gravity = Gravity.CENTER
+                leftMargin = dp(20)
+                rightMargin = dp(20)
+            }
+            isClickable = true
+        }
+
+        card.addView(TextView(this).apply {
+            text = "REPORT ISSUE"
+            textSize = 16f
+            setTextColor(Color.WHITE)
+            typeface = Typeface.MONOSPACE
+            paint.isFakeBoldText = true
+            setPadding(0, 0, 0, dp(8))
+        })
+        card.addView(TextView(this).apply {
+            text = "→ ${AiVendorSafetyCatalog.NATIVECODE_REPORT_EMAIL}"
+            textSize = 11f
+            setTextColor(NC.PRIMARY)
+            typeface = Typeface.MONOSPACE
+            setPadding(0, 0, 0, dp(12))
+        })
+
+        card.addView(TextView(this).apply {
+            text = "CATEGORY"
+            textSize = 10f
+            setTextColor(NC.OUTLINE)
+            typeface = Typeface.MONOSPACE
+            setPadding(0, 0, 0, dp(6))
+        })
+        val catRow = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+        val catButtons = mutableListOf<TextView>()
+        fun paintCatSelection() {
+            catButtons.forEach { btn ->
+                val on = btn.tag == selectedCategory
+                btn.setTextColor(if (on) Color.parseColor("#0A0A0A") else NC.ON_SURF_VAR)
+                btn.background = GradientDrawable().apply {
+                    shape = GradientDrawable.RECTANGLE
+                    setColor(if (on) NC.PRIMARY else NC.SURFACE_CONTAINER)
+                    setStroke(dp(1), if (on) NC.PRIMARY else NC.OUTLINE_VAR)
+                }
+            }
+        }
+        // two columns of chips via horizontal rows of 2
+        var row: LinearLayout? = null
+        categories.forEachIndexed { i, cat ->
+            if (i % 2 == 0) {
+                row = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply {
+                        bottomMargin = dp(6)
+                    }
+                }
+                catRow.addView(row)
+            }
+            val chip = TextView(this).apply {
+                text = cat.uppercase()
+                tag = cat
+                textSize = 10f
+                typeface = Typeface.MONOSPACE
+                gravity = Gravity.CENTER
+                setPadding(dp(8), dp(10), dp(8), dp(10))
+                layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f).apply {
+                    if (i % 2 == 0) rightMargin = dp(6)
+                }
+                setOnClickListener {
+                    selectedCategory = cat
+                    paintCatSelection()
+                }
+            }
+            catButtons.add(chip)
+            row!!.addView(chip)
+        }
+        paintCatSelection()
+        card.addView(catRow)
+
+        card.addView(TextView(this).apply {
+            text = "TOOL (OPTIONAL)"
+            textSize = 10f
+            setTextColor(NC.OUTLINE)
+            typeface = Typeface.MONOSPACE
+            setPadding(0, dp(8), 0, dp(6))
+        })
+        val toolLabels = listOf("All / general") + tools.map { it.displayName }
+        val toolIds: List<String?> = listOf(null) + tools.map { it.id }
+        var toolIndex = toolIds.indexOf(preselectedToolId).let { if (it < 0) 0 else it }
+        selectedToolId = toolIds[toolIndex]
+        val toolBtn = secondaryButton(toolLabels[toolIndex]) {}.apply {
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(8) }
+            textSize = 11f
+        }
+        toolBtn.setOnClickListener {
+            toolIndex = (toolIndex + 1) % toolLabels.size
+            selectedToolId = toolIds[toolIndex]
+            toolBtn.text = toolLabels[toolIndex]
+        }
+        card.addView(toolBtn)
+
+        card.addView(TextView(this).apply {
+            text = "DESCRIPTION"
+            textSize = 10f
+            setTextColor(NC.OUTLINE)
+            typeface = Typeface.MONOSPACE
+            setPadding(0, 0, 0, dp(6))
+        })
+        val descInput = EditText(this).apply {
+            hint = "What happened? (optional but helpful)"
+            setHintTextColor(NC.OUTLINE)
+            setTextColor(Color.WHITE)
+            typeface = Typeface.MONOSPACE
+            textSize = 12f
+            minLines = 3
+            maxLines = 6
+            gravity = Gravity.TOP or Gravity.START
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                setColor(NC.SURFACE_CONTAINER)
+                setStroke(dp(1), NC.OUTLINE_VAR)
+            }
+            setPadding(dp(10), dp(10), dp(10), dp(10))
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(16) }
+        }
+        card.addView(descInput)
+
+        val btnRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+        }
+        btnRow.addView(
+            secondaryButton("CANCEL") { dialog.dismiss() }.apply {
+                layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f).apply { rightMargin = dp(8) }
+                textSize = 12f
+            }
+        )
+        btnRow.addView(
+            primaryButton("SEND EMAIL") {
+                val ok = ReportMailHelper.openNativeCodeReport(
+                    this@MainActivity,
+                    toolId = selectedToolId,
+                    category = selectedCategory,
+                    description = descInput.text?.toString().orEmpty()
+                )
+                if (!ok) {
+                    Toast.makeText(
+                        this@MainActivity,
+                        "No mail app available",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                } else {
+                    dialog.dismiss()
+                }
+            }.apply {
+                layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
+                textSize = 12f
+            }
+        )
+        card.addView(btnRow)
+
+        scrim.addView(card)
+        dialog.setContentView(scrim)
+        dialog.show()
+    }
+
     /**
      * Paint AI CLI cards. Cache-first: reopen page is instant; guest probe only
      * when cold / stale / [force] (REFRESH or post login-logout).
@@ -13609,6 +14911,8 @@ class MainActivity : AppCompatActivity() {
     private fun refreshCliAuthPage(force: Boolean = false) {
         val method = LinuxCommandBuilder.currentMethod
         cliAuthMethodBadge?.text = method.uppercase()
+        rebuildCliAuthInstallCard()
+        rebuildCliAuthCredentialsCard()
         val list = cliAuthListContainer ?: return
         val cached = CliAuthService.cachedAll(method)
 
@@ -13705,9 +15009,11 @@ class MainActivity : AppCompatActivity() {
             setPadding(0, 0, 0, dp(6))
         })
 
-        // Install is mandatory (setup_cli_tools); never block login on probe flake
+        // Never block login on probe flake; suite may be uninstalled (C6)
+        val suiteOk = AiCliProvisionState.shouldShowAiToolLaunchers(this)
         val stateLine = when {
             status.loggedIn -> "SIGNED IN" + (status.accountLabel?.let { " · $it" } ?: "")
+            !status.installed && !suiteOk -> "MISSING · install suite above"
             !status.installed -> "NOT LOGGED IN · bin probe weak"
             else -> "NOT LOGGED IN" + (status.detail?.let { " · $it" } ?: "")
         }
@@ -14045,6 +15351,7 @@ class MainActivity : AppCompatActivity() {
             layoutParams = LinearLayout.LayoutParams(MATCH, 0, 1f)
             clipToPadding = false
             setPadding(0, 0, 0, dp(24))
+            applyDesignScrollbar(this)
         }
         projectCreateLayout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -14296,9 +15603,10 @@ class MainActivity : AppCompatActivity() {
             setPadding(0, 0, 0, dp(12))
         })
 
-        projectCreateSelectedMethod = LinuxCommandBuilder.currentMethod
-        if (projectCreateSelectedMethod == "chroot" && !ProjectPathResolver.isChrootInstalled()) {
-            projectCreateSelectedMethod = "proot"
+        // Default proot; chroot only if root + install gates pass (refreshed below)
+        projectCreateSelectedMethod = "proot"
+        if (LinuxCommandBuilder.currentMethod == "chroot" && isCreateChrootSelectable()) {
+            projectCreateSelectedMethod = "chroot"
         }
 
         val prootChip = TextView(this).apply {
@@ -14323,24 +15631,33 @@ class MainActivity : AppCompatActivity() {
         }
         projectCreateProotChip = prootChip
         projectCreateChrootChip = chrootChip
+        probeCreateChrootRoot()
         refreshProjectCreateMethodChips()
 
         prootChip.setOnClickListener {
             projectCreateSelectedMethod = "proot"
             styleCreateMethodChip(prootChip, true)
             styleCreateMethodChip(chrootChip, false)
-            chrootChip.alpha = if (ProjectPathResolver.isChrootInstalled()) 1f else 0.4f
+            chrootChip.alpha = if (isCreateChrootSelectable()) 1f else 0.4f
             refreshCreateGithubUi()
         }
         chrootChip.setOnClickListener {
-            if (ProjectPathResolver.isChrootInstalled()) {
-                projectCreateSelectedMethod = "chroot"
-                styleCreateMethodChip(prootChip, false)
-                styleCreateMethodChip(chrootChip, true)
-                refreshCreateGithubUi()
-            } else {
-                Toast.makeText(this, "Chroot not installed. Install via Settings → Chroot.", Toast.LENGTH_SHORT).show()
+            if (!isCreateChrootSelectable()) {
+                Toast.makeText(this, createChrootDisabledReason(), Toast.LENGTH_SHORT).show()
+                // Force visual back to unselected disabled
+                styleCreateMethodChip(chrootChip, false)
+                chrootChip.alpha = 0.4f
+                if (projectCreateSelectedMethod == "chroot") {
+                    projectCreateSelectedMethod = "proot"
+                    styleCreateMethodChip(prootChip, true)
+                }
+                return@setOnClickListener
             }
+            projectCreateSelectedMethod = "chroot"
+            styleCreateMethodChip(prootChip, false)
+            styleCreateMethodChip(chrootChip, true)
+            chrootChip.alpha = 1f
+            refreshCreateGithubUi()
         }
         prootChip.setOnTouchListener { v, event ->
             when (event.action) {
@@ -14350,6 +15667,8 @@ class MainActivity : AppCompatActivity() {
             false
         }
         chrootChip.setOnTouchListener { v, event ->
+            // No press animation when disabled (root/install gate fail)
+            if (!isCreateChrootSelectable()) return@setOnTouchListener false
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> v.animate().translationX(dp(2).toFloat()).translationY(dp(2).toFloat()).setDuration(60).start()
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> v.animate().translationX(0f).translationY(0f).setDuration(60).start()
@@ -14372,7 +15691,15 @@ class MainActivity : AppCompatActivity() {
             val name = projectNameInput.text.toString().trim()
             val gitUrl = projectGithubInput.text.toString().trim()
             val icon = projectIconInput.text.toString().trim()
-            val method = projectCreateSelectedMethod
+            var method = projectCreateSelectedMethod
+            // Hard gate: never create with chroot unless root + install (same as chip)
+            if (method == "chroot" && !isCreateChrootSelectable()) {
+                Toast.makeText(this, createChrootDisabledReason(), Toast.LENGTH_SHORT).show()
+                method = "proot"
+                projectCreateSelectedMethod = "proot"
+                refreshProjectCreateMethodChips()
+                return@primaryButton
+            }
 
             if (name.isEmpty()) {
                 Toast.makeText(this, "Please enter a project name", Toast.LENGTH_SHORT).show()
@@ -15537,6 +16864,16 @@ class MainActivity : AppCompatActivity() {
             Toast.makeText(this, "Maximum 10 tabs allowed", Toast.LENGTH_SHORT).show()
             return
         }
+        if (ToolLauncherCatalog.isAiToolType(type) &&
+            !AiCliProvisionState.shouldShowAiToolLaunchers(this)
+        ) {
+            Toast.makeText(
+                this,
+                "Install AI CLI tools in Settings → AI CLI tools",
+                Toast.LENGTH_LONG
+            ).show()
+            return
+        }
         if (type == "codex" && LinuxCommandBuilder.currentMethod == "chroot") {
             Toast.makeText(this, "Codex unavailable in chroot", Toast.LENGTH_SHORT).show()
             return
@@ -15660,21 +16997,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showNewTerminalDropdown(anchorView: View, onSelect: ((String) -> Unit)? = null) {
-        val tools = listOf(
-            Pair("Debian Shell", "shell"),
-            Pair("Debian Shell Rooted", "shell-root"),
-            Pair("opencode", "opencode"),
-            Pair("codex", "codex"),
-            Pair("agy", "agy"),
-            Pair("claude-code", "claude-code"),
-            Pair("qwen-code", "qwen-code"),
-            Pair("grok", "grok"),
-            Pair("kiro", "kiro")
-        ).let { list ->
-            if (LinuxCommandBuilder.currentMethod == "chroot")
-                list.filter { it.second != "codex" }
-            else list
-        }
+        val tools = ToolLauncherCatalog.openWithPairs(
+            LinuxCommandBuilder.currentMethod,
+            AiCliProvisionState.shouldShowAiToolLaunchers(this)
+        )
 
         val popupView = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -16581,10 +17907,15 @@ class MainActivity : AppCompatActivity() {
         val searchCard = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            background = roundedBg(NC.SURFACE_LOW, NC.BORDER, dp(8))
-            setPadding(dp(12), dp(8), dp(12), dp(8))
+            // ui_design input: #0A0A0A fill, 2px surface border, sharp 0
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                setColor(Color.parseColor("#0A0A0A"))
+                setStroke(dp(2), NC.SURFACE_HIGH)
+            }
+            setPadding(dp(12), dp(10), dp(12), dp(10))
             layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply {
-                topMargin = dp(10)
+                topMargin = dp(12)
             }
         }
 

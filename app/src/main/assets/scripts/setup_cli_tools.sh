@@ -5,6 +5,12 @@
 
 set -euo pipefail
 
+# C6: allow host to skip AI suite without removing asset (optional)
+if [ "${NC_SKIP_AI_CLI:-0}" = "1" ]; then
+    echo ">>> NC_SKIP_AI_CLI=1 — skipping AI CLI tools install"
+    exit 0
+fi
+
 export DEBIAN_FRONTEND=noninteractive
 
 FLUX_USER="${FLUX_USER:-flux}"

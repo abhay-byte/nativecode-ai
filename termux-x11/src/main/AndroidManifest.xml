@@ -18,7 +18,8 @@
             android:configChanges="fontScale|orientation|screenSize|keyboard|keyboardHidden|layoutDirection|locale|mcc|mnc|navigation|screenLayout|touchscreen|uiMode|smallestScreenSize|density"
             android:resizeableActivity="true"
             android:windowSoftInputMode="stateHidden"
-            android:exported="true">
+            android:exported="false">
+            <!-- B14: NativeCode same-package explicit Intent only -->
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
             </intent-filter>
@@ -33,7 +34,8 @@
             android:name=".LoriePreferences"
             android:supportsPictureInPicture="false"
             android:resizeableActivity="true"
-            android:exported="true">
+            android:exported="false">
+            <!-- B14: NativeCode same-package explicit Intent only -->
             <intent-filter>
                 <action android:name="android.intent.action.APPLICATION_PREFERENCES" />
                 <action android:name="android.intent.action.MAIN" />
@@ -42,7 +44,8 @@
 	    <meta-data android:name="com.samsung.android.multidisplay.keep_process_alive" android:value="false"/>
 	    <meta-data android:name="android.allow_multiple_resumed_activities" android:value="true" />
 
-        <receiver android:name=".LoriePreferences$Receiver" android:exported="true" tools:ignore="ExportedReceiver" android:enabled="true">
+        <!-- B14: not exported — CHANGE_PREFERENCE only from same app -->
+        <receiver android:name=".LoriePreferences$Receiver" android:exported="false" android:enabled="true">
             <intent-filter>
                 <action android:name="com.termux.x11.CHANGE_PREFERENCE" />
             </intent-filter>

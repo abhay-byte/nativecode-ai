@@ -29,6 +29,9 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.setPadding
 import android.system.Os
+import com.ivarna.nativecode.cliauth.AiCliProvisionState
+import com.ivarna.nativecode.cliauth.CliToolsInstaller
+import com.ivarna.nativecode.cliauth.InstallPlanCatalog
 import com.ivarna.nativecode.terminal.GpuAccelDetector
 import com.ivarna.nativecode.terminal.HostCommandBuilder
 import com.ivarna.nativecode.terminal.ProjectPathResolver
@@ -44,7 +47,7 @@ class OnboardingActivity : AppCompatActivity() {
     private lateinit var rootLayout: FrameLayout
     private lateinit var pageContainer: FrameLayout
 
-    // Onboarding pages: 0 privacy → 1 intro → 2 slideshow → 3 requirements → 4 isolation → 5 setup → 6 complete
+    // 0 privacy → 1 intro → 2 slideshow → 3 requirements → 4 isolation → 5 plan → 6 setup → 7 complete
     private var currentPageIndex = 0
 
     private val executor = Executors.newCachedThreadPool()
@@ -53,8 +56,12 @@ class OnboardingActivity : AppCompatActivity() {
     // ── Shared setup status state ──────────────────────────────────────────────
     private var isDebianBaseSetupStarted = false
     private var enableDebianCustomization = true
+    /** C6: AI CLI suite opt-in (default OFF). Step H only when true. */
+    private var enableAiCliInstall = false
+    /** Complete-page truth: SKIPPED | READY | PARTIAL */
+    private var aiCliSetupOutcome = "SKIPPED"
 
-    // ── Linux isolation method selected on page 3 ─────────────────────────────
+    // ── Linux isolation method selected on page 4 ─────────────────────────────
     // "proot" (default, rootless) or "chroot" (requires KernelSU/Magisk root)
     private var selectedIsolationMethod = "proot"
 
@@ -164,9 +171,8 @@ class OnboardingActivity : AppCompatActivity() {
         else if (startPage == 0) startPage = 1
         showPage(startPage)
 
-        // Jump straight into Environment Setup and run full install chain
-        // Page index 5 = Debian base setup (after privacy page insert)
-        if (intent.getBooleanExtra("auto_start_setup", false) && startPage == 5 && privacyOk) {
+        // Jump straight into Environment Setup (page 6) and run full install chain
+        if (intent.getBooleanExtra("auto_start_setup", false) && startPage == 6 && privacyOk) {
             if (!isDebianBaseSetupStarted) {
                 isDebianBaseSetupStarted = true
                 runDebianBaseSetup()
@@ -184,8 +190,9 @@ class OnboardingActivity : AppCompatActivity() {
             2 -> buildSlideshowPage()
             3 -> buildRequirementsPage()
             4 -> buildIsolationPage()
-            5 -> buildDebianBasePage()
-            6, 7 -> buildCompletePage() // 7 = legacy target_page after privacy insert
+            5 -> buildInstallPlanPage()
+            6 -> buildDebianBasePage()
+            7, 8 -> buildCompletePage() // 8 = legacy deep-link after plan insert
             else -> buildIntroPage()
         }
 
@@ -1164,66 +1171,15 @@ class OnboardingActivity : AppCompatActivity() {
             applyChrootMethodGate(rootOk = ok, probing = false)
         }
 
-        // Customization Script Toggle Card (Cyber-Brutalist Design)
-        val customToggleCard = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            background = cyberBrutalistBg(
-                fillColor = NC.SURFACE_CONTAINER,
-                strokeColor = NC.BORDER,
-                shadowColor = NC.SURFACE_BRIGHT,
-                offsetDp = 6,
-                cornerRadiusDp = 0,
-                rightFaceColor = NC.OUTLINE_VAR
-            )
-            setPadding(dp(18), dp(16), dp(18), dp(16))
-            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply {
-                topMargin = dp(16)
-                bottomMargin = dp(16)
-            }
-        }
-        val customTextCol = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f).apply { rightMargin = dp(12) }
-        }
-        val customTitle = TextView(this).apply {
-            text = "Debian Customization Script"
-            textSize = 14f
-            setTextColor(NC.ON_SURFACE)
-            typeface = Typeface.DEFAULT_BOLD
-        }
-        val customSub = TextView(this).apply {
-            text = "Apply desktop themes & shell aliases (setup_customization_debian.sh)"
-            textSize = 11f
-            setTextColor(NC.ON_SURF_VAR)
-        }
-        customTextCol.addView(customTitle)
-        customTextCol.addView(customSub)
-
-        val customToggle = CustomBrutalistToggle(this, enableDebianCustomization) { isChecked ->
-            enableDebianCustomization = isChecked
-        }.apply {
-            isEnabled = false
-            isClickable = false
-            alpha = 0.75f
-        }
-        customToggleCard.addView(customTextCol)
-        customToggleCard.addView(customToggle)
-        root.addView(customToggleCard)
-
+        // Customization + AI opt-in live on Install Plan (page 5)
         val spacer2 = View(this).apply { layoutParams = LinearLayout.LayoutParams(MATCH, 0, 1f) }
         root.addView(spacer2)
 
-        // Buttons
         val btnRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         val prevBtn = secondaryButton("Back") { showPage(3) } // requirements
         prevBtn.layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f).apply { rightMargin = dp(8) }
-        val nextBtn = primaryButton("Configure & Install", R.drawable.ic_arrow_right) {
-            showPage(5) // debian base setup
-            if (!isDebianBaseSetupStarted) {
-                isDebianBaseSetupStarted = true
-                runDebianBaseSetup()
-            }
+        val nextBtn = primaryButton("Continue", R.drawable.ic_arrow_right) {
+            showPage(5) // install plan + consent
         }
         nextBtn.layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
         btnRow.addView(prevBtn); btnRow.addView(nextBtn)
@@ -1232,7 +1188,249 @@ class OnboardingActivity : AppCompatActivity() {
         return root
     }
 
-    // ── Page 4: Full Environment Setup (progress-first; logs on demand) ────────
+    // ── Page 5: Install plan + consent (C6) ────────────────────────────────────
+    private fun buildInstallPlanPage(): View {
+        val scroll = ScrollView(this).apply {
+            layoutParams = FrameLayout.LayoutParams(MATCH, MATCH)
+            isFillViewport = true
+            setBackgroundColor(NC.BG)
+        }
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(20), dp(16), dp(20))
+        }
+
+        root.addView(smallHeader("Install Plan", R.drawable.ic_storage))
+        root.addView(TextView(this).apply {
+            text = "// GUEST DEBIAN ONLY · NOT A HOST APK UPDATE · REVIEW BEFORE RUN"
+            textSize = 11f
+            setTextColor(NC.ON_SURF_VAR)
+            typeface = Typeface.MONOSPACE
+            setPadding(0, 0, 0, dp(12))
+        })
+        root.addView(TextView(this).apply {
+            text = "Method: ${selectedIsolationMethod.uppercase()}"
+            textSize = 13f
+            setTextColor(NC.PRIMARY)
+            typeface = Typeface.MONOSPACE
+            setPadding(0, 0, 0, dp(12))
+        })
+
+        fun sectionCard(
+            title: String,
+            badge: String,
+            lines: List<InstallPlanCatalog.InventoryLine>,
+            bodyExtra: View? = null
+        ): LinearLayout {
+            val card = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                background = cyberBrutalistBg(
+                    fillColor = NC.SURFACE_CONTAINER,
+                    strokeColor = NC.BORDER,
+                    shadowColor = NC.SURFACE_BRIGHT,
+                    offsetDp = 6,
+                    cornerRadiusDp = 0,
+                    rightFaceColor = NC.OUTLINE_VAR
+                )
+                setPadding(dp(16), dp(14), dp(16), dp(14))
+                layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(12) }
+            }
+            val head = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(0, 0, 0, dp(8))
+            }
+            head.addView(TextView(this).apply {
+                text = title
+                textSize = 14f
+                setTextColor(NC.ON_SURFACE)
+                typeface = Typeface.DEFAULT_BOLD
+                layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
+            })
+            head.addView(textBadge(badge, NC.PRIMARY_CON, NC.ON_PRIMARY_CON))
+            card.addView(head)
+            lines.forEach { line ->
+                card.addView(TextView(this).apply {
+                    text = "· ${line.label}  —  ${line.detail}"
+                    textSize = 11f
+                    setTextColor(NC.ON_SURF_VAR)
+                    typeface = Typeface.MONOSPACE
+                    setPadding(0, dp(2), 0, dp(2))
+                })
+            }
+            bodyExtra?.let { card.addView(it) }
+            return card
+        }
+
+        // A — Base (required)
+        root.addView(
+            sectionCard(
+                "A · BASE ENVIRONMENT",
+                "REQUIRED",
+                InstallPlanCatalog.baseInventory(selectedIsolationMethod)
+            )
+        )
+
+        // B — Customization toggle
+        val customExtra = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, dp(10), 0, 0)
+        }
+        customExtra.addView(TextView(this).apply {
+            text = "Include customization"
+            textSize = 12f
+            setTextColor(NC.ON_SURFACE)
+            typeface = Typeface.MONOSPACE
+            layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
+        })
+        customExtra.addView(
+            CustomBrutalistToggle(this, enableDebianCustomization) { checked ->
+                enableDebianCustomization = checked
+            }
+        )
+        root.addView(
+            sectionCard(
+                "B · CUSTOMIZATION",
+                "OPTIONAL",
+                InstallPlanCatalog.customizationInventory(),
+                customExtra
+            )
+        )
+
+        // C — AI CLI tools (default OFF)
+        val aiTableHost = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            visibility = if (enableAiCliInstall) View.VISIBLE else View.GONE
+            setPadding(0, dp(6), 0, 0)
+        }
+        InstallPlanCatalog.aiCliInventory().forEach { line ->
+            aiTableHost.addView(TextView(this).apply {
+                text = "· ${line.label}  —  ${line.detail}"
+                textSize = 11f
+                setTextColor(NC.ON_SURF_VAR)
+                typeface = Typeface.MONOSPACE
+                setPadding(0, dp(2), 0, dp(2))
+            })
+        }
+        val aiExtra = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, dp(8), 0, 0)
+        }
+        val aiToggleRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        aiToggleRow.addView(TextView(this).apply {
+            text = "Install AI CLI tools"
+            textSize = 12f
+            setTextColor(NC.ON_SURFACE)
+            typeface = Typeface.MONOSPACE
+            layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
+        })
+        aiToggleRow.addView(
+            CustomBrutalistToggle(this, enableAiCliInstall) { checked ->
+                enableAiCliInstall = checked
+                aiTableHost.visibility = if (checked) View.VISIBLE else View.GONE
+            }
+        )
+        aiExtra.addView(aiToggleRow)
+        aiExtra.addView(TextView(this).apply {
+            text = "Default OFF. Third-party curl/npm installers run inside guest only. Skip = Debian shells only; install later in Settings → AI CLI tools."
+            textSize = 11f
+            setTextColor(NC.OUTLINE)
+            typeface = Typeface.MONOSPACE
+            setPadding(0, dp(8), 0, 0)
+            setLineSpacing(dp(2).toFloat(), 1.2f)
+        })
+        aiExtra.addView(TextView(this).apply {
+            text = "AI outputs are from third-party vendors. Report: Settings → AI Safety after setup."
+            textSize = 11f
+            setTextColor(NC.OUTLINE)
+            typeface = Typeface.MONOSPACE
+            setPadding(0, dp(6), 0, 0)
+            setLineSpacing(dp(2).toFloat(), 1.2f)
+        })
+        aiExtra.addView(aiTableHost)
+        root.addView(
+            sectionCard(
+                "C · AI CLI TOOLS",
+                "DEFAULT OFF",
+                emptyList(),
+                aiExtra
+            )
+        )
+
+        // Consent checkbox
+        var planAccepted = false
+        val consentRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            background = cyberBrutalistBg(
+                fillColor = NC.SURFACE_LOW,
+                strokeColor = NC.OUTLINE_VAR,
+                shadowColor = NC.SURFACE_BRIGHT,
+                offsetDp = 4,
+                cornerRadiusDp = 0
+            )
+            setPadding(dp(12), dp(12), dp(12), dp(12))
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(12) }
+        }
+        val check = CheckBox(this).apply {
+            isChecked = false
+            buttonTintList = android.content.res.ColorStateList.valueOf(NC.PRIMARY)
+        }
+        val consentTv = TextView(this).apply {
+            text = "I reviewed this plan. Guest install may use network and third-party scripts when AI is enabled."
+            textSize = 12f
+            setTextColor(NC.ON_SURF_VAR)
+            typeface = Typeface.MONOSPACE
+            layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f).apply { leftMargin = dp(8) }
+        }
+        consentRow.addView(check)
+        consentRow.addView(consentTv)
+        root.addView(consentRow)
+
+        val btnRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        val prevBtn = secondaryButton("Back") { showPage(4) }
+        prevBtn.layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f).apply { rightMargin = dp(8) }
+        val startBtn = primaryButton("I understand — start install", R.drawable.ic_arrow_right) {
+            if (!planAccepted) {
+                Toast.makeText(this, "Check the consent box to continue", Toast.LENGTH_SHORT).show()
+                return@primaryButton
+            }
+            AiCliProvisionState.setPlanAccepted(this, true)
+            AiCliProvisionState.setEnableAiCliInstall(this, enableAiCliInstall)
+            AiCliProvisionState.setEnableCustomization(this, enableDebianCustomization)
+            if (!enableAiCliInstall) {
+                AiCliProvisionState.markAiCliProvisioned(this, selectedIsolationMethod, false)
+                aiCliSetupOutcome = "SKIPPED"
+            }
+            showPage(6)
+            if (!isDebianBaseSetupStarted) {
+                isDebianBaseSetupStarted = true
+                runDebianBaseSetup()
+            }
+        }.apply {
+            isEnabled = false
+            alpha = 0.45f
+        }
+        startBtn.layoutParams = LinearLayout.LayoutParams(0, WRAP, 1.4f)
+        check.setOnCheckedChangeListener { _, isChecked ->
+            planAccepted = isChecked
+            startBtn.isEnabled = isChecked
+            startBtn.alpha = if (isChecked) 1f else 0.45f
+        }
+        consentRow.setOnClickListener { check.isChecked = !check.isChecked }
+        btnRow.addView(prevBtn)
+        btnRow.addView(startBtn)
+        root.addView(btnRow)
+
+        scroll.addView(root)
+        return scroll
+    }
+
+    // ── Page 6: Full Environment Setup (progress-first; logs on demand) ────────
     private fun buildDebianBasePage(): View {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -1471,7 +1669,7 @@ class OnboardingActivity : AppCompatActivity() {
 
         // Next pinned to bottom
         baseNextBtn = primaryButton("Next: Complete Setup", R.drawable.ic_arrow_right) {
-            showPage(6) // complete
+            showPage(7) // complete
         }
         if (setupFinished) {
             baseNextBtn.isEnabled = true
@@ -1505,25 +1703,39 @@ class OnboardingActivity : AppCompatActivity() {
         }
     }
 
-    private fun prootSetupPhases(): List<SetupPhase> = listOf(
-        SetupPhase("A", "Preparing directories…", 3),
-        SetupPhase("B", "Extracting bootstrap assets…", 12),
-        SetupPhase("C", "Deploying host configs…", 5),
-        SetupPhase("D", "Initializing host environment…", 12),
-        SetupPhase("E", "Provisioning Debian guest…", 30),
-        SetupPhase("F", "Configuring hardware acceleration…", 10),
-        SetupPhase("G", "Customizing guest environment…", 10),
-        SetupPhase("H", "Installing AI CLI tools…", 18)
-    )
+    private fun prootSetupPhases(): List<SetupPhase> {
+        val phases = mutableListOf(
+            SetupPhase("A", "Preparing directories…", 3),
+            SetupPhase("B", "Extracting bootstrap assets…", 12),
+            SetupPhase("C", "Deploying host configs…", 5),
+            SetupPhase("D", "Initializing host environment…", 12),
+            SetupPhase("E", "Provisioning Debian guest…", 30),
+            SetupPhase("F", "Configuring hardware acceleration…", 10)
+        )
+        if (enableDebianCustomization) {
+            phases.add(SetupPhase("G", "Customizing guest environment…", 10))
+        }
+        if (enableAiCliInstall) {
+            phases.add(SetupPhase("H", "Installing AI CLI tools…", 18))
+        }
+        return phases
+    }
 
-    private fun chrootSetupPhases(): List<SetupPhase> = listOf(
-        SetupPhase("R0", "Checking root access…", 2),
-        SetupPhase("R1", "Installing Debian chroot base…", 35),
-        SetupPhase("E", "Provisioning Debian packages…", 20),
-        SetupPhase("F", "Configuring hardware acceleration…", 10),
-        SetupPhase("G", "Customizing guest environment…", 10),
-        SetupPhase("H", "Installing AI CLI tools…", 18)
-    )
+    private fun chrootSetupPhases(): List<SetupPhase> {
+        val phases = mutableListOf(
+            SetupPhase("R0", "Checking root access…", 2),
+            SetupPhase("R1", "Installing Debian chroot base…", 35),
+            SetupPhase("E", "Provisioning Debian packages…", 20),
+            SetupPhase("F", "Configuring hardware acceleration…", 10)
+        )
+        if (enableDebianCustomization) {
+            phases.add(SetupPhase("G", "Customizing guest environment…", 10))
+        }
+        if (enableAiCliInstall) {
+            phases.add(SetupPhase("H", "Installing AI CLI tools…", 18))
+        }
+        return phases
+    }
 
     private fun currentSetupPhase(): SetupPhase? =
         setupPhases.getOrNull(setupPhaseIndex)
@@ -1933,7 +2145,10 @@ class OnboardingActivity : AppCompatActivity() {
                                         updateBaseStatus("[CHROOT] HW accel setup failed (exit $codeF). Continuing...")
                                     }
                                     setSetupPhaseFraction(1f)
-                                    // Step G: Customization (optional) → Step H: AI CLIs → finish
+                                    // Step G (optional) → Step H (AI opt-in only) → finish
+                                    fun afterChrootCustom() {
+                                        maybeRunCliToolsSetupChroot { finishChrootBaseSetup() }
+                                    }
                                     if (enableDebianCustomization) {
                                         enterSetupPhase("G", "Applying desktop theme…")
                                         updateBaseStatus("[CHROOT] G. Customizing Guest Environment...")
@@ -1946,13 +2161,11 @@ class OnboardingActivity : AppCompatActivity() {
                                                 updateBaseStatus("[CHROOT] Customization failed (exit $codeG). Continuing...")
                                             }
                                             setSetupPhaseFraction(1f)
-                                            enterSetupPhase("H", "NVM, Node, opencode, codex…")
-                                            runCliToolsSetupChroot { finishChrootBaseSetup() }
+                                            afterChrootCustom()
                                         }
                                     } else {
                                         updateBaseStatus("[CHROOT] G. Skipping Guest Customization (Toggle Off)...")
-                                        enterSetupPhase("H", "NVM, Node, opencode, codex…")
-                                        runCliToolsSetupChroot { finishChrootBaseSetup() }
+                                        afterChrootCustom()
                                     }
                                 }
                             }
@@ -2090,15 +2303,8 @@ class OnboardingActivity : AppCompatActivity() {
                     updateBaseStatus("G. Skipping Guest Customization (Toggle Off)...")
                 }
 
-                // Step H: AI CLI tools (was separate onboarding page — now end of main setup)
-                enterSetupPhase("H", "NVM, Node, opencode, codex…")
-                updateBaseStatus("H. Installing AI CLI tools (NVM, Node, opencode, codex, claude, …)...")
-                val cliCode = runCliToolsSetupProot()
-                if (cliCode == 0) {
-                    updateBaseStatus("H. AI CLI tools provisioned successfully.")
-                } else {
-                    updateBaseStatus("H. AI CLI tools finished with exit $cliCode (continuing; re-run setup_cli_tools.sh later if needed).")
-                }
+                // Step H: AI CLI tools only if opted in on plan page (default OFF)
+                maybeRunCliToolsSetupProot()
 
                 // Persist linux_method = proot
                 getSharedPreferences("nativecode_prefs", MODE_PRIVATE)
@@ -2304,52 +2510,66 @@ class OnboardingActivity : AppCompatActivity() {
         }
     }
 
-    // ── AI CLI tools (end of main Environment Setup, proot + chroot) ───────────
+    // ── AI CLI tools (gated; shared CliToolsInstaller) ─────────────────────────
 
-    /** Deploy + run setup_cli_tools.sh inside proot debian. Logs to base console. */
-    private fun runCliToolsSetupProot(): Int {
-        val usrDir = File(filesDir, "usr")
-        val cliScript = File(File(usrDir, "tmp"), "setup_cli_tools.sh")
-        cliScript.parentFile?.mkdirs()
-        assets.open("scripts/setup_cli_tools.sh").use { input ->
-            FileOutputStream(cliScript).use { input.copyTo(it) }
+    private fun maybeRunCliToolsSetupProot() {
+        if (!enableAiCliInstall) {
+            updateBaseStatus("H. Skipping AI CLI tools (not selected on install plan).")
+            AiCliProvisionState.markAiCliProvisioned(this, "proot", false)
+            aiCliSetupOutcome = "SKIPPED"
+            return
         }
-        cliScript.setExecutable(true)
-        updateBaseStatus("Deployed setup_cli_tools.sh — running in debian guest...")
-        return runShellCommand(
-            arrayOf(
-                TermuxHostPaths.BIN + "/python",
-                TermuxHostPaths.PROOT_DISTRO,
-                "login", "debian", "--shared-tmp", "--",
-                "bash", "/tmp/setup_cli_tools.sh"
+        enterSetupPhase("H", "NVM, Node, opencode, codex…")
+        updateBaseStatus("H. Installing AI CLI tools (NVM, Node, opencode, codex, claude, …)...")
+        val cliCode = CliToolsInstaller.runProotSync(this) { chunk -> appendSetupLog(chunk) }
+        if (cliCode == 0) {
+            updateBaseStatus("H. AI CLI tools provisioned successfully.")
+            AiCliProvisionState.markAiCliProvisioned(this, "proot", true)
+            aiCliSetupOutcome = "READY"
+        } else {
+            updateBaseStatus(
+                "H. AI CLI tools finished with exit $cliCode " +
+                    "(continuing; install later via Settings → AI CLI tools)."
             )
+            AiCliProvisionState.markAiCliProvisioned(this, "proot", false)
+            aiCliSetupOutcome = "PARTIAL"
+        }
+        setSetupPhaseFraction(1f)
+    }
+
+    private fun maybeRunCliToolsSetupChroot(onDone: () -> Unit) {
+        if (!enableAiCliInstall) {
+            updateBaseStatus("[CHROOT] H. Skipping AI CLI tools (not selected on install plan).")
+            AiCliProvisionState.markAiCliProvisioned(this, "chroot", false)
+            aiCliSetupOutcome = "SKIPPED"
+            onDone()
+            return
+        }
+        enterSetupPhase("H", "NVM, Node, opencode, codex…")
+        updateBaseStatus("[CHROOT] H. Installing AI CLI tools (NVM, Node, opencode, codex, claude, …)...")
+        CliToolsInstaller.runChrootAsync(
+            ctx = this,
+            onLine = { chunk -> appendSetupLog(chunk) },
+            onDone = { code ->
+                if (code == 0) {
+                    updateBaseStatus("[CHROOT] H. AI CLI tools provisioned successfully.")
+                    AiCliProvisionState.markAiCliProvisioned(this, "chroot", true)
+                    aiCliSetupOutcome = "READY"
+                } else {
+                    updateBaseStatus(
+                        "[CHROOT] H. AI CLI tools finished with exit $code " +
+                            "(continuing; install later via Settings → AI CLI tools)."
+                    )
+                    AiCliProvisionState.markAiCliProvisioned(this, "chroot", false)
+                    aiCliSetupOutcome = "PARTIAL"
+                }
+                setSetupPhaseFraction(1f)
+                onDone()
+            }
         )
     }
 
-    /**
-     * Deploy + run setup_cli_tools.sh inside chroot as root.
-     * Always continues to [onDone] (soft-fail) so onboarding can complete.
-     */
-    private fun runCliToolsSetupChroot(onDone: () -> Unit) {
-        updateBaseStatus("[CHROOT] H. Installing AI CLI tools (NVM, Node, opencode, codex, claude, …)...")
-        copyAndRunInChroot(
-            assetName = "scripts/setup_cli_tools.sh",
-            scriptName = "setup_cli_tools.sh",
-            cmd = "bash /tmp/setup_cli_tools.sh"
-        ) { code ->
-            if (code == 0) {
-                updateBaseStatus("[CHROOT] H. AI CLI tools provisioned successfully.")
-            } else {
-                updateBaseStatus(
-                    "[CHROOT] H. AI CLI tools finished with exit $code " +
-                        "(continuing; re-run setup_cli_tools.sh later if needed)."
-                )
-            }
-            onDone()
-        }
-    }
-
-    // ── Page 6: Complete ──────────────────────────────────────────────────────
+    // ── Page 7: Complete ──────────────────────────────────────────────────────
     private fun buildCompletePage(): View {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -2361,7 +2581,6 @@ class OnboardingActivity : AppCompatActivity() {
         val spacer1 = View(this).apply { layoutParams = LinearLayout.LayoutParams(MATCH, 0, 1f) }
         root.addView(spacer1)
 
-        // Brand logo (high-res) — replaces check-circle hero
         val logoCard = LinearLayout(this).apply {
             gravity = Gravity.CENTER
             background = cyberBrutalistBg(
@@ -2397,8 +2616,13 @@ class OnboardingActivity : AppCompatActivity() {
         }
         root.addView(title)
 
+        val subtitleText = when (aiCliSetupOutcome) {
+            "READY" -> "Linux container & AI CLI tools provisioned"
+            "PARTIAL" -> "Linux container ready · AI tools incomplete"
+            else -> "Linux container ready · AI tools skipped"
+        }
         val subtitle = TextView(this).apply {
-            text = "Linux container & AI harness fully provisioned"
+            text = subtitleText
             textSize = 12f
             setTextColor(NC.ON_SURF_VAR)
             typeface = Typeface.MONOSPACE
@@ -2407,7 +2631,6 @@ class OnboardingActivity : AppCompatActivity() {
         }
         root.addView(subtitle)
 
-        // Detail Summary Card (Cyber-Brutalist sharp 0px card)
         val summaryCard = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             background = cyberBrutalistBg(
@@ -2434,15 +2657,31 @@ class OnboardingActivity : AppCompatActivity() {
 
         summaryCard.addView(summaryRow(R.drawable.ic_terminal, "Guest OS", "Debian 13 (Trixie)", "READY"))
         summaryCard.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(MATCH, dp(10)) })
-        summaryCard.addView(summaryRow(R.drawable.ic_laptop, "Dev Runtime", "Node.js v26 / NVM", "READY"))
+
+        val runtimeBadge = when (aiCliSetupOutcome) {
+            "READY" -> "READY"
+            "PARTIAL" -> "PARTIAL"
+            else -> "SKIPPED"
+        }
+        val runtimeDetail = when (aiCliSetupOutcome) {
+            "READY" -> "Node.js / NVM"
+            "PARTIAL" -> "Install incomplete"
+            else -> "Not installed (optional)"
+        }
+        summaryCard.addView(summaryRow(R.drawable.ic_laptop, "Dev Runtime", runtimeDetail, runtimeBadge))
         summaryCard.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(MATCH, dp(10)) })
-        summaryCard.addView(summaryRow(R.drawable.ic_smart_toy, "AI Tools", "opencode & codex", "READY"))
+
+        val aiDetail = when (aiCliSetupOutcome) {
+            "READY" -> "CLI suite installed"
+            "PARTIAL" -> "Retry in Settings → AI CLI tools"
+            else -> "Off — shells only"
+        }
+        summaryCard.addView(summaryRow(R.drawable.ic_smart_toy, "AI Tools", aiDetail, runtimeBadge))
         root.addView(summaryCard)
 
         val spacer2 = View(this).apply { layoutParams = LinearLayout.LayoutParams(MATCH, 0, 1f) }
         root.addView(spacer2)
 
-        // Write marker file to declare setup is completely done
         File(filesDir, "setup_complete").createNewFile()
         getSharedPreferences("nativecode_prefs", MODE_PRIVATE).edit().putBoolean("onboarding_completed", true).apply()
 
