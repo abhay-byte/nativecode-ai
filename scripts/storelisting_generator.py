@@ -352,7 +352,7 @@ def make_cta():
     mono_label(d, "// RUN GUI IDE · START CODING TODAY", 60)
     headline(d, "CODE ANYWHERE.", 112, size=62)
     headline(d, "SHIP EVERYTHING.", 186, size=62, fill=GREEN)
-    sub(d, "No PC · no root (PRoot) · 10 GB free storage", 292)
+    sub(d, "Full GUI IDE · on device and fully local", 292)
 
     cta = "DOWNLOAD NATIVECODE"
     cta_fnt = font_mono(32)
