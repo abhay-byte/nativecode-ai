@@ -2,7 +2,9 @@ Initial release of NativeCode!
 
 Highlights:
 - Automated Debian 13 (Trixie) Linux guest installation
+- PRoot (no root) and Chroot (rooted) isolation modes
 - GPU-accelerated XFCE4 desktop GUI via Termux-X11
 - Built-in AI CLI developer suite & credential harness
+- Software marketplace with curated install catalog
 - Multi-repo workspace tree with visual Git diff inspector
 - Node.js 26 LTS, Python 3.12, and build essential tools

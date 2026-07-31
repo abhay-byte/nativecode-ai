@@ -17,7 +17,7 @@ object ChrootCommandBuilder {
     const val CHROOT_HELPER = "/data/local/tmp/nativecode_chroot.sh"
     const val CHROOT_HELPER_ASSET = "scripts/chroot/nativecode_chroot.sh"
     /** Must match first `# nativecode-chroot vN` line in the asset. */
-    const val CHROOT_HELPER_VERSION = "nativecode-chroot v1"
+    const val CHROOT_HELPER_VERSION = "nativecode-chroot v2.1"
 
     /** Compat wrappers (thin → helper); setup still installs for ADB users. */
     const val RUNNER_ROOT = "/data/local/tmp/run_debian13_root.sh"

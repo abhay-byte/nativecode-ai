@@ -1,8 +1,10 @@
 # NativeCode Chroot SSOT component
 
-**Status:** Implemented + review blockers fixed (stage helper, `sh` helper, RootShell su, onboarding deploy); **device smoke pending**  
+**Status:** Implemented (v2.1); **ADB smoke PASS**; UI M1–M7 pending  
+ 
 **Date:** 2026-07-31  
 **Plan:** [`docs/plan/chroot-ssot-shell-runner.md`](../plan/chroot-ssot-shell-runner.md)  
+**Guest env fix:** [`docs/plan/chroot-ssot-guest-env-fix.md`](../plan/chroot-ssot-guest-env-fix.md)  
 **Crash rules:** [`chroot-adb-device-crash-postmortem.md`](./chroot-adb-device-crash-postmortem.md)  
 **ADB guide:** [`adb-shell-access.md`](./adb-shell-access.md)  
 
@@ -26,7 +28,8 @@ Kotlin and other scripts **must not** re-implement mounts or raw `busybox chroot
 
 | Item | Value |
 |------|--------|
-| Asset (source) | `app/src/main/assets/scripts/chroot/nativecode_chroot.sh` **(to create)** |
+| Asset (source) | `app/src/main/assets/scripts/chroot/nativecode_chroot.sh` |
+| Version stamp | `nativecode-chroot v2.1` (must match `ChrootCommandBuilder.CHROOT_HELPER_VERSION`) |
 | On-device path | `/data/local/tmp/nativecode_chroot.sh` |
 | Rootfs | `/data/local/tmp/chrootDebian13` |
 | Host tmp bridge | `/data/data/com.ivarna.nativecode/files/usr/tmp` → guest `/mnt/host-tmp` |
@@ -65,6 +68,26 @@ nativecode_chroot.sh b64   [--user flux|root] -- BASE64_PAYLOAD
 | `sh` | One shell string as user (repairs, simple tools) |
 | `exec` | Argv-preserving command (future) |
 | `b64` | Kotlin complex cmds / `RootShell` — no quote hell |
+
+### Guest env contract (v2.1)
+
+All guest entry modes (`login` / `sh` / `exec` / `b64`) go through `guest_chroot_env`:
+
+```text
+busybox chroot $NC_CHROOT /usr/bin/env -i PATH=… HOME=… USER=… … <guest binary>
+```
+
+| Rule | Detail |
+|------|--------|
+| Clean env | `env -i` — **never** inherit Android `PATH` (`/system/bin:…`) or `LD_*` |
+| Debian PATH (root) | `/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin` |
+| Debian PATH (flux) | `/home/flux/.local/bin:/home/flux/bin:/home/flux/.cargo/bin:/opt/nodejs/bin:` + root PATH |
+| `guest_b64` decode | absolute `/usr/bin/base64` (fallback `/bin/base64`) — not bare `base64` |
+| `guest_b64` exec | `{ echo P \| /usr/bin/base64 -d \|\| …; } \| /bin/bash` — brace group so success path still runs script |
+| Outer ProcessBuilder | keeps Android PATH for host `su` / `sh` only — **not** applied inside chroot |
+| Proot | **unchanged** — already uses `env -i` + Debian PATH |
+
+Without this contract: root `b64` dies (`base64: command not found`), SoftMgr scan empty, rooted login profile `id` fails, guest git probes fail.
 
 ### Compat wrappers (optional one release)
 
@@ -218,7 +241,8 @@ App / services
 
 nativecode_chroot.sh
   ensure_mounts (idempotent)
-  chroot + su - $user  (single layer)
+  guest_chroot_env → env -i + Debian PATH + chroot
+  root: bash/zsh; flux: su - $user  (single layer)
 ```
 
 ---
@@ -322,11 +346,13 @@ timeout 12 adb shell '/data/local/tmp/nativecode_chroot.sh sh --user flux -- "wh
 - [x] `MainActivity` chroot_guest → helper  
 - [x] setup install helper + uninstall list  
 - [x] GUI optional `mount --x11`  
+- [x] **v2.1:** guest `env -i` + Debian PATH + absolute base64 + R-B1 brace pipe; version stamp  
 - [x] compileDebugKotlin  
-- [ ] Manual app: shell flux, shell-root, tool, repairs  
-- [ ] **One** adb flux + **one** adb root via helper  
+- [ ] Manual app: shell flux, shell-root, SoftMgr, marketplace, git, tools  
+- [x] **One** light adb probe via helper (v2.1: version, root PATH/b64, flux whoami/git)  
 - [x] Confirm **zero** proot diffs (proot assets/jni untouched)  
-- [ ] Update this doc status → **shipped** + version stamp after smoke  
+- [ ] Update this doc status → **shipped** after UI M1–M7  
+
 
 ---
 
@@ -337,8 +363,8 @@ timeout 12 adb shell '/data/local/tmp/nativecode_chroot.sh sh --user flux -- "wh
 | Enough info to build component? | **Yes** |
 | All wire points mapped? | **Yes** (§5) |
 | Safe patterns proven on device? | **Yes** (root + flux) |
-| Code in tree? | **Yes** (v1 helper + hub) |
-| Device smoke done? | **Pending** |
+| Code in tree? | **Yes** (v2.1 helper + hub + guest env) |
+| Device smoke done? | **ADB PASS** (UI pending) |
 
 ---
 

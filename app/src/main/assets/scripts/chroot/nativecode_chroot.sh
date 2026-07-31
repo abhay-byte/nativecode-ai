@@ -1,7 +1,8 @@
 #!/system/bin/sh
-# nativecode-chroot v1
+# nativecode-chroot v2.1
 # SSOT chroot runner for NativeCode Debian 13 (requires root).
 # Do not nest this under run_debian13_root.sh — it already owns mounts + one chroot.
+# Guest entry always uses env -i + Debian PATH (never Android /system PATH).
 #
 # Usage:
 #   nativecode_chroot.sh version
@@ -15,7 +16,7 @@
 #   NC_CHROOT  NC_PACKAGE  NC_HOST_TMP  NC_PREFIX  NC_BB  NC_SHELL
 set -u
 
-VERSION_STR="nativecode-chroot v1"
+VERSION_STR="nativecode-chroot v2.1"
 NC_PACKAGE="${NC_PACKAGE:-com.ivarna.nativecode}"
 NC_CHROOT="${NC_CHROOT:-/data/local/tmp/chrootDebian13}"
 NC_HOST_TMP="${NC_HOST_TMP:-/data/data/${NC_PACKAGE}/files/usr/tmp}"
@@ -185,18 +186,49 @@ quote_argv() {
   printf "%s" "$_out"
 }
 
+# Canonical Debian PATH inside rootfs (no Android /system).
+GUEST_PATH_ROOT="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+guest_path_for_user() {
+  if [ "$USER_NAME" = "root" ]; then
+    printf '%s' "$GUEST_PATH_ROOT"
+  else
+    printf '%s' "/home/flux/.local/bin:/home/flux/bin:/home/flux/.cargo/bin:/opt/nodejs/bin:$GUEST_PATH_ROOT"
+  fi
+}
+
+# KEY=VAL list for guest /usr/bin/env -i (space-separated; values have no spaces).
+build_guest_env_args() {
+  _gp=$(guest_path_for_user)
+  _term="${TERM:-xterm-256color}"
+  _lang="${LANG:-en_US.UTF-8}"
+  _lc="${LC_ALL:-en_US.UTF-8}"
+  if [ "$USER_NAME" = "root" ]; then
+    GUEST_ENV_ARGS="PATH=$_gp HOME=/root USER=root LOGNAME=root TERM=$_term LANG=$_lang LC_ALL=$_lc TMPDIR=/tmp XDG_RUNTIME_DIR=/tmp DEBIAN_FRONTEND=noninteractive"
+  else
+    GUEST_ENV_ARGS="PATH=$_gp HOME=/home/flux USER=flux LOGNAME=flux NVM_DIR=/home/flux/.nvm TERM=$_term LANG=$_lang LC_ALL=$_lc TMPDIR=/tmp XDG_RUNTIME_DIR=/tmp DEBIAN_FRONTEND=noninteractive"
+  fi
+}
+
+# chroot + clean env -i + remaining guest argv (drops Android PATH/LD_*).
+guest_chroot_env() {
+  build_guest_env_args
+  # shellcheck disable=SC2086
+  exec $BB chroot "$NC_CHROOT" /usr/bin/env -i $GUEST_ENV_ARGS "$@"
+}
+
 guest_login() {
   case "$USER_NAME" in
     root)
       case "$LOGIN_SHELL" in
-        zsh) exec $BB chroot "$NC_CHROOT" /bin/zsh -l ;;
-        bash|*) exec $BB chroot "$NC_CHROOT" /bin/bash --login ;;
+        zsh) guest_chroot_env /bin/zsh -l ;;
+        bash|*) guest_chroot_env /bin/bash --login ;;
       esac
       ;;
     flux|*)
       case "$LOGIN_SHELL" in
-        bash) exec $BB chroot "$NC_CHROOT" /bin/su - "$USER_NAME" -s /bin/bash ;;
-        zsh|*) exec $BB chroot "$NC_CHROOT" /bin/su - "$USER_NAME" -s /bin/zsh ;;
+        bash) guest_chroot_env /bin/su - "$USER_NAME" -s /bin/bash ;;
+        zsh|*) guest_chroot_env /bin/su - "$USER_NAME" -s /bin/zsh ;;
       esac
       ;;
   esac
@@ -218,9 +250,9 @@ guest_sh() {
   fi
   # Fallback only if host has no base64 (should not happen on Android root)
   if [ "$USER_NAME" = "root" ]; then
-    exec $BB chroot "$NC_CHROOT" /bin/bash --noprofile --norc -c "$_cmd"
+    guest_chroot_env /bin/bash --noprofile --norc -c "$_cmd"
   else
-    exec $BB chroot "$NC_CHROOT" /bin/su - "$USER_NAME" -s /bin/bash -c "$_cmd"
+    guest_chroot_env /bin/su - "$USER_NAME" -s /bin/bash -c "$_cmd"
   fi
 }
 
@@ -230,21 +262,25 @@ guest_exec() {
     die "exec requires CMD"
   fi
   if [ "$USER_NAME" = "root" ]; then
-    exec $BB chroot "$NC_CHROOT" "$@"
+    guest_chroot_env "$@"
   else
     _joined=$(quote_argv "$@")
-    exec $BB chroot "$NC_CHROOT" /bin/su - "$USER_NAME" -s /bin/bash -c "exec $_joined"
+    guest_chroot_env /bin/su - "$USER_NAME" -s /bin/bash -c "exec $_joined"
   fi
 }
 
 # Base64 payload → bash as USER_NAME (Kotlin / RootShell path).
+# Absolute /usr/bin/base64 — never depend on guest PATH for decode bootstrap.
+# Brace group required: A || B | bash binds as A || (B|bash) and skips bash when A succeeds.
 guest_b64() {
   _b64="$1"
   [ -n "$_b64" ] || die "b64 requires payload"
+  # payload is base64 alphabet only — safe to embed unquoted
+  _run="{ echo $_b64 | /usr/bin/base64 -d 2>/dev/null || echo $_b64 | /bin/base64 -d; } | /bin/bash"
   if [ "$USER_NAME" = "root" ]; then
-    exec $BB chroot "$NC_CHROOT" /bin/bash --noprofile --norc -c "echo $_b64 | base64 -d | /bin/bash"
+    guest_chroot_env /bin/bash --noprofile --norc -c "$_run"
   else
-    exec $BB chroot "$NC_CHROOT" /bin/su - "$USER_NAME" -s /bin/bash -c "echo $_b64 | base64 -d | /bin/bash"
+    guest_chroot_env /bin/su - "$USER_NAME" -s /bin/bash -c "$_run"
   fi
 }
 
