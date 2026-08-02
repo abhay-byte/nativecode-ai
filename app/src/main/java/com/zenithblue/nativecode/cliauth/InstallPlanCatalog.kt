@@ -1,4 +1,4 @@
-package com.ivarna.nativecode.cliauth
+package com.zenithblue.nativecode.cliauth
 
 /**
  * Inventory lines for onboarding install-plan page (C6).

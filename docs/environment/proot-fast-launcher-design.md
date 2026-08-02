@@ -225,7 +225,7 @@ MESA_SHADER_CACHE_DIR=/tmp/mesa_shader_cache
 case "$PREFIX" in
   *com.termux*) echo "refusing com.termux prefix"; exit 2 ;;
 esac
-[ "$TERMUX_APP__PACKAGE_NAME" = "com.ivarna.nativecode" ] || exit 2
+[ "$TERMUX_APP__PACKAGE_NAME" = "com.zenithblue.nativecode" ] || exit 2
 [ -d "$ROOTFS" ] || exit 2
 # only run as app UID for rootless (warn if root)
 ```

@@ -1,8 +1,8 @@
-package com.ivarna.nativecode.terminal
+package com.zenithblue.nativecode.terminal
 
 import android.content.Context
 import android.util.Log
-import com.ivarna.nativecode.RootShell
+import com.zenithblue.nativecode.RootShell
 
 /**
  * Measure Debian chroot rootfs size via staged [chroot_size.sh].

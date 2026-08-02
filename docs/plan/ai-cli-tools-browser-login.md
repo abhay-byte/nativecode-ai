@@ -8,7 +8,7 @@
 **Design SSOT:** `docs/project/ui_design.md` (cyber-brutalist)  
 **Token SSOT:** `app/.../DesignTokens.kt` (`NC.*`)  
 **Compile:** `:app:compileDebugKotlin`  
-**Prior art:** `docs/plan/github-connect-gh-cli-proot-chroot.md` + `com.ivarna.nativecode.github.*`
+**Prior art:** `docs/plan/github-connect-gh-cli-proot-chroot.md` + `com.zenithblue.nativecode.github.*`
 
 **Source tools** (`app/src/main/assets/scripts/setup_cli_tools.sh`):
 
@@ -33,7 +33,7 @@
 | **Browser login** | Prefer non-TUI flows: stream guest login cmd → parse URL + OTP → open Android browser → clipboard → poll until credentials land in guest home |
 | **Per isolation** | proot ≠ chroot rootfs; auth files under flux home per method |
 | **Cancelable** | Reuse `ShellJob` / session cancel like GH |
-| **Decoupled** | Package `com.ivarna.nativecode.cliauth` — thin UI in `MainActivity` |
+| **Decoupled** | Package `com.zenithblue.nativecode.cliauth` — thin UI in `MainActivity` |
 
 ---
 
@@ -127,7 +127,7 @@
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────┐
-│ com.ivarna.nativecode.cliauth                                │
+│ com.zenithblue.nativecode.cliauth                                │
 │  CliToolCatalog     — tool defs + strategies                 │
 │  CliAuthModels      — status, phase, session listener        │
 │  CliGuestCommands   — pure guest shell strings               │

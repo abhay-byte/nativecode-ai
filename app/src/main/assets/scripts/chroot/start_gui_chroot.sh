@@ -1,9 +1,9 @@
-#!/data/data/com.ivarna.nativecode/files/usr/bin/bash
+#!/data/data/com.zenithblue.nativecode/files/usr/bin/bash
 # start_gui_chroot.sh — Launch XFCE4 in Debian chroot (app-uid host + root guest)
 # Host stack mirrors start_gui.sh (Pulse/VirGL/embedded X11). Guest via start_debian13_gui.sh.
 # NEVER am force-stop own package.
 
-PKG="${TERMUX_APP__PACKAGE_NAME:-com.ivarna.nativecode}"
+PKG="${TERMUX_APP__PACKAGE_NAME:-com.zenithblue.nativecode}"
 _HOST_ENV="${TERMUX__PREFIX:-/data/data/${PKG}/files/usr}/etc/fluxlinux-host.env"
 [ -r "$_HOST_ENV" ] && . "$_HOST_ENV"
 

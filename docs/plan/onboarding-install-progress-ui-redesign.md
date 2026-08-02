@@ -4,7 +4,7 @@
 **Status:** implemented  
 **Scope:** Environment Setup page (page 4, proot + chroot) + Setup Successful page (page 5)  
 **Design system:** `docs/project/ui_design.md` (Obsidian Terminal / Cyber-Brutalist)  
-**Primary file:** `app/src/main/java/com/ivarna/nativecode/OnboardingActivity.kt`  
+**Primary file:** `app/src/main/java/com/zenithblue/nativecode/OnboardingActivity.kt`  
 **Related:**  
 - `DesignTokens.kt` (`NC` palette already mirrors design tokens)  
 - `R.drawable.logo_highres` (1024×1024 WebP — already used on intro page)  

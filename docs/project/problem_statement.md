@@ -19,5 +19,5 @@ The proposed application is a Debian Linux installer on Android containing:
 
 ## 4. Architecture & System Constraints
 * **Platform Security**: Target SDK 36 compatibility. Bypasses Android 10+ W^X (Write XOR Execute) platform restrictions by packaging critical execution binaries (`proot`, `bash`, `loader`) as `.so` libraries (e.g., `libproot.so`) inside the `jniLibs` package directory. Uses `useLegacyPackaging = true` to force extraction into the read-only, executable `nativeLibraryDir` path.
-* **Path Interception**: Utilizing `proot` to map application paths (`/data/data/com.ivarna.nativecode`) to default terminal schemas.
+* **Path Interception**: Utilizing `proot` to map application paths (`/data/data/com.zenithblue.nativecode`) to default terminal schemas.
 * **Authentication**: Token and SSH-based GitHub-only authentication for repository management.

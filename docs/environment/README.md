@@ -9,4 +9,4 @@
 | [adb-shell-access.md](./adb-shell-access.md) | How to enter proot/chroot over ADB (NativeCode paths, Turnip env) |
 | [**plans/**](./plans/) | Task plans (1–6), [3 deliverables commitment](./plans/commitment-three-deliverables.md), regression suite + scripts (`plans/suite/`) |
 
-Package: **`com.ivarna.nativecode`** only (never stock `com.termux` for host prefix).
+Package: **`com.zenithblue.nativecode`** only (never stock `com.termux` for host prefix).

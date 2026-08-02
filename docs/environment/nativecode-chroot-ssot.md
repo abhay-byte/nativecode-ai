@@ -33,7 +33,7 @@ Kotlin and other scripts **must not** re-implement mounts or raw `busybox chroot
 | Version stamp | `nativecode-chroot v2.2` (must match `ChrootCommandBuilder.CHROOT_HELPER_VERSION`) |
 | On-device path | `/data/local/tmp/nativecode_chroot.sh` |
 | Rootfs | `/data/local/tmp/chrootDebian13` |
-| Host tmp bridge | `/data/data/com.ivarna.nativecode/files/usr/tmp` → guest `/mnt/host-tmp` |
+| Host tmp bridge | `/data/data/com.zenithblue.nativecode/files/usr/tmp` → guest `/mnt/host-tmp` |
 | Guest sticky tmp | `$CHROOT/tmp` disk-backed `1777` — **never** full-bind host over `/tmp` |
 | Default user | `flux` (uid 1000, shell zsh) |
 | Session host exec | `/system/bin/sh` + WINCH trap (SELinux) |
@@ -64,7 +64,7 @@ nativecode_chroot.sh b64   [--user flux|root] -- BASE64_PAYLOAD
 | Var | Default |
 |-----|---------|
 | `NC_CHROOT` | `/data/local/tmp/chrootDebian13` |
-| `NC_PACKAGE` | `com.ivarna.nativecode` |
+| `NC_PACKAGE` | `com.zenithblue.nativecode` |
 | `NC_HOST_TMP` | `/data/data/$NC_PACKAGE/files/usr/tmp` |
 | `NC_PREFIX` | `/data/data/$NC_PACKAGE/files/usr` |
 | `NC_BB` | auto-detect |

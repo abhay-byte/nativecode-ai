@@ -1,6 +1,6 @@
 # Foreground Service `specialUse` — Play Console declaration
 
-**App:** NativeCode (`com.ivarna.nativecode`)  
+**App:** NativeCode (`com.zenithblue.nativecode`)  
 **Type:** `specialUse`  
 **Services:** `BackgroundService`, `AppTerminalService`, `ProjectTerminalService`  
 **Demo video:** [`fgs-special-use-demo.mp4`](./fgs-special-use-demo.mp4) — **~50s live UI**  

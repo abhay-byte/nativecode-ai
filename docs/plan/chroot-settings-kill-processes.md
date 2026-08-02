@@ -264,7 +264,7 @@ When app stages assets for uninstall (`RootShell.executeScriptAsset` / terminal 
 
 ### 5.3 Kotlin API — new small object (decouple from MainActivity)
 
-**New file:** `app/src/main/java/com/ivarna/nativecode/terminal/ChrootProcessManager.kt`
+**New file:** `app/src/main/java/com/zenithblue/nativecode/terminal/ChrootProcessManager.kt`
 
 ```kotlin
 object ChrootProcessManager {

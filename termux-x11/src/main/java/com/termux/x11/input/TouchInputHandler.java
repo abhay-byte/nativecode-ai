@@ -503,7 +503,7 @@ public class TouchInputHandler {
                 }}, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
             case "return to app":
                 try {
-                    Intent home = new Intent(mActivity, Class.forName("com.ivarna.nativecode.MainActivity"));
+                    Intent home = new Intent(mActivity, Class.forName("com.zenithblue.nativecode.MainActivity"));
                     home.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT | Intent.FLAG_ACTIVITY_SINGLE_TOP);
                     home.setPackage(mActivity.getPackageName());
                     return PendingIntent.getActivity(mActivity, requestCode, home,

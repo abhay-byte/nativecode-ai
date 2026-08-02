@@ -6,7 +6,7 @@ import tarfile
 script_dir = os.path.dirname(os.path.abspath(__file__))
 output_dir = os.path.join(script_dir, "termux-packages/output")
 extract_dir = os.path.join(script_dir, "bootstrap_root")
-target_prefix = "data/data/com.ivarna.nativecode/files"
+target_prefix = "data/data/com.zenithblue.nativecode/files"
 loader_src = os.path.join(script_dir, "shell-loader-debug.apk")
 
 # List of packages needed for host runtime and GUI services
@@ -72,7 +72,7 @@ PACKAGES = [
     # Python Libraries
     "libsqlite",
     "libbz2",
-    "libgdbm",
+    "gdbm",  # provides libgdbm
     "libandroid-selinux",
     "libandroid-glob",
     "libacl",

@@ -228,8 +228,8 @@ Env overrides:
 
 ```text
 NC_CHROOT=/data/local/tmp/chrootDebian13
-NC_PACKAGE=com.ivarna.nativecode
-NC_HOST_TMP=/data/data/com.ivarna.nativecode/files/usr/tmp
+NC_PACKAGE=com.zenithblue.nativecode
+NC_HOST_TMP=/data/data/com.zenithblue.nativecode/files/usr/tmp
 NC_BB=…   # optional force busybox
 ```
 

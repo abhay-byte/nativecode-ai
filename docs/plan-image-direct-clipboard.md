@@ -15,7 +15,7 @@ Desired flow:
 3. No chip shown — toast confirmation only
 
 ### Problem 2: Absolute Path Previously Failed
-Previous attempt copied host path (`/data/data/com.ivarna.nativecode/files/attach_*.jpg`) to clipboard.
+Previous attempt copied host path (`/data/data/com.zenithblue.nativecode/files/attach_*.jpg`) to clipboard.
 Agent inside proot-distro Debian could not open it.
 
 **Root cause:**
@@ -35,7 +35,7 @@ Agent inside proot-distro Debian could not open it.
 ## Implementation Plan
 
 ### File
-`app/src/main/java/com/ivarna/nativecode/MainActivity.kt`
+`app/src/main/java/com/zenithblue/nativecode/MainActivity.kt`
 
 ### Change 1: Save image to `filesDir/home/` (fix path accessibility)
 
@@ -147,6 +147,6 @@ Check line 3: `import android.util.Base64` — remove if no other usage remains.
 
 | File | Sections affected |
 |------|------------------|
-| `app/src/main/java/com/ivarna/nativecode/MainActivity.kt` | line 1231 (dest dir), 1236–1242 (clipboard logic), 226–229 (remove fields), 1249–1338 (remove fn), ~1681–1696 (remove container), ~4261–4278 (remove container) |
+| `app/src/main/java/com/zenithblue/nativecode/MainActivity.kt` | line 1231 (dest dir), 1236–1242 (clipboard logic), 226–229 (remove fields), 1249–1338 (remove fn), ~1681–1696 (remove container), ~4261–4278 (remove container) |
 
 No new files. No new dependencies.

@@ -28,7 +28,7 @@ do
     fi
 done
 
-PKG="${TERMUX_APP__PACKAGE_NAME:-com.ivarna.nativecode}"
+PKG="${TERMUX_APP__PACKAGE_NAME:-com.zenithblue.nativecode}"
 PREFIX_DEFAULT="${TERMUX__PREFIX:-/data/data/${PKG}/files/usr}"
 
 # SSOT env from Kotlin TermuxHostPaths

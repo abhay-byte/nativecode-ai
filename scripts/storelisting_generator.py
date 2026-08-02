@@ -61,18 +61,21 @@ def text_bbox(draw, x, y, text, fnt, fill):
     return bb
 
 
-def draw_grid(draw):
-    for gx in range(0, W + 1, 96):
-        draw.line([(gx, 0), (gx, H)], fill=(19, 19, 19), width=1)
-    for gy in range(0, H + 1, 96):
-        draw.line([(0, gy), (W, gy)], fill=(19, 19, 19), width=1)
+def draw_grid(draw, w=None, h=None):
+    w = w or draw._image.width if hasattr(draw, "_image") else w
+    gw = w if w else 1080
+    gh = h if h else 1920
+    for gx in range(0, gw + 1, 96):
+        draw.line([(gx, 0), (gx, gh)], fill=(19, 19, 19), width=1)
+    for gy in range(0, gh + 1, 96):
+        draw.line([(0, gy), (gw, gy)], fill=(19, 19, 19), width=1)
 
 
 def draw_scanlines(img):
-    overlay = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
     d = ImageDraw.Draw(overlay)
-    for y in range(0, H, 6):
-        d.line([(0, y), (W, y)], fill=(255, 255, 255, 5), width=1)
+    for y in range(0, img.height, 6):
+        d.line([(0, y), (img.width, y)], fill=(255, 255, 255, 5), width=1)
     img.alpha_composite(overlay)
     return img
 
@@ -95,7 +98,7 @@ def draw_chip(draw, x, y, text, fnt, fill=SURFACE, border=GREEN):
 
 
 def glow(img, cx, cy, radius=700, alpha=26):
-    layer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    layer = Image.new("RGBA", img.size, (0, 0, 0, 0))
     ld = ImageDraw.Draw(layer)
     ld.ellipse([cx - radius, cy - radius, cx + radius, cy + radius],
                fill=(GREEN[0], GREEN[1], GREEN[2], alpha))
@@ -142,11 +145,11 @@ def card(img, draw, x, y, w, h, shot_name, focus="top", border=GREEN, shadow=Tru
     else:
         crop_y = (nh - h) // 2
     shot = shot.crop((0, crop_y, nw, crop_y + h))
-    paste = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    paste = Image.new("RGBA", img.size, (0, 0, 0, 0))
     paste.paste(shot, (x, y))
-    mask = Image.new("L", (W, H), 0)
+    mask = Image.new("L", img.size, 0)
     ImageDraw.Draw(mask).rectangle([x, y, x + w, y + h], fill=255)
-    img.paste(Image.new("RGB", (W, H), (0, 0, 0)), (0, 0), mask)
+    img.paste(Image.new("RGB", img.size, (0, 0, 0)), (0, 0), mask)
     img.alpha_composite(paste)
     if frame:
         d2 = ImageDraw.Draw(img)
@@ -175,10 +178,10 @@ def mono_label(draw, text, y, size=24, fill=GREEN, x=74):
     return text_bbox(draw, x, y, text, fnt, fill)
 
 
-def base_canvas():
-    img = Image.new("RGBA", (W, H), BG)
+def base_canvas(w=W, h=H):
+    img = Image.new("RGBA", (w, h), BG)
     d = ImageDraw.Draw(img)
-    draw_grid(d)
+    draw_grid(d, w, h)
     img = draw_scanlines(img)
     return img, ImageDraw.Draw(img)
 
@@ -368,7 +371,46 @@ def make_cta():
     save(img, "8_cta.png")
 
 
+def make_feature():
+    FW, FH = 1024, 500
+    img, d = base_canvas(FW, FH)
+    glow(img, 820, 250, 480, 30)
+
+    mono_label(d, "// AI DEV ENVIRONMENT FOR ANDROID", 30, size=18)
+
+    logo = get_logo()
+    lw = 84
+    lh = int(logo.size[1] * lw / logo.size[0])
+    logo = logo.resize((lw, lh), Image.LANCZOS)
+    img.paste(logo, (48, 92), logo)
+
+    name_fnt = font_head(52, 700)
+    d.text((48, 196), "NativeCode", font=name_fnt, fill=TEXT)
+
+    tag_fnt = font_head(26, 700)
+    d.text((48, 268), "VIBE CODE ON YOUR PHONE", font=tag_fnt, fill=GREEN)
+
+    sub_fnt = font_mono(17)
+    d.text((48, 318), "Full Linux + AI coding agents in your pocket.", font=sub_fnt, fill=MUTED)
+
+    cta_fnt = font_mono(19)
+    cta = "GET NATIVECODE"
+    bb = d.textbbox((0, 0), cta, font=cta_fnt)
+    cw = bb[2] - bb[0] + 52
+    ch = 52
+    hard_shadow(d, 48, 380, cw, ch, off=6)
+    d.rectangle([48, 380, 48 + cw, 380 + ch], fill=GREEN)
+    d.text((48 + 26, 380 + (ch - (bb[3] - bb[1])) // 2 - bb[1]), cta, font=cta_fnt, fill=(10, 10, 10))
+
+    card(img, d, 532, 25, 200, 440, "terminal_codex.png", focus="top")
+    card(img, d, 772, 25, 200, 440, "project_workspace.png", focus="top")
+
+    draw_corners(d, 12, 12, FW - 24, FH - 24, L=22)
+    save(img, "feature_graphic.png")
+
+
 if __name__ == "__main__":
+    make_feature()
     make_hero()
     make_ai()
     make_projects()

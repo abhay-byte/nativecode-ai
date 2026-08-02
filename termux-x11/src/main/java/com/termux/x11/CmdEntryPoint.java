@@ -190,7 +190,7 @@ public class CmdEntryPoint extends ICmdEntryInterface.Stub {
         if (libPath == null || libPath.contains("base.apk!")) {
             // Under targetSdk 36, library loading from apk inside app_process namespace fails.
             // Fall back to the extracted library directory.
-            libPath = "/data/data/com.ivarna.nativecode/lib/libXlorie.so";
+            libPath = "/data/data/com.zenithblue.nativecode/lib/libXlorie.so";
         }
         if (libPath != null) {
             try {

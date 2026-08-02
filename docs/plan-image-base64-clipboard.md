@@ -33,7 +33,7 @@ Should instead read the file, Base64-encode, and set that as clipboard text.
 
 ### File to change
 
-**Single file**: `app/src/main/java/com/ivarna/nativecode/MainActivity.kt`
+**Single file**: `app/src/main/java/com/zenithblue/nativecode/MainActivity.kt`
 
 ### Change surface
 

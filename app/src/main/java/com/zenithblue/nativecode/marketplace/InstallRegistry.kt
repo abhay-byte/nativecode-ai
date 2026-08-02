@@ -1,4 +1,4 @@
-package com.ivarna.nativecode.marketplace
+package com.zenithblue.nativecode.marketplace
 
 import android.content.Context
 import org.json.JSONArray

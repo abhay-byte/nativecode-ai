@@ -83,7 +83,7 @@ Examples:
 
 | Context | Absolute path pattern |
 |---------|----------------------|
-| App private | `/data/user/0/com.ivarna.nativecode/files/usr/var/lib/proot-distro/containers/debian/rootfs` |
+| App private | `/data/user/0/com.zenithblue.nativecode/files/usr/var/lib/proot-distro/containers/debian/rootfs` |
 | Code | `File(ctx.filesDir, "usr/var/lib/proot-distro/containers/debian/rootfs")` |
 | Guest home | `.../rootfs/home/flux` (`ProjectPathResolver.guestHomeDir`) |
 

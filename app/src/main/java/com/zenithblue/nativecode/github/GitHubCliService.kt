@@ -1,4 +1,4 @@
-package com.ivarna.nativecode.github
+package com.zenithblue.nativecode.github
 
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -7,12 +7,12 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
-import com.ivarna.nativecode.RootShell
-import com.ivarna.nativecode.marketplace.PackageInstallRunner
-import com.ivarna.nativecode.terminal.ChrootCommandBuilder
-import com.ivarna.nativecode.terminal.LinuxCommandBuilder
-import com.ivarna.nativecode.terminal.ProjectPathResolver
-import com.ivarna.nativecode.terminal.ShellCommandRunner
+import com.zenithblue.nativecode.RootShell
+import com.zenithblue.nativecode.marketplace.PackageInstallRunner
+import com.zenithblue.nativecode.terminal.ChrootCommandBuilder
+import com.zenithblue.nativecode.terminal.LinuxCommandBuilder
+import com.zenithblue.nativecode.terminal.ProjectPathResolver
+import com.zenithblue.nativecode.terminal.ShellCommandRunner
 import org.json.JSONObject
 import java.io.BufferedReader
 import java.io.File

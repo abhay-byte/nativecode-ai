@@ -1,4 +1,4 @@
-package com.ivarna.nativecode
+package com.zenithblue.nativecode
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border

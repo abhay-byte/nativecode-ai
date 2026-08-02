@@ -1,4 +1,4 @@
-package com.ivarna.nativecode.cliauth
+package com.zenithblue.nativecode.cliauth
 
 /**
  * AI CLI tools from setup_cli_tools.sh + login strategy per vendor docs.

@@ -5,7 +5,7 @@
 **Scope:** onboarding chroot path after `setup_debian13_chroot.sh`; align with proot E→H guest chain  
 **Related:**  
 - `app/src/main/assets/scripts/chroot/setup_debian13_chroot.sh`  
-- `app/src/main/java/com/ivarna/nativecode/OnboardingActivity.kt` (`runDebianBaseSetup` chroot branch)  
+- `app/src/main/java/com/zenithblue/nativecode/OnboardingActivity.kt` (`runDebianBaseSetup` chroot branch)  
 - Proot chain (reference): same file, proot path steps E–H  
 - Guest scripts: `setup_debian_family.sh`, `setup_hw_accel_debian.sh`, `setup_customization_debian.sh`, `setup_cli_tools.sh`  
 - Prior: sticky `/tmp` fix (apt); Settings chroot card
@@ -211,8 +211,8 @@ Ensure `copyAndRunInChroot`:
 | File | Change |
 |------|--------|
 | `app/src/main/assets/scripts/chroot/setup_debian13_chroot.sh` | P1 exit 0 / cleanup / am \|\| true |
-| `app/src/main/java/com/ivarna/nativecode/OnboardingActivity.kt` | P2 gate + log; confirm E→H order |
-| `app/src/main/java/com/ivarna/nativecode/RootShellService.kt` (and/or RootShell) | P4 mounts for executeInChroot |
+| `app/src/main/java/com/zenithblue/nativecode/OnboardingActivity.kt` | P2 gate + log; confirm E→H order |
+| `app/src/main/java/com/zenithblue/nativecode/RootShellService.kt` (and/or RootShell) | P4 mounts for executeInChroot |
 
 ---
 

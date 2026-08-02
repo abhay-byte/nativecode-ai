@@ -1,4 +1,4 @@
-package com.ivarna.nativecode.cliauth
+package com.zenithblue.nativecode.cliauth
 
 /**
  * SSOT for Terminal + Workspace tool launcher cards (C6).

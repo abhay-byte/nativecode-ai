@@ -1,4 +1,4 @@
-package com.ivarna.nativecode.cliauth
+package com.zenithblue.nativecode.cliauth
 
 /** Auth status for one AI CLI tool in one isolation method. */
 data class CliToolStatus(

@@ -1,7 +1,7 @@
 # W^X Bypass for Target SDK 36 on Android
 
 ## Problem
-Android 10+ and Target SDK 36 enforce strict Write XOR Execute (W^X) memory protection policies. The app could not execute `proot`, `bash`, or the `proot` loader from writable app directories (`/data/data/com.ivarna.nativecode/files/...`), causing `Permission denied` on host and guest executions.
+Android 10+ and Target SDK 36 enforce strict Write XOR Execute (W^X) memory protection policies. The app could not execute `proot`, `bash`, or the `proot` loader from writable app directories (`/data/data/com.zenithblue.nativecode/files/...`), causing `Permission denied` on host and guest executions.
 
 ## Fix Implementation
 

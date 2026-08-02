@@ -1,10 +1,10 @@
-package com.ivarna.nativecode.cliauth
+package com.zenithblue.nativecode.cliauth
 
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
-import com.ivarna.nativecode.terminal.LinuxCommandBuilder
+import com.zenithblue.nativecode.terminal.LinuxCommandBuilder
 
 /**
  * Builds mailto intents for NativeCode AI report (C5) and vendor safety mail.

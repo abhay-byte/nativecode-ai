@@ -91,7 +91,7 @@ Debian may or may not ship `gh` in default apt sources (depends on image). Plan 
                               │ method: "proot"|"chroot"
                               ▼
 ┌──────────────────────────────────────────────────────────────────┐
-│ com.ivarna.nativecode.github (NEW, decoupled)                    │
+│ com.zenithblue.nativecode.github (NEW, decoupled)                    │
 │  GitHubCliService      — SSOT state machine + public API         │
 │  GhGuestCommands       — pure command strings (no Android UI)    │
 │  GhAuthSession         — one cancelable auth run (Process)       │

@@ -171,7 +171,7 @@ setup_termux.sh
 
 ### Paths
 
-- [ ] Env dump shows `TERMUX_APP__PACKAGE_NAME=com.ivarna.nativecode` and matching `PREFIX`/`HOME`
+- [ ] Env dump shows `TERMUX_APP__PACKAGE_NAME=com.zenithblue.nativecode` and matching `PREFIX`/`HOME`
 - [ ] No stock `com.termux` install target in install/login lines
 
 ---

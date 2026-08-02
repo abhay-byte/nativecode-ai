@@ -13,7 +13,7 @@
 #   NC_PACKAGE, PREFIX, ROOTFS, NC_SHELL
 set -eu
 
-NC_PACKAGE="${NC_PACKAGE:-com.ivarna.nativecode}"
+NC_PACKAGE="${NC_PACKAGE:-com.zenithblue.nativecode}"
 PREFIX="${PREFIX:-/data/data/${NC_PACKAGE}/files/usr}"
 TERMUX__HOME="${TERMUX__HOME:-/data/data/${NC_PACKAGE}/files/home}"
 ROOTFS="${ROOTFS:-${PREFIX}/var/lib/proot-distro/containers/debian/rootfs}"
@@ -56,12 +56,12 @@ safety_check() {
     . "$PREFIX/etc/fluxlinux-host.env"
   fi
   PKG="${TERMUX_APP__PACKAGE_NAME:-$NC_PACKAGE}"
-  [ "$PKG" = "com.ivarna.nativecode" ] || die "package must be com.ivarna.nativecode (got $PKG)"
+  [ "$PKG" = "com.zenithblue.nativecode" ] || die "package must be com.zenithblue.nativecode (got $PKG)"
   [ -x "$PROOT_BIN" ] || die "proot missing: $PROOT_BIN"
   [ -d "$ROOTFS" ] || die "rootfs missing: $ROOTFS"
   [ -d "${PREFIX}/tmp" ] || mkdir -p "${PREFIX}/tmp" 2>/dev/null || true
   [ -d "${ROOTFS}/tmp" ] || mkdir -p "${ROOTFS}/tmp" 2>/dev/null || true
-  export TERMUX_APP__PACKAGE_NAME=com.ivarna.nativecode
+  export TERMUX_APP__PACKAGE_NAME=com.zenithblue.nativecode
   export TERMUX__PREFIX="$PREFIX"
   export TERMUX__HOME
   export PREFIX
@@ -164,7 +164,7 @@ build_binds_compat() {
   add_bind "${PREFIX}"
   # dalvik caches (if exist)
   add_bind /data/dalvik-cache
-  add_bind /data/data/com.ivarna.nativecode/cache/dalvik-cache
+  add_bind /data/data/com.zenithblue.nativecode/cache/dalvik-cache
 }
 
 build_binds() {

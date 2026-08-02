@@ -1,8 +1,8 @@
-#!/data/data/com.ivarna.nativecode/files/usr/bin/bash
+#!/data/data/com.zenithblue.nativecode/files/usr/bin/bash
 # stop_gui_chroot.sh — app-uid: stop Pulse + root stop_debian13_gui.sh
 # Does NOT pkill proot.
 
-PKG="${TERMUX_APP__PACKAGE_NAME:-com.ivarna.nativecode}"
+PKG="${TERMUX_APP__PACKAGE_NAME:-com.zenithblue.nativecode}"
 _HOST_ENV="${TERMUX__PREFIX:-/data/data/${PKG}/files/usr}/etc/fluxlinux-host.env"
 [ -r "$_HOST_ENV" ] && . "$_HOST_ENV"
 

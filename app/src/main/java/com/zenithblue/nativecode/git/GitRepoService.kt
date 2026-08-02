@@ -1,9 +1,9 @@
-package com.ivarna.nativecode.git
+package com.zenithblue.nativecode.git
 
 import android.content.Context
-import com.ivarna.nativecode.terminal.LinuxCommandBuilder
-import com.ivarna.nativecode.terminal.ProjectManager
-import com.ivarna.nativecode.terminal.ShellCommandRunner
+import com.zenithblue.nativecode.terminal.LinuxCommandBuilder
+import com.zenithblue.nativecode.terminal.ProjectManager
+import com.zenithblue.nativecode.terminal.ShellCommandRunner
 
 /**
  * Project-scoped git queries via guest shell (proot | chroot).

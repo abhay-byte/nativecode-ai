@@ -1,7 +1,7 @@
-package com.ivarna.nativecode.terminal
+package com.zenithblue.nativecode.terminal
 
 import android.content.Context
-import com.ivarna.nativecode.MainActivity
+import com.zenithblue.nativecode.MainActivity
 import java.io.File
 
 /** Resolves project paths from their in-Debian representation to Android host filesystem paths.

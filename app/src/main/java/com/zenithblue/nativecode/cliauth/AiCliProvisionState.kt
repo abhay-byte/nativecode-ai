@@ -1,7 +1,7 @@
-package com.ivarna.nativecode.cliauth
+package com.zenithblue.nativecode.cliauth
 
 import android.content.Context
-import com.ivarna.nativecode.terminal.LinuxCommandBuilder
+import com.zenithblue.nativecode.terminal.LinuxCommandBuilder
 
 /**
  * Host prefs SSOT for AI CLI suite install (C6).

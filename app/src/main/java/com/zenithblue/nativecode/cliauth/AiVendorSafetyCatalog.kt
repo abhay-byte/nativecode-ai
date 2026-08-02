@@ -1,4 +1,4 @@
-package com.ivarna.nativecode.cliauth
+package com.zenithblue.nativecode.cliauth
 
 /**
  * SSOT for AI safety / report / ToS links (C5 / B16).

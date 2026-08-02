@@ -761,7 +761,7 @@ public class MainActivity extends AppCompatActivity {
     /** Return to NativeCode host MainActivity; leave X session running. */
     public void goToNativeCodeHome() {
         try {
-            Intent intent = new Intent(this, Class.forName("com.ivarna.nativecode.MainActivity"));
+            Intent intent = new Intent(this, Class.forName("com.zenithblue.nativecode.MainActivity"));
             intent.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT | Intent.FLAG_ACTIVITY_SINGLE_TOP);
             startActivity(intent);
         } catch (Exception e) {

@@ -1,6 +1,6 @@
 # Fix Plan & Verification Status — NativeCode App
 
-All line references are in `app/src/main/java/com/ivarna/nativecode/MainActivity.kt` unless noted.
+All line references are in `app/src/main/java/com/zenithblue/nativecode/MainActivity.kt` unless noted.
 
 ---
 

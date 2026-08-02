@@ -4,11 +4,11 @@ plugins {
 }
 
 android {
-    namespace = "com.ivarna.nativecode"
+    namespace = "com.zenithblue.nativecode"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.ivarna.nativecode"
+        applicationId = "com.zenithblue.nativecode"
         minSdk = 26
         targetSdk = 36
         versionCode = 1

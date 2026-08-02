@@ -1,6 +1,6 @@
 # NativeCode — Google Play Policy Compliance Checklist
 
-**App:** NativeCode (`com.ivarna.nativecode`)  
+**App:** NativeCode (`com.zenithblue.nativecode`)  
 **Scope:** Codebase + packaging audit against [Google Play Store Policy Compliance Guide](https://raw.githubusercontent.com/abhay-byte/abhay-kb/refs/heads/main/Google_Play_Store_Policy_Compliance_Guide.md) (compiled July 25, 2026; DPP effective May 27, 2026).  
 **Audit date:** 2026-07-31 (rev: **B11 residual ACCEPTED** after Play research; C5/B16/C10 shipped; Console ops prior)  
 **Primary tree:** `app/` (+ merged modules `termux-x11`, Termux deps)
@@ -206,7 +206,7 @@ Items below are **followed** relative to the guide and current code.
 | Field | Detail |
 |-------|--------|
 | **Guide §** | §3.15 IP, §5.2 Impersonation |
-| **Status** | **FOLLOWED** for package identity (`com.ivarna.nativecode`, label NativeCode) |
+| **Status** | **FOLLOWED** for package identity (`com.zenithblue.nativecode`, label NativeCode) |
 | **Evidence** | Own package name and launcher label; not “Termux Official” naming. |
 | **Reason** | Distinct identity reduces impersonation risk. |
 | **Caveat** | Internal path names may still use `fluxlinux-*` as SSOT (not product brand). See A27. |
@@ -324,7 +324,7 @@ Items below are **followed** relative to the guide and current code.
 |-------|--------|
 | **Guide §** | §1, §11.2 |
 | **Status** | **FOLLOWED** |
-| **Evidence** | Package `com.ivarna.nativecode` + release signing key registered (ops confirmed). |
+| **Evidence** | Package `com.zenithblue.nativecode` + release signing key registered (ops confirmed). |
 | **Reason** | Meets platform Developer Verification ahead of Sept 2026 regional enforcement. |
 | **How to keep fixed** | Re-register if applicationId or upload/signing key rotates. |
 

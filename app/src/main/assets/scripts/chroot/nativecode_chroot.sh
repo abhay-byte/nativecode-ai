@@ -18,7 +18,7 @@
 set -u
 
 VERSION_STR="nativecode-chroot v2.2"
-NC_PACKAGE="${NC_PACKAGE:-com.ivarna.nativecode}"
+NC_PACKAGE="${NC_PACKAGE:-com.zenithblue.nativecode}"
 NC_CHROOT="${NC_CHROOT:-/data/local/tmp/chrootDebian13}"
 NC_HOST_TMP="${NC_HOST_TMP:-/data/data/${NC_PACKAGE}/files/usr/tmp}"
 NC_PREFIX="${NC_PREFIX:-/data/data/${NC_PACKAGE}/files/usr}"
@@ -59,7 +59,7 @@ resolve_bb() {
   if command -v busybox >/dev/null 2>&1; then
     _det=$(command -v busybox)
     case "$_det" in
-      *com.termux*|*com.ivarna.nativecode*) ;;
+      *com.termux*|*com.zenithblue.nativecode*) ;;
       *) BB="$_det" ;;
     esac
   fi

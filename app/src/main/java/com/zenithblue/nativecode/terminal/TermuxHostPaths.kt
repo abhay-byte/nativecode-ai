@@ -1,4 +1,4 @@
-package com.ivarna.nativecode.terminal
+package com.zenithblue.nativecode.terminal
 
 import android.content.Context
 import android.util.Log
@@ -11,7 +11,7 @@ import java.io.File
  * from [PACKAGE]. Never hardcode `com.termux` defaults at call sites.
  */
 object TermuxHostPaths {
-    const val PACKAGE = "com.ivarna.nativecode"
+    const val PACKAGE = "com.zenithblue.nativecode"
     const val STOCK_PACKAGE = "com.termux"
 
     /** `/data/data/<package>` */

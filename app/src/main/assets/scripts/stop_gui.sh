@@ -1,9 +1,9 @@
-#!/data/data/com.ivarna.nativecode/files/usr/bin/bash
+#!/data/data/com.zenithblue.nativecode/files/usr/bin/bash
 # stop_gui.sh - Stop XFCE4 Desktop Environment in PRoot Distro
 # Paths: TermuxHostPaths via fluxlinux-host.env (SSOT)
 
 DISTRO=${1:-debian}
-PKG="${TERMUX_APP__PACKAGE_NAME:-com.ivarna.nativecode}"
+PKG="${TERMUX_APP__PACKAGE_NAME:-com.zenithblue.nativecode}"
 _HOST_ENV="${TERMUX__PREFIX:-/data/data/${PKG}/files/usr}/etc/fluxlinux-host.env"
 [ -r "$_HOST_ENV" ] && . "$_HOST_ENV"
 

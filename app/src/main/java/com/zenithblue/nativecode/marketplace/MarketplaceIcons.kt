@@ -1,11 +1,11 @@
-package com.ivarna.nativecode.marketplace
+package com.zenithblue.nativecode.marketplace
 
 import android.content.Context
 import android.graphics.BitmapFactory
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
 import android.widget.ImageView
-import com.ivarna.nativecode.R
+import com.zenithblue.nativecode.R
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL

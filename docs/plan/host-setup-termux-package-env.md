@@ -1,4 +1,4 @@
-# Host setup: custom package env (`com.ivarna.nativecode`)
+# Host setup: custom package env (`com.zenithblue.nativecode`)
 
 **Date:** 2026-07-28  
 **Scope:** host package paths — script gate, Kotlin builders, bootstrap residual rewrite  
@@ -14,7 +14,7 @@ TermuxHostPaths.kt          ← only definition of PACKAGE + path constants
         ├─ HostCommandBuilder (ProcessBuilder / terminal env)
         ├─ writeHostEnvFile → usr/etc/fluxlinux-host.env
         └─ applyPackageToExtractedPrefix(filesDir)
-                rewrites /data/data/com.termux → /data/data/com.ivarna.nativecode
+                rewrites /data/data/com.termux → /data/data/com.zenithblue.nativecode
                 in bootstrap text under usr/{bin,etc,share}, proot_distro, headers
 ```
 
@@ -28,10 +28,10 @@ TermuxHostPaths.kt          ← only definition of PACKAGE + path constants
 **Canonical values:**
 
 ```text
-PACKAGE = com.ivarna.nativecode
-PREFIX  = /data/data/com.ivarna.nativecode/files/usr
-HOME    = /data/data/com.ivarna.nativecode/files/home
-TMPDIR  = /data/data/com.ivarna.nativecode/files/usr/tmp
+PACKAGE = com.zenithblue.nativecode
+PREFIX  = /data/data/com.zenithblue.nativecode/files/usr
+HOME    = /data/data/com.zenithblue.nativecode/files/home
+TMPDIR  = /data/data/com.zenithblue.nativecode/files/usr/tmp
 ```
 
 Rule: do not invent a second package string at call sites. Kotlin reads `TermuxHostPaths`; shell reads generated env (or env already set by Kotlin).
@@ -53,8 +53,8 @@ Logs showed **gate OK**, but **noise from bootstrap text**:
 
 ```text
 # Working (our pin):
-PREFIX=/data/data/com.ivarna.nativecode/files/usr
-TERMUX_APP__PACKAGE_NAME=com.ivarna.nativecode
+PREFIX=/data/data/com.zenithblue.nativecode/files/usr
+TERMUX_APP__PACKAGE_NAME=com.zenithblue.nativecode
 Fluxlinux: Setup Complete (marker v2)
 
 # Not the gate — residual stock paths in bootstrap:
@@ -152,7 +152,7 @@ libbash.so + package-scoped env
 1. Install build that includes rewrite + env file (or clear app data so extract/deploy re-run).
 2. Onboarding → Debian base (proot path).
 3. **Pass:** no `mkdir .../com.termux` / `cp .../com.termux/.../termux.properties`.
-4. **Pass:** log shows `PREFIX` / `TERMUX_APP__PACKAGE_NAME` = `com.ivarna.nativecode`.
+4. **Pass:** log shows `PREFIX` / `TERMUX_APP__PACKAGE_NAME` = `com.zenithblue.nativecode`.
 5. **Pass:** `Setup Complete (marker v2)` then guest install continues.
 6. **OK to ignore:** proot sanitize warnings for `/odm`, `/product`, `/system`, `/vendor`, …
 
@@ -172,12 +172,12 @@ If mkdir/cp stock paths still appear: rewrite did not run (old APK) or profile.d
 ## Files touched
 
 ```text
-app/src/main/java/com/ivarna/nativecode/terminal/TermuxHostPaths.kt
-app/src/main/java/com/ivarna/nativecode/terminal/HostCommandBuilder.kt
-app/src/main/java/com/ivarna/nativecode/terminal/ProotCommandBuilder.kt
-app/src/main/java/com/ivarna/nativecode/terminal/ShellCommandRunner.kt
-app/src/main/java/com/ivarna/nativecode/MainActivity.kt
-app/src/main/java/com/ivarna/nativecode/OnboardingActivity.kt
+app/src/main/java/com/zenithblue/nativecode/terminal/TermuxHostPaths.kt
+app/src/main/java/com/zenithblue/nativecode/terminal/HostCommandBuilder.kt
+app/src/main/java/com/zenithblue/nativecode/terminal/ProotCommandBuilder.kt
+app/src/main/java/com/zenithblue/nativecode/terminal/ShellCommandRunner.kt
+app/src/main/java/com/zenithblue/nativecode/MainActivity.kt
+app/src/main/java/com/zenithblue/nativecode/OnboardingActivity.kt
 app/src/main/assets/scripts/setup_termux.sh
 app/src/main/assets/scripts/flux_install.sh
 app/src/main/assets/scripts/start_gui.sh

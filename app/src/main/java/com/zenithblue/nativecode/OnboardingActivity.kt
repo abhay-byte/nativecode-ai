@@ -1,4 +1,4 @@
-package com.ivarna.nativecode
+package com.zenithblue.nativecode
 
 import android.animation.Animator
 import android.animation.AnimatorListenerAdapter
@@ -29,13 +29,13 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.setPadding
 import android.system.Os
-import com.ivarna.nativecode.cliauth.AiCliProvisionState
-import com.ivarna.nativecode.cliauth.CliToolsInstaller
-import com.ivarna.nativecode.cliauth.InstallPlanCatalog
-import com.ivarna.nativecode.terminal.GpuAccelDetector
-import com.ivarna.nativecode.terminal.HostCommandBuilder
-import com.ivarna.nativecode.terminal.ProjectPathResolver
-import com.ivarna.nativecode.terminal.TermuxHostPaths
+import com.zenithblue.nativecode.cliauth.AiCliProvisionState
+import com.zenithblue.nativecode.cliauth.CliToolsInstaller
+import com.zenithblue.nativecode.cliauth.InstallPlanCatalog
+import com.zenithblue.nativecode.terminal.GpuAccelDetector
+import com.zenithblue.nativecode.terminal.HostCommandBuilder
+import com.zenithblue.nativecode.terminal.ProjectPathResolver
+import com.zenithblue.nativecode.terminal.TermuxHostPaths
 import java.io.File
 import java.io.FileOutputStream
 import java.io.InputStream
@@ -2217,7 +2217,7 @@ class OnboardingActivity : AppCompatActivity() {
                 setSetupPhaseFraction(1f, "Bootstrap extracted")
                 if (tarFile.exists()) tarFile.delete()
 
-                val nested = File(filesDir, "data/data/com.ivarna.nativecode/files")
+                val nested = File(filesDir, "data/data/com.zenithblue.nativecode/files")
                 if (nested.exists()) {
                     moveDirectoryContents(nested, filesDir)
                     File(filesDir, "data").deleteRecursively()
@@ -2415,7 +2415,7 @@ class OnboardingActivity : AppCompatActivity() {
             val type = buffer[156].toInt().toChar()
             val linkName = parseString(157, 100)
 
-            val relPath = name.replace("^data/data/com.ivarna.nativecode/files/".toRegex(), "").trimStart('/')
+            val relPath = name.replace("^data/data/com.zenithblue.nativecode/files/".toRegex(), "").trimStart('/')
             if (relPath.isEmpty()) {
                 val dataBlocks = Math.ceil(size.toDouble() / 512.0).toLong()
                 skipBytes(inputStream, dataBlocks * 512L)

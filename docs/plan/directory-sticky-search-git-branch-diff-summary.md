@@ -123,7 +123,7 @@ Gaps:
                               │ method = activeProjectMethod
                               ▼
 ┌──────────────────────────────────────────────────────────────────┐
-│ com.ivarna.nativecode.git (NEW, decoupled)                       │
+│ com.zenithblue.nativecode.git (NEW, decoupled)                       │
 │  GitRepoService     — public API: isRepo, branches, statusSummary│
 │  GitGuestCommands   — pure shell strings (no Android UI)         │
 │  GitModels          — BranchInfo, StatusEntry, DiffSummary       │
@@ -451,7 +451,7 @@ ShellCommandRunner.runCaptureExit(ctx, args, env)
 ## 6. Package layout (new files)
 
 ```text
-app/src/main/java/com/ivarna/nativecode/git/
+app/src/main/java/com/zenithblue/nativecode/git/
   GitModels.kt           // BranchInfo, DiffSummary, GitStatusEntry, DiffSummaryResult
   GitGuestCommands.kt    // pure strings: branchesScript(path), statusSummaryScript(path)
   GitPorcelainParse.kt   // pure functions, unit-testable later
@@ -497,7 +497,7 @@ Badge labels/colors stay in UI layer (NC colors) — parse only returns statusCh
 | `openProjectGitDiff` | unchanged shell; body via refresh |
 | `refreshGitDiffTree` | service + summary + not-git |
 | `loadDiffForFile` | method + runner (optional but recommended) |
-| imports | `com.ivarna.nativecode.git.*` |
+| imports | `com.zenithblue.nativecode.git.*` |
 
 **Do not touch:** Marketplace, onboarding, bottom nav IDs, project create clone (unless shared quote helper — can move `shellQuote` to GitGuestCommands and leave ProjectManager private quote).
 

@@ -1,10 +1,11 @@
-Initial release of NativeCode!
+Welcome to NativeCode 1.0 — portable Linux & AI on Android.
 
-Highlights:
-- Automated Debian 13 (Trixie) Linux guest installation
-- PRoot (no root) and Chroot (rooted) isolation modes
-- GPU-accelerated XFCE4 desktop GUI via Termux-X11
-- Built-in AI CLI developer suite & credential harness
-- Software marketplace with curated install catalog
-- Multi-repo workspace tree with visual Git diff inspector
-- Node.js 26 LTS, Python 3.12, and build essential tools
+• Debian 13 (Trixie) guest with apt
+• PRoot (no root) or Chroot (rooted) modes
+• XFCE4 desktop via Termux-X11 + GPU accel
+• AI CLIs: Claude Code, Codex, OpenCode, Grok & more
+• Software marketplace & guided tool setup
+• Multi-repo Git workspace + GitHub CLI
+• Node.js, Python, and build essentials included
+
+Requires Android 8.0+, ~10 GB free storage.

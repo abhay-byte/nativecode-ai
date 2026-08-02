@@ -1,6 +1,6 @@
-package com.ivarna.nativecode.cliauth
+package com.zenithblue.nativecode.cliauth
 
-import com.ivarna.nativecode.terminal.ShellJob
+import com.zenithblue.nativecode.terminal.ShellJob
 
 /** Cancel handle for an in-flight AI CLI auth session. */
 class CliAuthSession {

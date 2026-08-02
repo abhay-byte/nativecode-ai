@@ -17,7 +17,7 @@
   `setup_debian13_chroot.sh` → `/data/local/tmp/start_debian13.sh` + `stop_debian13_gui.sh`  
   **Missing:** full X11 host wrapper (`start_debian13_gui.sh`) and app-side branch
 - Paths: `ChrootCommandBuilder.CHROOT_PATH` = `/data/local/tmp/chrootDebian13`, user `flux`
-- Package / X11: `com.ivarna.nativecode` embeds Termux:X11 (`app_process` + `loader.apk`) — **not** `com.termux`
+- Package / X11: `com.zenithblue.nativecode` embeds Termux:X11 (`app_process` + `loader.apk`) — **not** `com.termux`
 
 **Primary files (target):**
 
@@ -46,7 +46,7 @@ ShellCommandRunner.run(..., start_gui.sh, "debian")
 
 `start_gui.sh`:
 1. Starts PulseAudio, optional VirGL, embedded termux-x11 (`app_process` Loader)
-2. Opens `com.ivarna.nativecode/com.termux.x11.MainActivity`
+2. Opens `com.zenithblue.nativecode/com.termux.x11.MainActivity`
 3. `proot-distro login debian --shared-tmp -- … startxfce4`
 
 When **`linux_method=chroot`**:
@@ -69,8 +69,8 @@ FluxLinux **also** generates `/data/local/tmp/start_debian13_gui.sh` which start
 
 | Concern | FluxLinux | NativeCode (required) |
 |---------|-----------|------------------------|
-| Package | `com.termux` | `com.ivarna.nativecode` |
-| `TARGET_TERMUX_PREFIX` | `/data/data/com.termux/files/usr` | `/data/data/com.ivarna.nativecode/files/usr` |
+| Package | `com.termux` | `com.zenithblue.nativecode` |
+| `TARGET_TERMUX_PREFIX` | `/data/data/com.termux/files/usr` | `/data/data/com.zenithblue.nativecode/files/usr` |
 | X11 start | `termux-x11 :0` binary + external Termux:X11 app | Embedded: `app_process` + `loader.apk` + `am start …/com.termux.x11.MainActivity` (same as proot `start_gui.sh`) |
 | Guest `/tmp` | Often bind-mount **entire** host `usr/tmp` → chroot `/tmp` | **Sticky disk `/tmp`** for apt; host tmp only at `/mnt/host-tmp` (`ChrootCommandBuilder`) |
 | X11 socket | Visible at guest `/tmp/.X11-unix` via full bind | Must **not** replace sticky `/tmp`; bind only `.X11-unix` (and lock) or symlink strategy |
@@ -182,7 +182,7 @@ Port of flux `start_debian13.sh` + essential bits of flux `start_debian13_gui.sh
 
 ```
 DEBIANPATH=/data/local/tmp/chrootDebian13
-TARGET_PREFIX=/data/data/com.ivarna.nativecode/files/usr
+TARGET_PREFIX=/data/data/com.zenithblue.nativecode/files/usr
 USERNAME=flux
 BB=<detect magisk/system busybox, skip termux busybox>
 ```

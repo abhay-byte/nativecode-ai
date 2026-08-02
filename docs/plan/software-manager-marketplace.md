@@ -75,7 +75,7 @@
 
 ```text
 ┌─────────────────────────────────────────────────────────────┐
-│ NativeCode app (com.ivarna.nativecode)                      │
+│ NativeCode app (com.zenithblue.nativecode)                      │
 │  Settings Hub                                                │
 │    ├─ Software Manager page  ──► AptInventoryService         │
 │    │                              (dpkg-query in guest)      │
@@ -595,7 +595,7 @@ Separate files optional: `registry-proot.json` / `registry-chroot.json` **or** o
 ### 8.1 New packages / files under `app/`
 
 ```text
-app/src/main/java/com/ivarna/nativecode/
+app/src/main/java/com/zenithblue/nativecode/
   marketplace/
     MarketplaceModels.kt       # data classes (Catalog, Package, Category, Kind)
     MarketplaceClient.kt       # HTTP fetch + disk cache

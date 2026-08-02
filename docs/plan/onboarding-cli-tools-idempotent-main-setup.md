@@ -12,8 +12,8 @@
 | Path | Role |
 |------|------|
 | `app/src/main/assets/scripts/setup_cli_tools.sh` | Guest script: NVM/Node + AI CLIs as `flux` |
-| `app/src/main/java/com/ivarna/nativecode/OnboardingActivity.kt` | Onboarding pages + setup pipeline |
-| `app/src/main/java/com/ivarna/nativecode/MainActivity.kt` | Manual script runner still lists `setup_cli_tools.sh` (unchanged behavior; copy into guest `/tmp`) |
+| `app/src/main/java/com/zenithblue/nativecode/OnboardingActivity.kt` | Onboarding pages + setup pipeline |
+| `app/src/main/java/com/zenithblue/nativecode/MainActivity.kt` | Manual script runner still lists `setup_cli_tools.sh` (unchanged behavior; copy into guest `/tmp`) |
 | `app/src/main/assets/scripts/setup_customization_debian.sh` | Writes optimized `.zshrc` (PATH base); CLI script re-wires after |
 
 ---
@@ -212,7 +212,7 @@ If only `kiro` exists → symlink `~/.local/bin/kiro-cli` → `kiro` for MainAct
 
 ### 2. OnboardingActivity — fold CLI into main setup
 
-**Location:** `app/src/main/java/com/ivarna/nativecode/OnboardingActivity.kt`
+**Location:** `app/src/main/java/com/zenithblue/nativecode/OnboardingActivity.kt`
 
 #### 2.1 New page map
 

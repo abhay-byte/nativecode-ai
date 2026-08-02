@@ -6,7 +6,7 @@
 **Related:**  
 - `app/src/main/assets/scripts/setup_hw_accel_debian.sh`  
 - `app/src/main/assets/scripts/start_gui.sh`  
-- `app/src/main/java/com/ivarna/nativecode/terminal/GpuAccelDetector.kt`  
+- `app/src/main/java/com/zenithblue/nativecode/terminal/GpuAccelDetector.kt`  
 - Onboarding + MainActivity script runners  
 - Upstream Turnip builds: [lfdevs/mesa-for-android-container](https://github.com/lfdevs/mesa-for-android-container)
 
@@ -82,7 +82,7 @@ start_gui.sh reads mode → Zink / virpipe / llvmpipe fallback
 
 ### 1. `GpuAccelDetector.kt` (new)
 
-Path: `app/src/main/java/com/ivarna/nativecode/terminal/GpuAccelDetector.kt`
+Path: `app/src/main/java/com/zenithblue/nativecode/terminal/GpuAccelDetector.kt`
 
 - Collects: `Build.HARDWARE/BOARD/DEVICE/...`, API 31+ `SOC_*`, `SystemProperties` / `getprop` keys (`ro.hardware`, `ro.board.platform`, `ro.soc.model`, EGL/Vulkan driver props, …).  
 - Strong Adreno signal: `/dev/kgsl-3d0` (or readable).  
@@ -137,9 +137,9 @@ Path: `app/src/main/java/com/ivarna/nativecode/terminal/GpuAccelDetector.kt`
 
 | File | Action |
 |------|--------|
-| `app/src/main/java/com/ivarna/nativecode/terminal/GpuAccelDetector.kt` | **new** |
-| `app/src/main/java/com/ivarna/nativecode/OnboardingActivity.kt` | detect + `FLUX_GPU` both paths |
-| `app/src/main/java/com/ivarna/nativecode/MainActivity.kt` | Scripts env inject + card text |
+| `app/src/main/java/com/zenithblue/nativecode/terminal/GpuAccelDetector.kt` | **new** |
+| `app/src/main/java/com/zenithblue/nativecode/OnboardingActivity.kt` | detect + `FLUX_GPU` both paths |
+| `app/src/main/java/com/zenithblue/nativecode/MainActivity.kt` | Scripts env inject + card text |
 | `app/src/main/assets/scripts/setup_hw_accel_debian.sh` | rewrite: detect, normalize, state |
 | `app/src/main/assets/scripts/start_gui.sh` | honor `gpu_mode` for XFCE GL |
 

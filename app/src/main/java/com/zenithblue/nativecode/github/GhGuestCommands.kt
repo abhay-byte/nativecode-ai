@@ -1,4 +1,4 @@
-package com.ivarna.nativecode.github
+package com.zenithblue.nativecode.github
 
 /**
  * Pure guest shell snippets for `gh`. No Android / UI.

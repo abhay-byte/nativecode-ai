@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-30  
 **Status:** implemented 2026-07-30 (+ NC Settings Hub → X11 Settings button)  
-**Scope:** Termux:X11 UI/UX embedded in NativeCode (`:termux-x11` library → `com.ivarna.nativecode`). Extra-keys bar default ON + fix missing icons; display chrome (back + keyboard) per `docs/project/ui_design.md`; system Back → NativeCode home; flatten X11 prefs to one sectioned page; rebrand notification; decide architecture (keep module vs merge).  
+**Scope:** Termux:X11 UI/UX embedded in NativeCode (`:termux-x11` library → `com.zenithblue.nativecode`). Extra-keys bar default ON + fix missing icons; display chrome (back + keyboard) per `docs/project/ui_design.md`; system Back → NativeCode home; flatten X11 prefs to one sectioned page; rebrand notification; decide architecture (keep module vs merge).  
 **Out of scope:** APK assembly / install; XFCE guest scripts; proot/chroot start path; rewriting Lorie/X server JNI; full Compose rewrite of X render surface; Play-store packaging beyond branding strings.
 
 **Design SSOT:** `docs/project/ui_design.md` (Obsidian Terminal / cyber-brutalist)  
@@ -14,7 +14,7 @@
 **Related:**
 - Module: `termux-x11/` (`com.android.library`, namespace `com.termux.x11`)
 - Host: `app` `implementation(project(":termux-x11"))` — **same APK / same applicationId**
-- Launch: `am start -n com.ivarna.nativecode/com.termux.x11.MainActivity`
+- Launch: `am start -n com.zenithblue.nativecode/com.termux.x11.MainActivity`
 - Scripts: `start_gui.sh`, `chroot/start_gui_chroot.sh` start Loader + open X11 activity
 
 **Compile policy (mandatory for impl agent):**
@@ -38,7 +38,7 @@
 
 | Control | Current | Desired |
 |---------|---------|---------|
-| Overlay `back_to_home_button` | Starts `com.ivarna.nativecode.MainActivity` with `REORDER_TO_FRONT` — OK functionally; UI is stock `ic_menu_revert` + semi-black square — **not** ui_design |
+| Overlay `back_to_home_button` | Starts `com.zenithblue.nativecode.MainActivity` with `REORDER_TO_FRONT` — OK functionally; UI is stock `ic_menu_revert` + semi-black square — **not** ui_design |
 | System / gesture Back | `TouchInputHandler` → `backButtonAction` default **`toggle soft keyboard`** (does **not** leave X11) | **Return to NativeCode app** (same as overlay back) |
 | `MainActivity.onBackPressed()` | `super.onBackPressed()` only | Align with “go home” helper |
 
@@ -74,7 +74,7 @@ Feels like a **second independent app** in the shade, even though process/packag
 | Layer | State today |
 |-------|-------------|
 | Gradle | `:termux-x11` library included by `:app` |
-| applicationId | `com.ivarna.nativecode` only |
+| applicationId | `com.zenithblue.nativecode` only |
 | Activities | `com.termux.x11.MainActivity`, `LoriePreferences` merged into host manifest |
 | JNI / server | `libXlorie.so` + `loader.apk` / `app_process` CmdEntryPoint |
 | Recents / task | **`taskAffinity=".MainActivity"`** + `singleInstance` → **separate task** in Recents → feels independent |
@@ -101,14 +101,14 @@ User question: *should we combine into NativeCode?*
 Keep:
 
 - X server, `LorieView`, input stack, AIDL, jniLibs, CmdEntryPoint/Loader packaging  
-- Package still `com.ivarna.nativecode` (already)
+- Package still `com.zenithblue.nativecode` (already)
 
 Change for “combined” **product feel**:
 
 1. **Task:** drop separate `taskAffinity` (or set affinity equal to host); prefer `singleTop`/`singleTask` so Recents shows **one** NativeCode task when possible  
 2. **Branding:** rename visible strings → **NativeCode Desktop** / **X11 Display** (not Termux:X11)  
 3. **Notification:** NativeCode channel name, green accent, titles match product  
-4. **Back:** always return to `com.ivarna.nativecode.MainActivity`  
+4. **Back:** always return to `com.zenithblue.nativecode.MainActivity`  
 5. **Design tokens:** X11 layouts/themes consume same colors as `NC` / ui_design  
 6. **No LAUNCHER** for X11 (already no LAUNCHER category on X11 activity — keep it that way)
 
@@ -276,7 +276,7 @@ Replace lone `back_to_home_button` with horizontal `LinearLayout` top-start:
 
 ```text
 goToNativeCodeHome():
-  Intent → Class.forName("com.ivarna.nativecode.MainActivity")
+  Intent → Class.forName("com.zenithblue.nativecode.MainActivity")
   flags: FLAG_ACTIVITY_REORDER_TO_FRONT | FLAG_ACTIVITY_SINGLE_TOP
   // optional CLEAR_TOP if stack wrong
   startActivity; do not finish() X11 by default (session stays; user can resume from notification / Settings START)
@@ -454,7 +454,7 @@ If affinity change breaks session, **fallback:** keep affinity but fix branding 
 | Changing launchMode kills X connection | Phase 5 isolated; device test; revert affinity if needed |
 | Flattening prefs breaks `fragment=` deep links / CLI `CHANGE_PREFERENCE` | Keep `Prefs` DataStore keys identical; Receiver path untouched |
 | Theme breaks preference widgets | Test Switch/SeekBar/List dialogs on API 26 + 34 |
-| `Class.forName("com.ivarna.nativecode.MainActivity")` fragile | Prefer constant / `BuildConfig` host activity class string in one place |
+| `Class.forName("com.zenithblue.nativecode.MainActivity")` fragile | Prefer constant / `BuildConfig` host activity class string in one place |
 | Notification permission denials | Existing request path; don’t spam |
 
 ---

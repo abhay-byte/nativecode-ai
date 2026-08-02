@@ -31,7 +31,7 @@ Assumes ADB root (KernelSU) and helpers on device.
 | `proot-distro` | `/system/bin/su u0_aXXX -c '/data/local/tmp/nativecode_proot.sh cmd "…"'` |
 | `proot-fast` | `/system/bin/su u0_aXXX -c '/data/local/tmp/nativecode_proot_fast.sh exec -- …'` |
 
-Package must be `com.ivarna.nativecode`. Suite auto-detects app UID.
+Package must be `com.zenithblue.nativecode`. Suite auto-detects app UID.
 
 ---
 
@@ -53,7 +53,7 @@ Package must be `com.ivarna.nativecode`. Suite auto-detects app UID.
 | **P0-10** | env_dns_or_skip | `getent hosts` / `ping -c1` | pass or **SKIP** if offline |
 | **P0-11** | distro_still_works | original `nativecode_proot.sh cmd true` | exit 0 (always) |
 | **P0-12** | chroot_still_works | chroot true path | exit 0 if chroot present else SKIP |
-| **P0-13** | no_termux_default | proot rootfs path | contains `com.ivarna.nativecode` |
+| **P0-13** | no_termux_default | proot rootfs path | contains `com.zenithblue.nativecode` |
 | **P0-14** | kill_clean | after true, no stuck runaway proot storm | process count sanity |
 
 ### 3.2 P0 — Filesystem & packages (minimal)

@@ -1,10 +1,10 @@
-package com.ivarna.nativecode
+package com.zenithblue.nativecode
 
 import android.content.Context
 import android.content.res.AssetManager
 import android.util.Log
-import com.ivarna.nativecode.terminal.ChrootCommandBuilder
-import com.ivarna.nativecode.terminal.TermuxHostPaths
+import com.zenithblue.nativecode.terminal.ChrootCommandBuilder
+import com.zenithblue.nativecode.terminal.TermuxHostPaths
 import java.io.File
 import java.io.FileOutputStream
 

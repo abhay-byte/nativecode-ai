@@ -45,7 +45,7 @@ ready for use
 - **[2]** runs **after** rootfs is present; safe to run **before or after** AI package install; **after** is fine if install itself is slow (re-run `--safe` once packages settle).
 - **[3]** = durable rootfs content update (ldconfig caches, apt conf, dash `/bin/sh`, tmp layout, locales) so onboarding on a fresh image needs less work.
 - **Never** enable `--aggressive` (`eatmydata`, force-unsafe-io) in default onboarding.
-- **Never** break Turnip / virgl / chroot / flux user / `com.ivarna.nativecode` paths.
+- **Never** break Turnip / virgl / chroot / flux user / `com.zenithblue.nativecode` paths.
 - Default app path stays **compat** until explicit opt-in to fast launcher.
 
 ---

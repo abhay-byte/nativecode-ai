@@ -1,10 +1,10 @@
-package com.ivarna.nativecode
+package com.zenithblue.nativecode
 
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
-import com.ivarna.nativecode.terminal.ChrootCommandBuilder
+import com.zenithblue.nativecode.terminal.ChrootCommandBuilder
 import java.io.BufferedReader
 import java.io.File
 import java.io.FileOutputStream
@@ -354,7 +354,7 @@ object RootShell {
      */
     private fun buildChrootHelperCmd(user: String, b64: String, chrootPath: String): String {
         val helper = ChrootCommandBuilder.CHROOT_HELPER
-        val pkg = "com.ivarna.nativecode"
+        val pkg = "com.zenithblue.nativecode"
         val envPrefix =
             if (chrootPath == ChrootCommandBuilder.CHROOT_PATH) ""
             else "NC_CHROOT='$chrootPath' "

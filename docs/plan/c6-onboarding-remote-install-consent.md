@@ -79,7 +79,7 @@
 
 ## 3. Assumptions (user-confirmed)
 
-1. No remote code into host process (`com.ivarna.nativecode`)  
+1. No remote code into host process (`com.zenithblue.nativecode`)  
 2. Integrity/pin for controlled downloads (rootfs SHA, etc.)  
 3. Listing + reviewer notes match behavior (C8 ops)  
 

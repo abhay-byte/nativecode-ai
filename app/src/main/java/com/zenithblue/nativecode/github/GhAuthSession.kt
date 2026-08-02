@@ -1,6 +1,6 @@
-package com.ivarna.nativecode.github
+package com.zenithblue.nativecode.github
 
-import com.ivarna.nativecode.terminal.ShellJob
+import com.zenithblue.nativecode.terminal.ShellJob
 
 /**
  * Cancel handle for an in-flight GitHub connect session.

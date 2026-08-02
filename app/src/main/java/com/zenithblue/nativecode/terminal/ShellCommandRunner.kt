@@ -1,4 +1,4 @@
-package com.ivarna.nativecode.terminal
+package com.zenithblue.nativecode.terminal
 
 import android.content.Context
 import android.os.Handler
@@ -24,11 +24,24 @@ object ShellCommandRunner {
 
     private val mainHandler = Handler(Looper.getMainLooper())
 
+    /**
+     * Host ET_DYN tools (libbash.so / libproot.so) live under /data/app or /data/data.
+     * Prefix with system linker64 so Bionic resolves NEEDED libs via LD_LIBRARY_PATH / RUNPATH.
+     */
+    private fun adjustHostCmd(cmd: Array<String>): Array<String> {
+        if (cmd.isEmpty()) return cmd
+        val exe = cmd[0]
+        if (exe == "/system/bin/linker64" || exe.startsWith("/system/")) return cmd
+        val underAppData =
+            exe.startsWith("/data/data/") ||
+                exe.startsWith("/data/app/") ||
+                exe.startsWith("/data/user/")
+        return if (underAppData) arrayOf("/system/bin/linker64") + cmd else cmd
+    }
+
     /** Runs a command and returns its exit code. Output is consumed but not returned. */
     fun run(ctx: Context, cmd: Array<String>, envMap: Map<String, String>? = null): Int {
-        val adjusted = if (cmd.isNotEmpty() && cmd[0].startsWith("/data/data/"))
-            arrayOf("/system/bin/linker64") + cmd else cmd
-        val pb = ProcessBuilder(*adjusted)
+        val pb = ProcessBuilder(*adjustHostCmd(cmd))
         applyEnvironment(ctx, pb, envMap)
         pb.redirectErrorStream(true)
         val proc = pb.start()
@@ -40,9 +53,7 @@ object ShellCommandRunner {
 
     /** Runs a command and returns combined stdout/stderr as a string (blocking). */
     fun runCapture(ctx: Context, cmd: Array<String>, envMap: Map<String, String>? = null): String {
-        val adjusted = if (cmd.isNotEmpty() && cmd[0].startsWith("/data/data/"))
-            arrayOf("/system/bin/linker64") + cmd else cmd
-        val pb = ProcessBuilder(*adjusted)
+        val pb = ProcessBuilder(*adjustHostCmd(cmd))
         applyEnvironment(ctx, pb, envMap)
         pb.redirectErrorStream(true)
         val proc = pb.start()
@@ -57,9 +68,7 @@ object ShellCommandRunner {
         cmd: Array<String>,
         envMap: Map<String, String>? = null
     ): Pair<Int, String> {
-        val adjusted = if (cmd.isNotEmpty() && cmd[0].startsWith("/data/data/"))
-            arrayOf("/system/bin/linker64") + cmd else cmd
-        val pb = ProcessBuilder(*adjusted)
+        val pb = ProcessBuilder(*adjustHostCmd(cmd))
         applyEnvironment(ctx, pb, envMap)
         pb.redirectErrorStream(true)
         val proc = pb.start()
@@ -90,9 +99,7 @@ object ShellCommandRunner {
         onLine: (line: String) -> Unit,
         onDone: (exitCode: Int) -> Unit
     ): ShellJob {
-        val adjusted = if (cmd.isNotEmpty() && cmd[0].startsWith("/data/data/"))
-            arrayOf("/system/bin/linker64") + cmd else cmd
-        val pb = ProcessBuilder(*adjusted)
+        val pb = ProcessBuilder(*adjustHostCmd(cmd))
         applyEnvironment(ctx, pb, envMap)
         pb.redirectErrorStream(true)
 

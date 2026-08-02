@@ -3,7 +3,7 @@
 # Does NOT pkill proot (proot stop is stop_gui.sh only).
 
 DEBIANPATH="${DEBIANPATH:-/data/local/tmp/chrootDebian13}"
-TARGET_PREFIX="${TARGET_PREFIX:-/data/data/com.ivarna.nativecode/files/usr}"
+TARGET_PREFIX="${TARGET_PREFIX:-/data/data/com.zenithblue.nativecode/files/usr}"
 
 echo "========================================"
 echo "NativeCode: Stopping Chroot XFCE"
@@ -13,7 +13,7 @@ BB=""
 if command -v busybox >/dev/null 2>&1; then
   DETECTED_BB=$(command -v busybox)
   case "$DETECTED_BB" in
-    *"com.termux"*|*"com.ivarna.nativecode"*) ;;
+    *"com.termux"*|*"com.zenithblue.nativecode"*) ;;
     *) BB="$DETECTED_BB" ;;
   esac
 fi

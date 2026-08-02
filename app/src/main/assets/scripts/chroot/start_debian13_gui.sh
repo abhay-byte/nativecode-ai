@@ -1,10 +1,10 @@
 #!/system/bin/sh
 # start_debian13_gui.sh — root: mount Debian chroot + launch XFCE4
 # Called by start_gui_chroot.sh after host Pulse/VirGL/X11 are up.
-# Paths: com.ivarna.nativecode (not com.termux). Sticky guest /tmp preserved.
+# Paths: com.zenithblue.nativecode (not com.termux). Sticky guest /tmp preserved.
 
 DEBIANPATH="${DEBIANPATH:-/data/local/tmp/chrootDebian13}"
-TARGET_PREFIX="${TARGET_PREFIX:-/data/data/com.ivarna.nativecode/files/usr}"
+TARGET_PREFIX="${TARGET_PREFIX:-/data/data/com.zenithblue.nativecode/files/usr}"
 USERNAME="${USERNAME:-flux}"
 
 echo "========================================"
@@ -17,7 +17,7 @@ BB=""
 if command -v busybox >/dev/null 2>&1; then
   DETECTED_BB=$(command -v busybox)
   case "$DETECTED_BB" in
-    *"com.termux"*|*"com.ivarna.nativecode"*) ;;
+    *"com.termux"*|*"com.zenithblue.nativecode"*) ;;
     *) BB="$DETECTED_BB" ;;
   esac
 fi

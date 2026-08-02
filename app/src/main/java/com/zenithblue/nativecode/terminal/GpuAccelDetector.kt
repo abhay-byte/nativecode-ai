@@ -1,4 +1,4 @@
-package com.ivarna.nativecode.terminal
+package com.zenithblue.nativecode.terminal
 
 import android.os.Build
 import android.util.Log

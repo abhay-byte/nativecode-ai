@@ -196,7 +196,7 @@ fun handleImageAttachment(uri: Uri) {
     }
     
     // 2. Copy into proot environment if needed
-    //    Path accessible from debian proot: /data/data/com.ivarna.nativecode/files/attach_temp.jpg
+    //    Path accessible from debian proot: /data/data/com.zenithblue.nativecode/files/attach_temp.jpg
     //    Or use: cp to /sdcard/Download/ for simpler path
     
     // 3. Inject file path into terminal

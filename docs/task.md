@@ -17,7 +17,7 @@ Root causes identified via code analysis of `MainActivity.kt`:
 
 ## Files Involved
 
-- `app/src/main/java/com/ivarna/nativecode/MainActivity.kt`
+- `app/src/main/java/com/zenithblue/nativecode/MainActivity.kt`
   - `loadDiffForFile()` — lines 1713–1777
   - `renderDiffLines()` — lines 1779–1974
 
@@ -31,7 +31,7 @@ Write and run a test script via `adb shell run-as` to confirm:
 - What the clean filtered output looks like
 
 ```bash
-# adb shell run-as com.ivarna.nativecode sh -c '...'
+# adb shell run-as com.zenithblue.nativecode sh -c '...'
 # Set GIT_PAGER=cat, TERM=dumb, GIT_TERMINAL_PROMPT=0
 # Run: cd <project> && git diff HEAD -- <file>
 # Capture raw lines, identify noise prefix pattern

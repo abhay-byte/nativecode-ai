@@ -4,10 +4,10 @@ Updated: 2026-07-15
 
 ## Goal
 
-Make `com.ivarna.nativecode` install Debian and launch XFCE from its embedded native terminal/runtime. The host prefix is:
+Make `com.zenithblue.nativecode` install Debian and launch XFCE from its embedded native terminal/runtime. The host prefix is:
 
 ```text
-/data/data/com.ivarna.nativecode/files/usr
+/data/data/com.zenithblue.nativecode/files/usr
 ```
 
 Do not install or mix packages built for `/data/data/com.termux/files/usr`.
@@ -20,7 +20,7 @@ Modified project files:
 app/src/main/assets/scripts/flux_install.sh
 app/src/main/assets/scripts/setup_termux.sh
 app/src/main/assets/scripts/start_gui.sh
-app/src/main/java/com/ivarna/nativecode/MainActivity.kt
+app/src/main/java/com/zenithblue/nativecode/MainActivity.kt
 docs/start-gui-debug.md
 docs/agent-handoff.md
 ```
@@ -137,7 +137,7 @@ Caused by passing custom host `LD_LIBRARY_PATH` into Debian guest. Removed from 
 The custom package builder is configured for the correct namespace:
 
 ```text
-TERMUX_APP__PACKAGE_NAME="com.ivarna.nativecode"
+TERMUX_APP__PACKAGE_NAME="com.zenithblue.nativecode"
 ```
 
 Source checkouts:
@@ -166,7 +166,7 @@ The sibling `/home/abhay/repos/termux-packages` has a different output directory
 Custom `bash` package payload begins with:
 
 ```text
-./data/data/com.ivarna.nativecode/files/usr/bin/bash
+./data/data/com.zenithblue.nativecode/files/usr/bin/bash
 ```
 
 This proves the builder is producing the desired custom prefix.
@@ -241,7 +241,7 @@ Official source was cloned for investigation:
 Need obtain/build the loader APK from the Termux:X11 Android project or a compatible release, then package it into bootstrap at:
 
 ```text
-data/data/com.ivarna.nativecode/files/usr/libexec/termux-x11/loader.apk
+data/data/com.zenithblue.nativecode/files/usr/libexec/termux-x11/loader.apk
 ```
 
 At runtime it must be read-only before `app_process` uses it:
@@ -299,7 +299,7 @@ usr/share/X11/xkb or compatible xkeyboard-config data
 All paths inside built packages must use:
 
 ```text
-data/data/com.ivarna.nativecode/files/usr
+data/data/com.zenithblue.nativecode/files/usr
 ```
 
 ## Next Steps
@@ -310,7 +310,7 @@ data/data/com.ivarna.nativecode/files/usr
 4. Add a reproducible bootstrap assembly script to this repository. It should unpack selected `.deb` payloads, verify custom prefix, add loader APK, and create `app/src/main/assets/bootstrap.tar`.
 5. Verify required bootstrap paths before building APK.
 6. Build APK: `./gradlew assembleDebug`.
-7. Uninstall old device app data: `adb -s Y5WWBMJVOZSK4HU8 uninstall com.ivarna.nativecode`.
+7. Uninstall old device app data: `adb -s Y5WWBMJVOZSK4HU8 uninstall com.zenithblue.nativecode`.
 8. Install fresh APK: `adb -s Y5WWBMJVOZSK4HU8 install app/build/outputs/apk/debug/app-debug.apk`.
 9. Run setup. Validate per stage before creating `setup_complete`.
 10. Start GUI, take screenshot, stop GUI, verify PulseAudio/X11/guest processes terminate.
@@ -346,7 +346,7 @@ Check app device state:
 
 ```sh
 adb -s Y5WWBMJVOZSK4HU8 shell \
-  'run-as com.ivarna.nativecode sh -c "test -f files/setup_complete && echo complete || echo incomplete"'
+  'run-as com.zenithblue.nativecode sh -c "test -f files/setup_complete && echo complete || echo incomplete"'
 ```
 
 ## Context7 Finding

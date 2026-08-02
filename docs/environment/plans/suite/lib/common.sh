@@ -2,7 +2,7 @@
 # Common helpers for NativeCode regression suite (host-side via adb, or on-device).
 # Safe defaults: NativeCode package only; no DRM glmark.
 
-NC_PACKAGE="${NC_PACKAGE:-com.ivarna.nativecode}"
+NC_PACKAGE="${NC_PACKAGE:-com.zenithblue.nativecode}"
 NC_PREFIX="${NC_PREFIX:-/data/data/${NC_PACKAGE}/files/usr}"
 NC_ROOTFS="${NC_ROOTFS:-${NC_PREFIX}/var/lib/proot-distro/containers/debian/rootfs}"
 NC_CHROOT="${NC_CHROOT:-/data/local/tmp/chrootDebian13}"

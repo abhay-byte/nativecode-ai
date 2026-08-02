@@ -4,7 +4,7 @@ Full **non-GPU** baseline on a weaker MediaTek device: environment inventory, **
 
 | Field | Value |
 |-------|--------|
-| **App package** | `com.ivarna.nativecode` (**not** stock `com.termux`) |
+| **App package** | `com.zenithblue.nativecode` (**not** stock `com.termux`) |
 | **Device** | POCO **duchamp** · model `2311DRK48I` (POCO X6 Pro family) |
 | **SoC** | MediaTek **MT6897** (Dimensity 8300-class) · platform `mt6897` |
 | **GPU (host)** | **Mali** (`ro.hardware.vulkan=mali`, `ro.hardware.egl=meow`) — **no Turnip** |
@@ -28,7 +28,7 @@ Full **non-GPU** baseline on a weaker MediaTek device: environment inventory, **
 
 | | **proot** | **chroot** |
 |--|-----------|------------|
-| **Rootfs** | `/data/data/com.ivarna.nativecode/files/usr/var/lib/proot-distro/containers/debian/rootfs` (~6.0 G) | `/data/local/tmp/chrootDebian13` (~8.3 G) |
+| **Rootfs** | `/data/data/com.zenithblue.nativecode/files/usr/var/lib/proot-distro/containers/debian/rootfs` (~6.0 G) | `/data/local/tmp/chrootDebian13` (~8.3 G) |
 | **Privilege** | App UID `u0_a415` + userspace proot | Real root + `busybox chroot` |
 | **Enter as** | `flux` via `proot-distro login debian --user flux` | `flux` via `su - flux` inside chroot |
 | **Kernel (`uname -r`)** | Fake: `6.17.0-PRoot-Distro` | Real: `6.1.134-android14-11-g246384388afb` |
@@ -40,14 +40,14 @@ Full **non-GPU** baseline on a weaker MediaTek device: environment inventory, **
 
 | Item | Path |
 |------|------|
-| Package | `com.ivarna.nativecode` |
-| Prefix | `/data/data/com.ivarna.nativecode/files/usr` |
-| Host home | `/data/data/com.ivarna.nativecode/files/home` |
+| Package | `com.zenithblue.nativecode` |
+| Prefix | `/data/data/com.zenithblue.nativecode/files/usr` |
+| Host home | `/data/data/com.zenithblue.nativecode/files/home` |
 | Host env SSOT | `$PREFIX/etc/fluxlinux-host.env` |
 | proot binary | `$PREFIX/bin/proot` |
 | proot-distro | `$PREFIX/bin/proot-distro` |
 
-**Critical:** always source `fluxlinux-host.env` and set `TERMUX_APP__PACKAGE_NAME=com.ivarna.nativecode` before `proot-distro`. Missing → defaults to **`com.termux`**.
+**Critical:** always source `fluxlinux-host.env` and set `TERMUX_APP__PACKAGE_NAME=com.zenithblue.nativecode` before `proot-distro`. Missing → defaults to **`com.termux`**.
 
 ### 1.3 Device helpers used this run
 
@@ -349,7 +349,7 @@ busybox chroot /data/local/tmp/chrootDebian13 /bin/bash -lc \
 ```bash
 cp /data/local/tmp/bench_nongpu.sh /data/local/tmp/chrootDebian13/tmp/
 cp /data/local/tmp/bench_nongpu.sh \
-  /data/data/com.ivarna.nativecode/files/usr/var/lib/proot-distro/containers/debian/rootfs/tmp/
+  /data/data/com.zenithblue.nativecode/files/usr/var/lib/proot-distro/containers/debian/rootfs/tmp/
 ```
 
 ### 5.6 Run chroot suite
@@ -401,7 +401,7 @@ adb -s 192.168.1.52:43055 pull \
 
 - [ ] Wireless or USB ADB; `adb devices` shows device  
 - [ ] KernelSU root in `adb shell`  
-- [ ] `com.ivarna.nativecode` installed; both rootfs trees present  
+- [ ] `com.zenithblue.nativecode` installed; both rootfs trees present  
 - [ ] Screen usable / not mid-crash recovery (benches are lighter without GPU, still warm the SoC)  
 - [ ] Prefer charging + cool phone; avoid thermal throttling mid-run  
 
@@ -430,7 +430,7 @@ adb -s "$SERIAL" shell '/system/bin/su u0_a415 -c \
 |-------|--------|
 | proot `uname -r` | contains `PRoot` |
 | chroot `uname -r` | real Android kernel string |
-| proot package name | paths under `com.ivarna.nativecode` only |
+| proot package name | paths under `com.zenithblue.nativecode` only |
 | `nproc` | 8 on this device |
 | fio in chroot | `shmget` fail is **normal** |
 | GPU tools | **do not** require for this report |
@@ -459,11 +459,11 @@ dd if=/home/flux/bench_io/dd.bin of=/dev/null bs=1M
 ```sh
 #!/system/bin/sh
 set -e
-PREFIX=/data/data/com.ivarna.nativecode/files/usr
+PREFIX=/data/data/com.zenithblue.nativecode/files/usr
 . "$PREFIX/etc/fluxlinux-host.env"
-export TERMUX_APP__PACKAGE_NAME=com.ivarna.nativecode
+export TERMUX_APP__PACKAGE_NAME=com.zenithblue.nativecode
 export TERMUX__PREFIX="$PREFIX"
-export TERMUX__HOME=/data/data/com.ivarna.nativecode/files/home
+export TERMUX__HOME=/data/data/com.zenithblue.nativecode/files/home
 export PREFIX TERMUX__PREFIX TERMUX__HOME
 export PATH="$PREFIX/bin:$PREFIX/bin/applets:/system/bin:/system/xbin:$PATH"
 export LD_LIBRARY_PATH="$PREFIX/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"

@@ -4,7 +4,7 @@ Full report of the **2026-07-29** baseline on a connected device: environment in
 
 | Field | Value |
 |-------|--------|
-| **App package** | `com.ivarna.nativecode` (**not** stock `com.termux`) |
+| **App package** | `com.zenithblue.nativecode` (**not** stock `com.termux`) |
 | **Device** | OnePlus 13R / **CPH2691** (model prop), Adreno **750** |
 | **ADB (wireless)** | `192.168.1.78:41417` (port changes after reboot) |
 | **ADB (USB example)** | serial `d30a1726` |
@@ -22,7 +22,7 @@ Full report of the **2026-07-29** baseline on a connected device: environment in
 
 | | **proot** | **chroot** |
 |--|-----------|------------|
-| **Rootfs** | `/data/data/com.ivarna.nativecode/files/usr/var/lib/proot-distro/containers/debian/rootfs` | `/data/local/tmp/chrootDebian13` |
+| **Rootfs** | `/data/data/com.zenithblue.nativecode/files/usr/var/lib/proot-distro/containers/debian/rootfs` | `/data/local/tmp/chrootDebian13` |
 | **Distro name** | `proot-distro` container name: `debian` | path fixed by app |
 | **Privilege** | App UID (e.g. `u0_a510`) + userspace proot | Real root + `busybox chroot` |
 | **Enter as** | `flux` via `proot-distro login debian --user flux` | `flux` via `su - flux` inside chroot |
@@ -35,9 +35,9 @@ Full report of the **2026-07-29** baseline on a connected device: environment in
 
 | Item | Path |
 |------|------|
-| Package | `com.ivarna.nativecode` |
-| Prefix | `/data/data/com.ivarna.nativecode/files/usr` |
-| Host home | `/data/data/com.ivarna.nativecode/files/home` |
+| Package | `com.zenithblue.nativecode` |
+| Prefix | `/data/data/com.zenithblue.nativecode/files/usr` |
+| Host home | `/data/data/com.zenithblue.nativecode/files/home` |
 | Host env SSOT | `$PREFIX/etc/fluxlinux-host.env` |
 | proot binary | `$PREFIX/bin/proot` + APK `libproot.so` / `libloader.so` |
 | proot-distro | `$PREFIX/bin/proot-distro` (Python) |
@@ -46,7 +46,7 @@ Full report of the **2026-07-29** baseline on a connected device: environment in
 
 ### 1.3 Device prefs (sample from session)
 
-From `/data/data/com.ivarna.nativecode/shared_prefs/nativecode_prefs.xml`:
+From `/data/data/com.zenithblue.nativecode/shared_prefs/nativecode_prefs.xml`:
 
 - `linux_method` = `chroot` (at time of inspect)
 - `proot_dir_present` / `chroot_dir_present` = true
@@ -297,9 +297,9 @@ Same GPU and driver string → gap is **proot overhead on GPU client path** (sys
 2. Confirm package and rootfs:
 
 ```bash
-adb shell 'pm path com.ivarna.nativecode'
+adb shell 'pm path com.zenithblue.nativecode'
 adb shell 'ls /data/local/tmp/chrootDebian13/.flux_configured'
-adb shell 'ls /data/data/com.ivarna.nativecode/files/usr/var/lib/proot-distro/containers/debian/rootfs/etc/os-release'
+adb shell 'ls /data/data/com.zenithblue.nativecode/files/usr/var/lib/proot-distro/containers/debian/rootfs/etc/os-release'
 ```
 
 3. **Chroot enter** (root):
@@ -319,7 +319,7 @@ busybox chroot $CHROOT /bin/su - flux
 ```bash
 # Deploy/use /data/local/tmp/nativecode_proot.sh which:
 #  - sources fluxlinux-host.env
-#  - sets TERMUX_APP__PACKAGE_NAME=com.ivarna.nativecode
+#  - sets TERMUX_APP__PACKAGE_NAME=com.zenithblue.nativecode
 #  - sets TERMUX__PREFIX / TERMUX__HOME
 #  - sets PD_PROOT_BIN / PROOT_LOADER from this APK's lib dir
 #  - refuses */com.termux/* PREFIX
@@ -329,7 +329,7 @@ busybox chroot $CHROOT /bin/su - flux
 Healthy proot check:
 
 ```text
-OK com.ivarna.nativecode /data/data/com.ivarna.nativecode/files/usr ...
+OK com.zenithblue.nativecode /data/data/com.zenithblue.nativecode/files/usr ...
 uid=…(flux)
 PRETTY_NAME="Debian GNU/Linux 13 (trixie)"
 # no com.termux data paths in printenv
@@ -379,7 +379,7 @@ busybox chroot /data/local/tmp/chrootDebian13 /bin/su - flux -c \
 
 ```bash
 cp /data/local/tmp/bench_quick.sh \
-  /data/data/com.ivarna.nativecode/files/usr/tmp/bench_quick.sh
+  /data/data/com.zenithblue.nativecode/files/usr/tmp/bench_quick.sh
 /system/bin/su u0_a510 -c \
   '/data/local/tmp/nativecode_proot.sh cmd "export BENCH_WORKDIR=/home/flux/bench_io XDG_RUNTIME_DIR=/tmp; bash /tmp/bench_quick.sh proot /home/flux/bench_results"'
 ```
@@ -429,12 +429,12 @@ On device: KernelSU root for chroot; app UID for proot; both rootfs installed; p
 
 ```bash
 SERIAL=<serial-or-ip:port>
-APP_UID=$(adb -s $SERIAL shell 'stat -c %U /data/data/com.ivarna.nativecode' | tr -d '\r')
+APP_UID=$(adb -s $SERIAL shell 'stat -c %U /data/data/com.zenithblue.nativecode' | tr -d '\r')
 
 # 1) Push scripts (if missing)
 adb -s $SERIAL push docs/environment/scripts/bench_quick.sh /data/local/tmp/bench_quick.sh
 # nativecode_proot.sh: bake LIBDIR from:
-#   adb shell 'find /data/app -path "*com.ivarna.nativecode*" -name libproot.so'
+#   adb shell 'find /data/app -path "*com.zenithblue.nativecode*" -name libproot.so'
 
 # 2) Chroot mounts + bench
 adb -s $SERIAL shell 'CHROOT=/data/local/tmp/chrootDebian13
@@ -447,13 +447,13 @@ adb -s $SERIAL shell 'CHROOT=/data/local/tmp/chrootDebian13
 
 # 3) Proot bench
 adb -s $SERIAL shell "cp -f /data/local/tmp/bench_quick.sh \
-  /data/data/com.ivarna.nativecode/files/usr/tmp/bench_quick.sh
+  /data/data/com.zenithblue.nativecode/files/usr/tmp/bench_quick.sh
   /system/bin/su $APP_UID -c '/data/local/tmp/nativecode_proot.sh cmd \
     \"BENCH_WORKDIR=/home/flux/bench_io bash /tmp/bench_quick.sh proot /home/flux/bench_results\"'"
 
 # 4) Pull summaries
 adb -s $SERIAL shell 'cat /data/local/tmp/chrootDebian13/home/flux/bench_results/chroot.summary.txt'
-adb -s $SERIAL shell 'cat /data/data/com.ivarna.nativecode/files/usr/var/lib/proot-distro/containers/debian/rootfs/home/flux/bench_results/proot.summary.txt'
+adb -s $SERIAL shell 'cat /data/data/com.zenithblue.nativecode/files/usr/var/lib/proot-distro/containers/debian/rootfs/home/flux/bench_results/proot.summary.txt'
 ```
 
 ### 5.4 Manual commands (copy-paste inside guest)
@@ -491,7 +491,7 @@ timeout 90 xvfb-run -a glmark2-es2 -b build --off-screen
 
 | Check | Healthy |
 |-------|---------|
-| proot package assert | `OK com.ivarna.nativecode` … no `com.termux` paths |
+| proot package assert | `OK com.zenithblue.nativecode` … no `com.termux` paths |
 | Vulkan | `Turnip Adreno (TM) 750` / `turnip Mesa driver` |
 | EGL | renderer contains `zink` + `Turnip` (not only llvmpipe) |
 | glmark | finishes with `glmark2 Score: N` for scene `build` |

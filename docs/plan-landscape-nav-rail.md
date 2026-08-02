@@ -6,8 +6,8 @@
 
 ## Context
 
-**App**: NativeCode (`com.ivarna.nativecode`) — pure View-based Android (no Compose)  
-**File**: `app/src/main/java/com/ivarna/nativecode/MainActivity.kt` (~5480 lines)  
+**App**: NativeCode (`com.zenithblue.nativecode`) — pure View-based Android (no Compose)  
+**File**: `app/src/main/java/com/zenithblue/nativecode/MainActivity.kt` (~5480 lines)  
 **Material**: `com.google.android.material:material:1.11.0`
 
 ### Two Navigation Sets
@@ -138,7 +138,7 @@ cd /home/abhay/repos/termux-lib
 ### Step 4 — Install on device
 ```bash
 adb install -r app/build/outputs/apk/release/app-release.apk
-adb shell am start -n com.ivarna.nativecode/.MainActivity
+adb shell am start -n com.zenithblue.nativecode/.MainActivity
 ```
 
 ### Step 5 — Device verification

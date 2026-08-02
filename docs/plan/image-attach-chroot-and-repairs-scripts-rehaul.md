@@ -70,7 +70,7 @@ handleImageAttachment(uri):
   copy ContentResolver stream → FileOutputStream(destFile)   // app UID write
   guestPath =
     if targetDir == guestHomeDir → "/home/flux/$fname"
-    else → "/data/data/com.ivarna.nativecode/files/home/$fname"
+    else → "/data/data/com.zenithblue.nativecode/files/home/$fname"
   clipboard = guestPath
   toast "Image path copied"
 ```
@@ -664,18 +664,18 @@ Before implementation:
 
 ## Appendix A — Bug anchor (attach)
 
-```2881:2897:app/src/main/java/com/ivarna/nativecode/MainActivity.kt
+```2881:2897:app/src/main/java/com/zenithblue/nativecode/MainActivity.kt
 // handleImageAttachment — writes guestHomeDir via app File I/O;
 // chroot home is not app-writable; isWorkspace ignored.
 ```
 
 ## Appendix B — Path anchor (chroot)
 
-```10:12:app/src/main/java/com/ivarna/nativecode/terminal/ChrootCommandBuilder.kt
+```10:12:app/src/main/java/com/zenithblue/nativecode/terminal/ChrootCommandBuilder.kt
 const val CHROOT_PATH = "/data/local/tmp/chrootDebian13"
 ```
 
-```57:64:app/src/main/java/com/ivarna/nativecode/terminal/ProjectPathResolver.kt
+```57:64:app/src/main/java/com/zenithblue/nativecode/terminal/ProjectPathResolver.kt
 fun guestHomeDir(ctx, method):
   chroot → File(CHROOT_PATH, "home/flux")
   else   → File(prootRootfsDir, "home/flux")

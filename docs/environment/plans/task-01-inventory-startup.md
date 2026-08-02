@@ -133,7 +133,7 @@ Task 1 is research-only. Gates below must pass **after any device touch** during
 |----|-------|----------|
 | T1-R01 | `$PREFIX/bin/proot` is ELF, not shell wrapper | `file` → ELF |
 | T1-R02 | `nativecode_proot.sh cmd true` exits 0 | success |
-| T1-R03 | Paths under `com.ivarna.nativecode` only | no `com.termux` rootfs |
+| T1-R03 | Paths under `com.zenithblue.nativecode` only | no `com.termux` rootfs |
 | T1-R04 | Guest `uname` under distro still works | non-empty |
 | T1-R05 | chroot still enterable (if present) | `busybox chroot … true` or `su - flux -c true` |
 

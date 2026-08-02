@@ -105,7 +105,7 @@ setPadding(0, 0, 0, 0)
 
 ## Files Changed
 
-- `app/src/main/java/com/ivarna/nativecode/MainActivity.kt`
+- `app/src/main/java/com/zenithblue/nativecode/MainActivity.kt`
   - Lines: 1298, 1307, 1471, 1479, 1490, 1499, 1510, 1516, 1527, 1532, 1544, 1547
 
 ## No Changes Needed

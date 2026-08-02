@@ -5,7 +5,7 @@
 
 **Device:** CPH2691 (Adreno 750), ADB `192.168.1.78:41417`  
 **Date:** 2026-07-29  
-**Package:** `com.ivarna.nativecode` only (never stock `com.termux`)  
+**Package:** `com.zenithblue.nativecode` only (never stock `com.termux`)  
 **Guests:** Debian 13 trixie · user `flux` · GPU mode `turnip`  
 **Method:** `bench_quick.sh` — sysbench, stress-ng, mbw, dd, fio (where possible), vulkaninfo, eglinfo, **glmark2-es2 single scene `-b build` only**
 
@@ -99,10 +99,10 @@ export MESA_GLES_VERSION_OVERRIDE=3.2
 
 ```bash
 # SSOT
-. /data/data/com.ivarna.nativecode/files/usr/etc/fluxlinux-host.env
-export TERMUX_APP__PACKAGE_NAME=com.ivarna.nativecode
-export TERMUX__PREFIX=/data/data/com.ivarna.nativecode/files/usr
-export TERMUX__HOME=/data/data/com.ivarna.nativecode/files/home
+. /data/data/com.zenithblue.nativecode/files/usr/etc/fluxlinux-host.env
+export TERMUX_APP__PACKAGE_NAME=com.zenithblue.nativecode
+export TERMUX__PREFIX=/data/data/com.zenithblue.nativecode/files/usr
+export TERMUX__HOME=/data/data/com.zenithblue.nativecode/files/home
 # then proot-distro as app UID
 /system/bin/su u0_a510 -c /data/local/tmp/nativecode_proot.sh …
 ```

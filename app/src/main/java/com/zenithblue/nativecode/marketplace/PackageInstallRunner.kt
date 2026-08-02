@@ -1,13 +1,13 @@
-package com.ivarna.nativecode.marketplace
+package com.zenithblue.nativecode.marketplace
 
 import android.content.Context
 import android.util.Log
-import com.ivarna.nativecode.RootShell
-import com.ivarna.nativecode.terminal.ChrootCommandBuilder
-import com.ivarna.nativecode.terminal.HostCommandBuilder
-import com.ivarna.nativecode.terminal.LinuxCommandBuilder
-import com.ivarna.nativecode.terminal.ShellCommandRunner
-import com.ivarna.nativecode.terminal.TermuxHostPaths
+import com.zenithblue.nativecode.RootShell
+import com.zenithblue.nativecode.terminal.ChrootCommandBuilder
+import com.zenithblue.nativecode.terminal.HostCommandBuilder
+import com.zenithblue.nativecode.terminal.LinuxCommandBuilder
+import com.zenithblue.nativecode.terminal.ShellCommandRunner
+import com.zenithblue.nativecode.terminal.TermuxHostPaths
 import java.io.File
 
 /**

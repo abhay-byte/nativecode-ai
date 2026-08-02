@@ -76,7 +76,7 @@ On first run, the onboarding wizard guides you through setup:
 
 ```mermaid
 flowchart TB
-    subgraph App["Android app (com.ivarna.nativecode)"]
+    subgraph App["Android app (com.zenithblue.nativecode)"]
         UI["Splash → Onboarding → MainActivity"]
         UI --> Services["BackgroundService / AppTerminalService / RootShellService"]
         Services --> MKT["marketplace/ — catalog, registry, install runner"]
@@ -86,7 +86,7 @@ flowchart TB
         Services --> TERM["terminal/ — PRoot / Chroot builders, project manager"]
     end
 
-    subgraph Storage["/data/data/com.ivarna.nativecode/files/"]
+    subgraph Storage["/data/data/com.zenithblue.nativecode/files/"]
         USER["usr/ — custom-compiled Termux userland (bootstrap.tar)"]
         DISTRO["distro/ — Debian 13 (Trixie) container"]
     end

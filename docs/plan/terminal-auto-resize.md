@@ -47,7 +47,7 @@
 su → uid=0 (KernelSU)
 chroot marker: /data/local/tmp/chrootDebian13/.flux_configured
 prefs: linux_method = chroot
-launch_tool host:  /data/data/com.ivarna.nativecode/files/usr/tmp/launch_tool.sh
+launch_tool host:  /data/data/com.zenithblue.nativecode/files/usr/tmp/launch_tool.sh
 launch_tool guest: /tmp/launch_tool.sh (copied at session start)
 ```
 
@@ -450,7 +450,7 @@ Same force-resize + tool helper as main terminal; tab bar / bottom nav / extra k
 Button opencode process tree (read-only `ps`/`/proc`):
 
 ```text
-com.ivarna.nativecode
+com.zenithblue.nativecode
  └─ /system/bin/sh -c "su -c '…mounts…; exec busybox chroot … /bin/su - flux -c \"… launch_tool.sh opencode\"'"
      └─ /bin/su - flux -c … launch_tool.sh opencode
          └─ opencode   (fd 0/1 → /dev/pts/N)
@@ -638,7 +638,7 @@ No PATH rewrite needed for codex on current device.
 ## 16.6 Hotfix — app-data exec Permission denied (2026-07-29)
 
 **Symptom:** every chroot session:
-`exec("/data/user/0/com.ivarna.nativecode/files/usr/tmp/chroot_term_wrapper.sh"): Permission denied`
+`exec("/data/user/0/com.zenithblue.nativecode/files/usr/tmp/chroot_term_wrapper.sh"): Permission denied`
 
 **Cause:** Android SELinux / W^X blocks `execve` of scripts under app private data. JNI `createSubprocess` does `execvp(mShellPath, argv)` — mShellPath must be a system (or native lib) binary.
 

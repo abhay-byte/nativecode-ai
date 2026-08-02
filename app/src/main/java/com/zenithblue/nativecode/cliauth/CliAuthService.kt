@@ -1,4 +1,4 @@
-package com.ivarna.nativecode.cliauth
+package com.zenithblue.nativecode.cliauth
 
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -7,9 +7,9 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
-import com.ivarna.nativecode.terminal.LinuxCommandBuilder
-import com.ivarna.nativecode.terminal.ProjectPathResolver
-import com.ivarna.nativecode.terminal.ShellCommandRunner
+import com.zenithblue.nativecode.terminal.LinuxCommandBuilder
+import com.zenithblue.nativecode.terminal.ProjectPathResolver
+import com.zenithblue.nativecode.terminal.ShellCommandRunner
 import org.json.JSONObject
 import java.io.File
 import java.util.concurrent.CountDownLatch

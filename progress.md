@@ -1,15 +1,15 @@
 # Progress tracking for PRoot distro setup
 
-This document tracks progress of making the scripts from `fluxlinux` work on the custom Termux terminal (`com.ivarna.nativecode`).
+This document tracks progress of making the scripts from `fluxlinux` work on the custom Termux terminal (`com.zenithblue.nativecode`).
 
 ## Execution Checklist
 
 - [x] **1. Host Termux Environment Setup (`setup_termux.sh`)**
   - **Status**: Completed Successfully
-  - **Details**: Repositories (x11, tur) added, core dependencies installed (wget, zsh, fastfetch, git, unzip, termux-x11-nightly, virglrenderer-android, mesa-zink, etc.) under the new `com.ivarna.nativecode` package.
+  - **Details**: Repositories (x11, tur) added, core dependencies installed (wget, zsh, fastfetch, git, unzip, termux-x11-nightly, virglrenderer-android, mesa-zink, etc.) under the new `com.zenithblue.nativecode` package.
 - [x] **2. Oh My Zsh & Terminal Tweaks (`termux_tweaks.sh`)**
   - **Status**: Completed Successfully
-  - **Details**: Oh My Zsh installed, syntax highlighting & autosuggestions plugins configured, GitHub Dark theme applied, Meslo Nerd Font installed, fastfetch preset configured, and default shell changed to Zsh under `com.ivarna.nativecode`.
+  - **Details**: Oh My Zsh installed, syntax highlighting & autosuggestions plugins configured, GitHub Dark theme applied, Meslo Nerd Font installed, fastfetch preset configured, and default shell changed to Zsh under `com.zenithblue.nativecode`.
 - [x] **3. PRoot Installer (`flux_install.sh`)**
   - **Status**: Completed Successfully
   - **Details**: Base Debian system downloaded, extracted, and initialized.

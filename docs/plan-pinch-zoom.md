@@ -112,7 +112,7 @@ And restore in `onCreate`. Only do this if persistence across sessions is desire
 
 | File | Changes |
 |------|---------|
-| `app/src/main/java/com/ivarna/nativecode/MainActivity.kt` | Add 3 font size vars + MIN/MAX constants, fix 3 `onScale` impls, update 3 `setTextSize` calls |
+| `app/src/main/java/com/zenithblue/nativecode/MainActivity.kt` | Add 3 font size vars + MIN/MAX constants, fix 3 `onScale` impls, update 3 `setTextSize` calls |
 
 **Total: 1 file, ~12 lines changed/added.**
 

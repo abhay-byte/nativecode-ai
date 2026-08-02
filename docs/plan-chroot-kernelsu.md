@@ -49,7 +49,7 @@ Uses `CoroutineScope(Dispatchers.IO)` internally.
 ```
 
 ### Test
-- KernelSU allowlist `com.ivarna.nativecode`
+- KernelSU allowlist `com.zenithblue.nativecode`
 - `RootShell.isRootAvailable()` → true
 - `RootShell.execute("id")` → logcat shows `uid=0(root)`
 
@@ -127,11 +127,11 @@ private fun buildLinuxCommand(
             val nld = applicationInfo.nativeLibraryDir
             val shell = File(nld, "libbash.so").absolutePath
             val args = arrayOf(shell, "-c",
-                "exec python /data/data/com.ivarna.nativecode/files/usr/bin/proot-distro login debian --shared-tmp --user $user -- zsh -c \"$shellCmd\"")
+                "exec python /data/data/com.zenithblue.nativecode/files/usr/bin/proot-distro login debian --shared-tmp --user $user -- zsh -c \"$shellCmd\"")
             val env = HashMap(System.getenv()).apply {
                 put("PD_PROOT_BIN", File(nld, "libproot.so").absolutePath)
                 put("PROOT_LOADER", File(nld, "libloader.so").absolutePath)
-                put("LD_LIBRARY_PATH", "/data/data/com.ivarna.nativecode/files/usr/lib")
+                put("LD_LIBRARY_PATH", "/data/data/com.zenithblue.nativecode/files/usr/lib")
                 // ... all existing proot env vars
             }
             args to env
@@ -233,7 +233,7 @@ private fun isLinuxMethodToggleVisible(): Boolean =
 
 ## Notes / Risks
 
-- KernelSU must allowlist `com.ivarna.nativecode` — user action required once
+- KernelSU must allowlist `com.zenithblue.nativecode` — user action required once
 - Chroot mounts (`/dev`, `/proc`, `/sys`) are set up inside `setup_debian13_chroot.sh` and `start_debian13.sh` — app does NOT duplicate this
 - X11 GUI launch for chroot uses `/data/local/tmp/start_debian13_gui.sh` via `RootShell.executeScript()`
 - Default is always **proot** — toggle only appears after chroot is installed; existing users unaffected

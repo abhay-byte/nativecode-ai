@@ -70,7 +70,7 @@ Without login shell, still resolve AI/dev tools:
 ### Env safety
 
 ```bash
-TERMUX_APP__PACKAGE_NAME=com.ivarna.nativecode
+TERMUX_APP__PACKAGE_NAME=com.zenithblue.nativecode
 # refuse PREFIX/ROOTFS containing com.termux
 # refuse missing ROOTFS / proot binary
 ```
@@ -133,7 +133,7 @@ Earlier: `…/20260729T143332Z` (distro + fast), `…/20260729T143232Z` (chroot 
 | T2-R01 | `exec -- true` exit 0 | **PASS** |
 | T2-R02 | `sh -- 'echo ok'` prints ok | **PASS** |
 | T2-R03 | `login` can start and `exit` | **PASS** |
-| T2-R04 | Package paths still NativeCode | **PASS** (refuse com.termux; rootfs under `com.ivarna.nativecode`) |
+| T2-R04 | Package paths still NativeCode | **PASS** (refuse com.termux; rootfs under `com.zenithblue.nativecode`) |
 | T2-R05 | Original `nativecode_proot.sh cmd true` still works | **PASS** |
 | T2-R06 | Launch time `exec -- true` ≤ 50% of distro `cmd true` | **PASS** (~5.7%) |
 | T2-R07 | Suite P0 all green | **PASS** host P0 7/7; proot-fast p0 13/13; proot-distro p0 13/13 |

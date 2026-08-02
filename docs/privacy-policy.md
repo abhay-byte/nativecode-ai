@@ -1,7 +1,7 @@
 # Privacy Policy — NativeCode
 
 **Last updated:** 2026-07-31  
-**App:** NativeCode (`com.ivarna.nativecode`)  
+**App:** NativeCode (`com.zenithblue.nativecode`)  
 **Developer:** Ivarna / NativeCode (GitHub: [abhay-byte](https://github.com/abhay-byte))  
 **Repository:** [abhay-byte/nativecode-ai](https://github.com/abhay-byte/nativecode-ai)
 

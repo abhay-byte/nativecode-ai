@@ -1,4 +1,4 @@
-package com.ivarna.nativecode
+package com.zenithblue.nativecode
 
 import android.app.Notification
 import android.app.NotificationChannel

@@ -73,7 +73,7 @@ Chroot discards the host Android environment; the inner shell starts with a bare
 
 ### Phase 1 — Unify Chroot Environment (`buildLinuxCommand`)
 
-**File:** `app/src/main/java/com/ivarna/nativecode/MainActivity.kt`
+**File:** `app/src/main/java/com/zenithblue/nativecode/MainActivity.kt`
 
 In the `"chroot"` branch of `buildLinuxCommand`, add the same baseline env vars that proot receives:
 
@@ -96,7 +96,7 @@ In the `"chroot"` branch of `buildLinuxCommand`, add the same baseline env vars 
         "busybox mount -t proc proc $CHROOT_PATH/proc >/dev/null 2>&1 || true",
         "busybox mount -t devpts devpts $CHROOT_PATH/dev/pts >/dev/null 2>&1 || true",
         "mkdir -p $CHROOT_PATH/dev/shm && busybox mount -t tmpfs -o size=512M tmpfs $CHROOT_PATH/dev/shm >/dev/null 2>&1 || true",
-        "mkdir -p $CHROOT_PATH/tmp && busybox mount --bind /data/data/com.ivarna.nativecode/files/usr/tmp $CHROOT_PATH/tmp >/dev/null 2>&1 || true"
+        "mkdir -p $CHROOT_PATH/tmp && busybox mount --bind /data/data/com.zenithblue.nativecode/files/usr/tmp $CHROOT_PATH/tmp >/dev/null 2>&1 || true"
     ).joinToString("; ")
 
     // … rest of cmd construction unchanged …
@@ -109,7 +109,7 @@ In the `"chroot"` branch of `buildLinuxCommand`, add the same baseline env vars 
 
 ### Phase 2 — Harden AI Tool Command for Chroot
 
-**File:** `app/src/main/java/com/ivarna/nativecode/MainActivity.kt`
+**File:** `app/src/main/java/com/zenithblue/nativecode/MainActivity.kt`
 
 The `envInit` string (line ~1622) must guarantee the Node/npm global bin directory is on PATH even when `nvm.sh` fails or is skipped.
 
@@ -193,7 +193,7 @@ fi
 
 ## Files to Modify
 
-1. `app/src/main/java/com/ivarna/nativecode/MainActivity.kt`
+1. `app/src/main/java/com/zenithblue/nativecode/MainActivity.kt`
    - `buildLinuxCommand` chroot branch: add env vars + `/tmp` mount
    - `createNewTerminalSession`: update `envInit` string
 

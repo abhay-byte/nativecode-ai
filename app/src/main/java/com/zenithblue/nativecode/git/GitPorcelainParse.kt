@@ -1,4 +1,4 @@
-package com.ivarna.nativecode.git
+package com.zenithblue.nativecode.git
 
 /** Pure parse helpers for guest git bundle output. */
 object GitPorcelainParse {

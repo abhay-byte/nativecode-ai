@@ -1,10 +1,10 @@
-package com.ivarna.nativecode.marketplace
+package com.zenithblue.nativecode.marketplace
 
 import android.content.Context
 import android.util.Log
-import com.ivarna.nativecode.terminal.LinuxCommandBuilder
-import com.ivarna.nativecode.terminal.ProjectPathResolver
-import com.ivarna.nativecode.terminal.ShellCommandRunner
+import com.zenithblue.nativecode.terminal.LinuxCommandBuilder
+import com.zenithblue.nativecode.terminal.ProjectPathResolver
+import com.zenithblue.nativecode.terminal.ShellCommandRunner
 import java.util.Locale
 
 /** Scan guest dpkg inventory for Software Manager. */

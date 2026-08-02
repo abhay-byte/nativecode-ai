@@ -1,4 +1,4 @@
-package com.ivarna.nativecode.cliauth
+package com.zenithblue.nativecode.cliauth
 
 /**
  * Pure guest shell snippets for AI CLI auth. No Android UI.

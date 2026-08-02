@@ -1,4 +1,4 @@
-package com.ivarna.nativecode.github
+package com.zenithblue.nativecode.github
 
 /** Auth status for one isolation method (proot or chroot). */
 data class GhAuthStatus(

@@ -1,4 +1,4 @@
-package com.ivarna.nativecode.marketplace
+package com.zenithblue.nativecode.marketplace
 
 /** Package kind: component = runtime/lib; app = launchable (often X11). */
 enum class PackageKind {

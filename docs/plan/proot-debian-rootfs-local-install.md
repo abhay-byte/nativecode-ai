@@ -99,7 +99,7 @@ Behavior:
 **Verified syntax** against bundled proot-distro parser:
 
 ```text
-proot-distro install /data/data/com.ivarna.nativecode/files/home/debian_13_rootfs.tar.xz --name debian
+proot-distro install /data/data/com.zenithblue.nativecode/files/home/debian_13_rootfs.tar.xz --name debian
 → image_ref = abs path
 → custom_container_name = debian
 → _is_local_path = True
@@ -121,7 +121,7 @@ Shared constants with proot path:
 - `ROOTFS_NAME=debian_13_rootfs.tar.xz`
 - `ROOTFS_URL=https://github.com/abhay-byte/fluxlinux/releases/download/rootfs/debian_13_rootfs.tar.xz`
 - `ROOTFS_SHA256=13e29f6099c3b805e84694507ede460c03886ffb364c03317272691cf84e6803`
-- `APP_HOME` / `APP_PREFIX` from package SSOT (`com.ivarna.nativecode`)
+- `APP_HOME` / `APP_PREFIX` from package SSOT (`com.zenithblue.nativecode`)
 
 ### 7. Docs / gitignore
 
@@ -181,7 +181,7 @@ Env overrides:
 
 ```sh
 # Product path (verified)
-proot-distro install /data/data/com.ivarna.nativecode/files/home/debian_13_rootfs.tar.xz --name debian
+proot-distro install /data/data/com.zenithblue.nativecode/files/home/debian_13_rootfs.tar.xz --name debian
 
 # Debug only
 FLUX_PD_INSTALL_MODE=registry

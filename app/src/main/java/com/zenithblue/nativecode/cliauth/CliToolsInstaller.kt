@@ -1,10 +1,10 @@
-package com.ivarna.nativecode.cliauth
+package com.zenithblue.nativecode.cliauth
 
 import android.content.Context
 import android.util.Log
-import com.ivarna.nativecode.RootShell
-import com.ivarna.nativecode.terminal.HostCommandBuilder
-import com.ivarna.nativecode.terminal.TermuxHostPaths
+import com.zenithblue.nativecode.RootShell
+import com.zenithblue.nativecode.terminal.HostCommandBuilder
+import com.zenithblue.nativecode.terminal.TermuxHostPaths
 import java.io.File
 import java.io.FileOutputStream
 

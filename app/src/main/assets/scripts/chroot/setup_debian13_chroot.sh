@@ -9,7 +9,7 @@ DEBIANPATH="/data/local/tmp/chrootDebian13"
 USERNAME="flux"
 
 # Same pinned rootfs as proot path (app assets → deploy to $HOME)
-PKG="${TERMUX_APP__PACKAGE_NAME:-com.ivarna.nativecode}"
+PKG="${TERMUX_APP__PACKAGE_NAME:-com.zenithblue.nativecode}"
 APP_HOME="${TERMUX__HOME:-/data/data/${PKG}/files/home}"
 APP_PREFIX="${TERMUX__PREFIX:-/data/data/${PKG}/files/usr}"
 ROOTFS_NAME="debian_13_rootfs.tar.xz"
@@ -164,7 +164,7 @@ extract_file() {
 # NEVER bind app files/usr/tmp onto /tmp (app_data perms/SELinux break mkstemp).
 # Host app tmp is bridged at /mnt/host-tmp only.
 ensure_chroot_tmp() {
-    HOST_TMP="/data/data/com.ivarna.nativecode/files/usr/tmp"
+    HOST_TMP="/data/data/com.zenithblue.nativecode/files/usr/tmp"
     mkdir -p "$DEBIANPATH/tmp" "$HOST_TMP" "$DEBIANPATH/mnt/host-tmp" "$DEBIANPATH/var/tmp"
 
     # Drop previous bad bind/tmpfs on /tmp if present
@@ -302,7 +302,7 @@ configure_debian_chroot() {
 GUI=/data/local/tmp/start_debian13_gui.sh
 HELPER=/data/local/tmp/nativecode_chroot.sh
 DEBIANPATH="${DEBIANPATH:-/data/local/tmp/chrootDebian13}"
-TARGET_PREFIX="${TARGET_PREFIX:-/data/data/com.ivarna.nativecode/files/usr}"
+TARGET_PREFIX="${TARGET_PREFIX:-/data/data/com.zenithblue.nativecode/files/usr}"
 USERNAME="${USERNAME:-flux}"
 
 if [ -f "$GUI" ]; then
@@ -332,7 +332,7 @@ EOF
     # Prefer asset SSOT stop when present under app home (redeployed by app)
     STOP_LAUNCHER="/data/local/tmp/stop_debian13_gui.sh"
     progress "Creating GUI Stop Script at $STOP_LAUNCHER..."
-    APP_STOP="/data/data/com.ivarna.nativecode/files/home/stop_debian13_gui.sh"
+    APP_STOP="/data/data/com.zenithblue.nativecode/files/home/stop_debian13_gui.sh"
     if [ -f "$APP_STOP" ]; then
         cp -f "$APP_STOP" "$STOP_LAUNCHER"
         chmod +x "$STOP_LAUNCHER"
@@ -343,7 +343,7 @@ EOF
 DEBIANPATH="/data/local/tmp/chrootDebian13"
 BB="$BB"
 export LD_LIBRARY_PATH=$LD_LIBRARY_PATH
-TARGET_TERMUX_PREFIX="/data/data/com.ivarna.nativecode/files/usr"
+TARGET_TERMUX_PREFIX="/data/data/com.zenithblue.nativecode/files/usr"
 
 echo "Terminating Debian 13 Chroot GUI processes..."
 \$BB chroot \$DEBIANPATH /bin/su - root -c "killall -9 xfce4-session xfwm4 xfdesktop xfce4-panel dbus-launch dbus-daemon" >/dev/null 2>&1
@@ -358,7 +358,7 @@ EOF
     fi
 
     # Also stage full root GUI launcher from app home if present (Settings SSOT)
-    APP_START_GUI="/data/data/com.ivarna.nativecode/files/home/start_debian13_gui.sh"
+    APP_START_GUI="/data/data/com.zenithblue.nativecode/files/home/start_debian13_gui.sh"
     if [ -f "$APP_START_GUI" ]; then
         cp -f "$APP_START_GUI" /data/local/tmp/start_debian13_gui.sh
         chmod +x /data/local/tmp/start_debian13_gui.sh
@@ -370,8 +370,8 @@ EOF
     progress "Installing chroot SSOT helper at $HELPER..."
     HELPER_SRC=""
     for cand in \
-        "/data/data/com.ivarna.nativecode/files/home/nativecode_chroot.sh" \
-        "/data/data/com.ivarna.nativecode/files/staged_scripts/nativecode_chroot.sh" \
+        "/data/data/com.zenithblue.nativecode/files/home/nativecode_chroot.sh" \
+        "/data/data/com.zenithblue.nativecode/files/staged_scripts/nativecode_chroot.sh" \
         "$(dirname "$0")/nativecode_chroot.sh"
     do
         if [ -f "$cand" ]; then
@@ -441,7 +441,7 @@ EOF
 }
 
 main() {
-    export LD_LIBRARY_PATH=/data/data/com.ivarna.nativecode/files/usr/lib
+    export LD_LIBRARY_PATH=/data/data/com.zenithblue.nativecode/files/usr/lib
 
     if [ "$(id -u)" != "0" ]; then
         error "This script must be run as root. Exiting."
@@ -454,7 +454,7 @@ main() {
     if command -v busybox >/dev/null 2>&1; then
         DETECTED_BB=$(command -v busybox)
         case "$DETECTED_BB" in
-            *"com.ivarna.nativecode"*) ;;
+            *"com.zenithblue.nativecode"*) ;;
             *)
                 if [ -x "$DETECTED_BB" ]; then
                     BB="$DETECTED_BB"

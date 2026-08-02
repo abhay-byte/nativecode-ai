@@ -1,6 +1,6 @@
 # Proot performance plans & regression suite
 
-**Goal:** make NativeCode proot (`com.ivarna.nativecode`) closer to chroot for launch, CLI, packages, builds, and AI tools — **without** losing functionality or stability.
+**Goal:** make NativeCode proot (`com.zenithblue.nativecode`) closer to chroot for launch, CLI, packages, builds, and AI tools — **without** losing functionality or stability.
 
 **Rule:** after each task, run the [regression suite](./regression-test-suite.md). Only promote changes that pass **P0** gates.
 
@@ -21,7 +21,7 @@
 
 **Constraints (all tasks):**
 
-- Package: `com.ivarna.nativecode` only (never default to `com.termux`)
+- Package: `com.zenithblue.nativecode` only (never default to `com.termux`)
 - Rootless proot must keep working
 - KernelSU chroot path must keep working
 - Turnip / virgl GPU modes must not regress

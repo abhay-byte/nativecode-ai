@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 OUT="$ROOT/docs/policy/fgs-special-use-demo.mp4"
 APK="$ROOT/app/build/outputs/apk/debug/app-debug.apk"
-PKG=com.ivarna.nativecode
+PKG=com.zenithblue.nativecode
 
 adb wait-for-device
 adb install -r "$APK"

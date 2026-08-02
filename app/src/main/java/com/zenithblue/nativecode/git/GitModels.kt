@@ -1,4 +1,4 @@
-package com.ivarna.nativecode.git
+package com.zenithblue.nativecode.git
 
 /** Branch list for project settings (local + remote, display-only). */
 data class BranchInfo(

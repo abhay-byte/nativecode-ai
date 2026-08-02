@@ -1,8 +1,8 @@
-package com.ivarna.nativecode.git
+package com.zenithblue.nativecode.git
 
 /**
  * Pure guest shell snippets for project git. No Android / UI.
- * Always run as flux via [com.ivarna.nativecode.terminal.LinuxCommandBuilder].
+ * Always run as flux via [com.zenithblue.nativecode.terminal.LinuxCommandBuilder].
  */
 object GitGuestCommands {
 
