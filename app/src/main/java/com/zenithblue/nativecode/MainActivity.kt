@@ -1,4 +1,4 @@
-package com.ivarna.nativecode
+package com.zenithblue.nativecode
 
 import android.animation.ObjectAnimator
 import android.system.Os
@@ -51,11 +51,11 @@ import android.net.Uri
 import android.view.KeyEvent
 import androidx.activity.result.contract.ActivityResultContracts
 import java.io.File
-import com.ivarna.nativecode.terminal.*
-import com.ivarna.nativecode.marketplace.*
-import com.ivarna.nativecode.github.*
-import com.ivarna.nativecode.cliauth.*
-import com.ivarna.nativecode.git.*
+import com.zenithblue.nativecode.terminal.*
+import com.zenithblue.nativecode.marketplace.*
+import com.zenithblue.nativecode.github.*
+import com.zenithblue.nativecode.cliauth.*
+import com.zenithblue.nativecode.git.*
 import java.io.FileOutputStream
 import java.util.concurrent.Executors
 
@@ -153,7 +153,7 @@ class MainActivity : AppCompatActivity() {
     private var cliAuthInstallHost: LinearLayout? = null
     private var cliAuthCredentialsHost: LinearLayout? = null
     private var cliAuthMethodBadge: TextView? = null
-    private var cliAuthSession: com.ivarna.nativecode.cliauth.CliAuthSession? = null
+    private var cliAuthSession: com.zenithblue.nativecode.cliauth.CliAuthSession? = null
     private var cliAuthOverlay: FrameLayout? = null
     /** Settings → AI Safety & Report (C5 / B16). */
     private lateinit var aiSafetyScrollView: ScrollView
@@ -202,6 +202,17 @@ class MainActivity : AppCompatActivity() {
     private var mpEnvBadge: TextView? = null
     private var mpSyncTv: TextView? = null
 
+    // Apps page — installed kind=app only
+    private lateinit var appsScrollView: ScrollView
+    private lateinit var appsBody: LinearLayout
+    private var appsSearchQuery: String = ""
+    private var appsItems: List<AppListItem> = emptyList()
+    private var appsLoading: Boolean = false
+    private var appsStatusTv: TextView? = null
+    private var appsListContainer: LinearLayout? = null
+    private var appsEnvBadge: TextView? = null
+    private var appsRefreshBtn: TextView? = null
+
     /** Dedicated marketplace install/uninstall page (not generic script runner). */
     private lateinit var mpInstallerLayout: LinearLayout
     private lateinit var mpInstallerBackBtn: ImageView
@@ -221,6 +232,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var scriptInstallLayout: LinearLayout
     private lateinit var scriptInstallViewContainer: FrameLayout
     private lateinit var scriptInstallTerminalView: TerminalView
+    private lateinit var scriptInstallCopyBtn: TextView
     private var scriptInstallSession: TerminalSession? = null
 
     private lateinit var projectCreateContainer: LinearLayout
@@ -261,6 +273,19 @@ class MainActivity : AppCompatActivity() {
     private lateinit var homeContainerLabel: TextView
     private lateinit var startGuiBtn: TextView
     private lateinit var stopGuiBtn: TextView
+    private lateinit var viewLogsBtn: TextView
+
+    /** Streamed capture job for start/stop GUI scripts (never touches isScriptRunning). */
+    private var guiShellJob: ShellJob? = null
+
+    /** True while user-initiated STOP owns the card flip (ignore start cancel onDone). */
+    @Volatile private var guiUserStopping: Boolean = false
+
+    /** True after first healthy start log line (STOP + VIEW LOGS shown). */
+    @Volatile private var guiDesktopRunning: Boolean = false
+
+    /** One X11 Activity launch per START attempt. */
+    @Volatile private var guiX11Launched: Boolean = false
 
     private val composeCpuState = androidx.compose.runtime.mutableIntStateOf(34)
     private val composeMemState = androidx.compose.runtime.mutableIntStateOf(82)
@@ -354,7 +379,8 @@ class MainActivity : AppCompatActivity() {
     private val ID_MP_INSTALLER = 18
     private val ID_CLI_AUTH = 19
     private val ID_AI_SAFETY = 20
-    
+    private val ID_APPS = 21
+
     private var fileViewerBackPage = ID_FILES
     private var diffViewerBackPage = ID_GIT
 
@@ -947,6 +973,9 @@ class MainActivity : AppCompatActivity() {
         if (::marketplaceScrollView.isInitialized) {
             marketplaceScrollView.visibility = View.GONE
         }
+        if (::appsScrollView.isInitialized) {
+            appsScrollView.visibility = View.GONE
+        }
         if (::mpInstallerLayout.isInitialized) {
             mpInstallerLayout.visibility = View.GONE
         }
@@ -1078,6 +1107,12 @@ class MainActivity : AppCompatActivity() {
                     marketplaceScrollView.visibility = View.VISIBLE
                 }
                 refreshMarketplacePage(force = false)
+            }
+            ID_APPS -> {
+                if (::appsScrollView.isInitialized) {
+                    appsScrollView.visibility = View.VISIBLE
+                }
+                refreshAppsPage(force = false)
             }
             ID_MP_INSTALLER -> {
                 if (::mpInstallerLayout.isInitialized) {
@@ -1275,6 +1310,11 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
+        if (::appsScrollView.isInitialized && appsScrollView.visibility == View.VISIBLE) {
+            navigateBackFromSubpage(ID_APPS)
+            return
+        }
+
         if (::scriptsScrollView.isInitialized && scriptsScrollView.visibility == View.VISIBLE) {
             navigateBackFromSubpage(ID_SCRIPTS)
             return
@@ -1329,7 +1369,7 @@ class MainActivity : AppCompatActivity() {
         
         if (id == ID_SCRIPTS || id == ID_SCRIPT_INSTALL || id == ID_PROJECT_CREATE ||
             id == ID_CHROOT_SETTINGS || id == ID_PROOT_SETTINGS ||
-            id == ID_SOFTWARE_MANAGER || id == ID_MARKETPLACE || id == ID_MP_INSTALLER ||
+            id == ID_SOFTWARE_MANAGER || id == ID_MARKETPLACE || id == ID_APPS || id == ID_MP_INSTALLER ||
             id == ID_CLI_AUTH || id == ID_AI_SAFETY
         ) {
             showGlobalNav = false
@@ -1812,6 +1852,7 @@ class MainActivity : AppCompatActivity() {
         buildChrootSettingsPage()
         buildSoftwareManagerPage()
         buildMarketplacePage()
+        buildAppsPage()
         buildMarketplaceInstallerLayout()
         buildScriptInstallLayout()
         buildProjectCreateLayout()
@@ -1836,6 +1877,7 @@ class MainActivity : AppCompatActivity() {
         contentFrame.addView(chrootSettingsScrollView)
         contentFrame.addView(softwareManagerScrollView)
         contentFrame.addView(marketplaceScrollView)
+        contentFrame.addView(appsScrollView)
         contentFrame.addView(mpInstallerLayout)
         contentFrame.addView(scriptInstallLayout)
         contentFrame.addView(projectCreateContainer)
@@ -1880,7 +1922,7 @@ class MainActivity : AppCompatActivity() {
             val type = buffer[156].toInt().toChar()
             val linkName = parseString(157, 100)
 
-            val relPath = name.replace("^data/data/com.ivarna.nativecode/files/".toRegex(), "").trimStart('/')
+            val relPath = name.replace("^data/data/com.zenithblue.nativecode/files/".toRegex(), "").trimStart('/')
             if (relPath.isEmpty()) {
                 val dataBlocks = Math.ceil(size.toDouble() / 512.0).toLong()
                 skipBytes(inputStream, dataBlocks * 512L)
@@ -2815,7 +2857,7 @@ class MainActivity : AppCompatActivity() {
         // 2. System Telemetry Cards (SYS_CPU & SYS_MEM)
         homeLayout.addView(buildSystemTelemetryCards())
 
-        // 3. Package ops — Software Manager + Marketplace (cyber-brutalist modules)
+        // 3. Package ops — Marketplace + Software Manager
         homeLayout.addView(buildHomePackageOpsSection())
         homeLayout.addView(spacer(8))
 
@@ -5315,9 +5357,21 @@ class MainActivity : AppCompatActivity() {
             typeface = Typeface.DEFAULT_BOLD
             layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
         }
+        scriptInstallCopyBtn = TextView(this).apply {
+            text = "COPY"
+            textSize = 13f
+            setTextColor(NC.ON_SURFACE)
+            typeface = Typeface.MONOSPACE
+            paint.isFakeBoldText = true
+            gravity = Gravity.CENTER
+            setPadding(dp(12), dp(8), dp(12), dp(8))
+            layoutParams = LinearLayout.LayoutParams(WRAP, WRAP)
+            setOnClickListener { copyScriptInstallTranscript() }
+        }
 
         topBar.addView(scriptInstallBackBtn)
         topBar.addView(scriptInstallTitleTv)
+        topBar.addView(scriptInstallCopyBtn)
         scriptInstallLayout.addView(topBar)
 
         scriptInstallViewContainer = FrameLayout(this).apply {
@@ -5395,16 +5449,16 @@ class MainActivity : AppCompatActivity() {
                 // Host-level chroot script (setup or uninstall) executed via explicit /system/bin/su
                 args = arrayOf("/system/bin/sh", "-c", "/system/bin/su -c \"sh $scriptPath\"")
                 envMap = HashMap(System.getenv()).apply {
-                    put("PATH", "/system/bin:/system/xbin:/sbin:$nld:/data/data/com.ivarna.nativecode/files/usr/bin")
-                    put("HOME", "/data/data/com.ivarna.nativecode/files/home")
+                    put("PATH", "/system/bin:/system/xbin:/sbin:$nld:/data/data/com.zenithblue.nativecode/files/usr/bin")
+                    put("HOME", "/data/data/com.zenithblue.nativecode/files/home")
                     put("TERM", "xterm-256color")
                 }
             }
             "chroot_guest" -> {
                 // Guest script via SSOT helper (mounts + root shell entry)
-                com.ivarna.nativecode.terminal.ChrootCommandBuilder.ensureHelperScript(this)
-                val ch = com.ivarna.nativecode.terminal.ChrootCommandBuilder.CHROOT_PATH
-                val helper = com.ivarna.nativecode.terminal.ChrootCommandBuilder.CHROOT_HELPER
+                com.zenithblue.nativecode.terminal.ChrootCommandBuilder.ensureHelperScript(this)
+                val ch = com.zenithblue.nativecode.terminal.ChrootCommandBuilder.CHROOT_PATH
+                val helper = com.zenithblue.nativecode.terminal.ChrootCommandBuilder.CHROOT_HELPER
                 val stageCmd =
                     "mkdir -p $ch/tmp && cp $scriptPath $ch/tmp/$scriptName && chmod +x $ch/tmp/$scriptName"
                 val guestInner = if (scriptName == "setup_hw_accel_debian.sh") {
@@ -5421,8 +5475,8 @@ class MainActivity : AppCompatActivity() {
                 val shCmd = RootShell.shellRootCommand(rootInner)
                 args = arrayOf("/system/bin/sh", "-c", shCmd)
                 envMap = HashMap(System.getenv()).apply {
-                    put("PATH", "/system/bin:/system/xbin:/sbin:$nld:/data/data/com.ivarna.nativecode/files/usr/bin")
-                    put("HOME", "/data/data/com.ivarna.nativecode/files/home")
+                    put("PATH", "/system/bin:/system/xbin:/sbin:$nld:/data/data/com.zenithblue.nativecode/files/usr/bin")
+                    put("HOME", "/data/data/com.zenithblue.nativecode/files/home")
                     put("TERM", "xterm-256color")
                 }
             }
@@ -5432,9 +5486,9 @@ class MainActivity : AppCompatActivity() {
                     val gpu = GpuAccelDetector.fluxGpuEnv()
                     getSharedPreferences("nativecode_prefs", MODE_PRIVATE).edit()
                         .putString("flux_gpu", gpu).apply()
-                    "env FLUX_GPU=$gpu bash /data/data/com.ivarna.nativecode/files/home/$scriptName"
+                    "env FLUX_GPU=$gpu bash /data/data/com.zenithblue.nativecode/files/home/$scriptName"
                 } else {
-                    "bash /data/data/com.ivarna.nativecode/files/home/$scriptName"
+                    "bash /data/data/com.zenithblue.nativecode/files/home/$scriptName"
                 }
                 val (a, e) = LinuxCommandBuilder.build(this, scriptCmd, user = "root")
                 args = a; envMap = e
@@ -6548,6 +6602,26 @@ class MainActivity : AppCompatActivity() {
         Toast.makeText(this, "Copied: $text", Toast.LENGTH_SHORT).show()
     }
 
+    /** Full transcript of a terminal session (scrollback + screen), trimmed. */
+    private fun transcriptOf(session: TerminalSession?): String =
+        try {
+            session?.emulator?.screen?.getTranscriptText()?.trim().orEmpty()
+        } catch (_: Exception) {
+            ""
+        }
+
+    /** COPY on the script-install top bar — works for any script run + desktop log cat. */
+    private fun copyScriptInstallTranscript() {
+        val t = transcriptOf(scriptInstallSession)
+        if (t.isEmpty()) {
+            Toast.makeText(this, "Nothing to copy yet", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText("Script log", t))
+        Toast.makeText(this, "Log copied (${t.length} chars)", Toast.LENGTH_SHORT).show()
+    }
+
     private fun buildMarkdownViewerCard(file: File): View {
         // Sticky tabs + fill body (preview WebView / source code both scroll inside)
         val container = LinearLayout(this).apply {
@@ -7364,39 +7438,48 @@ class MainActivity : AppCompatActivity() {
             }
 
             setOnClickListener {
+                // Do not flip to STOP yet — wait for first start log line (healthy start)
+                guiUserStopping = false
+                setGuiStartBusy()
                 startGui()
-                startGuiBtn.visibility = View.GONE
-                stopGuiBtn.visibility = View.VISIBLE
-                stopGuiBtn.isEnabled = true
-                stopGuiBtn.alpha = 1f
-                if (::displayBtn.isInitialized) {
-                    displayBtn.visibility = View.VISIBLE
-                }
             }
         }
         startGuiBtn.isEnabled = false
         startGuiBtn.alpha = 0.5f
+        startGuiBtn.layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
 
         stopGuiBtn = dangerButton("  STOP XFCE DESKTOP") {
+            guiUserStopping = true
             stopGui()
             stopGuiBtn.isEnabled = false
             stopGuiBtn.alpha = 0.5f
+            // Keep VIEW LOGS beside disabled STOP while stop runs; hide after delay
             if (::displayBtn.isInitialized) {
                 displayBtn.visibility = View.GONE
             }
             mainHandler.postDelayed({
-                stopGuiBtn.visibility = View.GONE
-                startGuiBtn.visibility = View.VISIBLE
-                startGuiBtn.isEnabled = true
-                startGuiBtn.alpha = 1f
+                guiUserStopping = false
+                setGuiCardIdle()
             }, 5000)
         }
         stopGuiBtn.isEnabled = false
         stopGuiBtn.alpha = 0.5f
         stopGuiBtn.visibility = View.GONE
+        stopGuiBtn.layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
+
+        viewLogsBtn = secondaryButton("  VIEW LOGS") {
+            openGuiLogPage()
+        }.apply {
+            // Beside STOP only after start is healthy (first log line) — not on idle START row
+            layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f).apply { marginStart = dp(10) }
+            visibility = View.GONE
+            isEnabled = false
+            alpha = 0.5f
+        }
 
         row.addView(startGuiBtn)
         row.addView(stopGuiBtn)
+        row.addView(viewLogsBtn)
         card.addView(row)
         return card
     }
@@ -7673,19 +7756,7 @@ class MainActivity : AppCompatActivity() {
             paint.isFakeBoldText = true
             layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
         }
-        val envBadge = TextView(this).apply {
-            text = LinuxCommandBuilder.currentMethod.uppercase()
-            textSize = 10f
-            setTextColor(NC.ON_PRIMARY)
-            typeface = Typeface.MONOSPACE
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.RECTANGLE
-                setColor(NC.PRIMARY_CON)
-            }
-            setPadding(dp(8), dp(3), dp(8), dp(3))
-        }
         headerRow.addView(sectionTitle)
-        headerRow.addView(envBadge)
         section.addView(headerRow)
 
         // Horizontal twin modules
@@ -10329,6 +10400,517 @@ class MainActivity : AppCompatActivity() {
         mpLogTv = null
     }
 
+
+    // ── Apps (installed launchable apps) ─────────────────────────────────────
+
+    private fun buildAppsPage() {
+        appsScrollView = ScrollView(this).apply {
+            layoutParams = FrameLayout.LayoutParams(MATCH, MATCH)
+            visibility = View.GONE
+            clipToPadding = false
+            setPadding(0, 0, 0, dp(80))
+            setBackgroundColor(NC.BG)
+        }
+        appsBody = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(16), dp(16), dp(16))
+        }
+        appsScrollView.addView(appsBody)
+
+        appsBody.addView(buildSubPageHeader(
+            title = "APPS",
+            subtitle = "// INSTALLED LAUNCHABLE APPS",
+            iconRes = R.drawable.ic_play_thick,
+            pageId = ID_APPS
+        ) { appsEnvBadge = it })
+
+        val search = EditText(this).apply {
+            hint = "Filter apps…"
+            setHintTextColor(NC.ON_SURF_VAR)
+            setTextColor(NC.ON_SURFACE)
+            typeface = Typeface.MONOSPACE
+            textSize = 13f
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+            background = GradientDrawable().apply {
+                setColor(NC.SURFACE_LOWEST)
+                setStroke(dp(1), NC.OUTLINE_VAR)
+            }
+            setSingleLine()
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(10) }
+            addTextChangedListener(object : android.text.TextWatcher {
+                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                    appsSearchQuery = s?.toString().orEmpty()
+                    renderAppsList()
+                }
+                override fun afterTextChanged(s: android.text.Editable?) {}
+            })
+            setOnFocusChangeListener { v, hasFocus ->
+                (v.background as? GradientDrawable)?.setStroke(
+                    dp(1), if (hasFocus) NC.PRIMARY else NC.OUTLINE_VAR
+                )
+            }
+        }
+        appsBody.addView(search)
+
+        val refreshRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, 0, 0, dp(10))
+        }
+        appsStatusTv = TextView(this).apply {
+            text = "Installed apps for current env"
+            textSize = 11f
+            setTextColor(NC.ON_SURF_VAR)
+            typeface = Typeface.MONOSPACE
+            layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
+        }
+        appsRefreshBtn = TextView(this).apply {
+            text = "REFRESH"
+            textSize = 12f
+            setTextColor(NC.PRIMARY)
+            typeface = Typeface.DEFAULT_BOLD
+            setPadding(dp(12), dp(8), dp(12), dp(8))
+            background = GradientDrawable().apply {
+                setColor(NC.SURFACE_CONTAINER)
+                setStroke(dp(1), NC.PRIMARY)
+            }
+            setOnClickListener { refreshAppsPage(force = true) }
+        }
+        refreshRow.addView(appsStatusTv)
+        refreshRow.addView(appsRefreshBtn)
+        appsBody.addView(refreshRow)
+
+        appsListContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        appsBody.addView(appsListContainer)
+    }
+
+    private fun refreshAppsPage(force: Boolean) {
+        appsEnvBadge?.text = envBadgeLabel()
+        val env = currentLinuxEnv()
+        if (appsLoading) return
+        appsLoading = true
+        appsStatusTv?.text = "Loading apps ($env)…"
+        appsRefreshBtn?.isEnabled = false
+        appsRefreshBtn?.alpha = 0.45f
+        appsListContainer?.removeAllViews()
+        appsListContainer?.addView(buildListLoadingView("LOADING APPS…", skeletonRows = 4))
+        executor.execute {
+            // Hydrate catalog titles when possible (offline → registry ids only)
+            val cat = try {
+                if (force || mpCatalog == null) {
+                    MarketplaceClient.loadCatalog(this, forceRefresh = force).getOrNull()
+                } else mpCatalog
+            } catch (_: Exception) { mpCatalog }
+            val items = AppsInventory.listInstalledApps(this, env, cat)
+            mainHandler.post {
+                appsLoading = false
+                appsRefreshBtn?.isEnabled = true
+                appsRefreshBtn?.alpha = 1f
+                if (cat != null) mpCatalog = cat
+                appsItems = items
+                val total = items.sumOf { it.sizeBytes }
+                appsStatusTv?.text =
+                    "${items.size} apps · ${AptInventoryService.formatSize(total)} · $env"
+                renderAppsList()
+            }
+        }
+    }
+
+    private fun renderAppsList() {
+        val container = appsListContainer ?: return
+        container.removeAllViews()
+        val env = currentLinuxEnv()
+
+        if (!AptInventoryService.guestReady(this, env)) {
+            container.addView(TextView(this).apply {
+                text = if (env == "chroot")
+                    "Guest not ready. Open Settings → Chroot Settings to install rootfs."
+                else
+                    "Guest not ready. Complete onboarding / Proot Settings for Debian."
+                setTextColor(NC.ERROR)
+                typeface = Typeface.MONOSPACE
+                textSize = 12f
+                setPadding(0, dp(8), 0, dp(8))
+            })
+            return
+        }
+
+        val q = appsSearchQuery.trim().lowercase(Locale.US)
+        val filtered = if (q.isEmpty()) appsItems else appsItems.filter {
+            it.title.lowercase(Locale.US).contains(q) ||
+                it.id.lowercase(Locale.US).contains(q) ||
+                it.summary.lowercase(Locale.US).contains(q)
+        }
+
+        if (filtered.isEmpty()) {
+            val empty = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(0, dp(16), 0, dp(8))
+            }
+            empty.addView(TextView(this).apply {
+                text = if (appsItems.isEmpty())
+                    "No installed apps. Open Marketplace to install."
+                else
+                    "No apps match \"$appsSearchQuery\"."
+                setTextColor(NC.ON_SURF_VAR)
+                typeface = Typeface.MONOSPACE
+                textSize = 12f
+                setPadding(0, 0, 0, dp(12))
+            })
+            if (appsItems.isEmpty()) {
+                empty.addView(TextView(this).apply {
+                    text = "OPEN MARKETPLACE"
+                    textSize = 13f
+                    gravity = Gravity.CENTER
+                    setTextColor(NC.ON_PRIMARY)
+                    typeface = Typeface.MONOSPACE
+                    paint.isFakeBoldText = true
+                    setPadding(dp(16), dp(12), dp(16), dp(12))
+                    background = cyberBrutalistBg(
+                        fillColor = NC.PRIMARY_CON,
+                        strokeColor = NC.PRIMARY,
+                        shadowColor = NC.SHADOW_DARK,
+                        offsetDp = 4,
+                        cornerRadiusDp = 0
+                    )
+                    setOnClickListener { openMarketplace() }
+                })
+            }
+            container.addView(empty)
+            return
+        }
+
+        for (item in filtered) {
+            container.addView(buildAppsRow(item))
+            container.addView(spacer(10))
+        }
+    }
+
+    private fun buildAppsRow(item: AppListItem): View {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            background = cyberBrutalistBg(
+                fillColor = NC.SURFACE_LOW,
+                strokeColor = NC.OUTLINE_VAR,
+                shadowColor = NC.SHADOW_DARK,
+                offsetDp = 4,
+                cornerRadiusDp = 0
+            )
+            setPadding(dp(12), dp(12), dp(12), dp(12))
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { showAppsDetailSheet(item) }
+        }
+
+        val icon = ImageView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(dp(48), dp(48)).apply { rightMargin = dp(12) }
+            scaleType = ImageView.ScaleType.CENTER_CROP
+            background = GradientDrawable().apply {
+                setColor(NC.SURFACE_CONTAINER)
+                setStroke(dp(1), NC.OUTLINE_VAR)
+            }
+            setPadding(dp(4), dp(4), dp(4), dp(4))
+            if (item.catalog != null) MarketplaceIcons.bind(this, item.catalog)
+            else setImageResource(MarketplaceIcons.bundledRes(item.id))
+        }
+        row.addView(icon)
+
+        val mid = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
+        }
+        mid.addView(TextView(this).apply {
+            text = item.title
+            textSize = 15f
+            setTextColor(Color.parseColor("#FAFAFA"))
+            typeface = Typeface.DEFAULT_BOLD
+        })
+        val meta = buildString {
+            if (item.version.isNotBlank()) append("v").append(item.version)
+            if (item.sizeBytes > 0) {
+                if (isNotEmpty()) append(" · ")
+                append(AptInventoryService.formatSize(item.sizeBytes))
+            }
+            if (isNotEmpty()) append(" · ")
+            append("APP")
+        }
+        mid.addView(TextView(this).apply {
+            text = meta
+            textSize = 11f
+            setTextColor(NC.ON_SURF_VAR)
+            typeface = Typeface.MONOSPACE
+            setPadding(0, dp(2), 0, 0)
+        })
+        if (item.summary.isNotBlank()) {
+            mid.addView(TextView(this).apply {
+                text = item.summary
+                textSize = 11f
+                setTextColor(NC.OUTLINE)
+                typeface = Typeface.MONOSPACE
+                maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.END
+                setPadding(0, dp(2), 0, 0)
+            })
+        }
+        row.addView(mid)
+
+        val canLaunch = !item.launchCommand.isNullOrBlank()
+        val launchBtn = TextView(this).apply {
+            text = "LAUNCH"
+            textSize = 11f
+            typeface = Typeface.DEFAULT_BOLD
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+            setTextColor(if (canLaunch) NC.ON_PRIMARY else NC.ON_SURF_VAR)
+            background = GradientDrawable().apply {
+                setColor(if (canLaunch) NC.PRIMARY_CON else NC.SURFACE_CONTAINER)
+                setStroke(dp(1), if (canLaunch) NC.PRIMARY else NC.OUTLINE_VAR)
+            }
+            alpha = if (canLaunch) 1f else 0.5f
+            isEnabled = canLaunch
+            setOnClickListener {
+                if (!mpBusy) launchInstalledApp(item)
+            }
+        }
+        row.addView(launchBtn)
+        return row
+    }
+
+    private fun showAppsDetailSheet(item: AppListItem) {
+        val dialog = android.app.Dialog(this)
+        dialog.requestWindowFeature(android.view.Window.FEATURE_NO_TITLE)
+        dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
+
+        val scrim = FrameLayout(this).apply {
+            setBackgroundColor(Color.parseColor("#CC000000"))
+            setOnClickListener { dialog.dismiss() }
+        }
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = cyberBrutalistBg(
+                fillColor = NC.SURFACE_LOW,
+                strokeColor = NC.OUTLINE_VAR,
+                shadowColor = NC.SHADOW_DARK,
+                offsetDp = 6,
+                cornerRadiusDp = 0
+            )
+            setPadding(dp(16), dp(16), dp(16), dp(16))
+            layoutParams = FrameLayout.LayoutParams(MATCH, WRAP).apply {
+                gravity = Gravity.BOTTOM
+                setMargins(dp(12), dp(12), dp(12), dp(24))
+            }
+            setOnClickListener { /* absorb */ }
+        }
+
+        val head = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, 0, 0, dp(12))
+        }
+        val icon = ImageView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(dp(56), dp(56)).apply { rightMargin = dp(12) }
+            scaleType = ImageView.ScaleType.CENTER_CROP
+            background = GradientDrawable().apply {
+                setColor(NC.SURFACE_CONTAINER)
+                setStroke(dp(1), NC.OUTLINE_VAR)
+            }
+            setPadding(dp(4), dp(4), dp(4), dp(4))
+            if (item.catalog != null) MarketplaceIcons.bind(this, item.catalog)
+            else setImageResource(MarketplaceIcons.bundledRes(item.id))
+        }
+        head.addView(icon)
+        val headText = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
+        }
+        headText.addView(TextView(this).apply {
+            text = item.title
+            textSize = 18f
+            setTextColor(Color.WHITE)
+            typeface = Typeface.DEFAULT_BOLD
+        })
+        headText.addView(TextView(this).apply {
+            text = buildString {
+                append(envBadgeLabel())
+                if (item.version.isNotBlank()) append(" · v").append(item.version)
+                if (item.sizeBytes > 0) append(" · ").append(AptInventoryService.formatSize(item.sizeBytes))
+            }
+            textSize = 11f
+            setTextColor(NC.ON_SURF_VAR)
+            typeface = Typeface.MONOSPACE
+            setPadding(0, dp(4), 0, 0)
+        })
+        head.addView(headText)
+        card.addView(head)
+
+        if (item.summary.isNotBlank()) {
+            card.addView(TextView(this).apply {
+                text = item.summary
+                textSize = 12f
+                setTextColor(NC.ON_SURF_VAR)
+                setPadding(0, 0, 0, dp(10))
+            })
+        }
+        card.addView(TextView(this).apply {
+            text = buildString {
+                append("id=").append(item.id)
+                if (item.registry.installedAt.isNotBlank())
+                    append("\ninstalled=").append(item.registry.installedAt)
+                if (!item.launchCommand.isNullOrBlank())
+                    append("\nlaunch=").append(item.launchCommand)
+            }
+            textSize = 10f
+            setTextColor(NC.OUTLINE)
+            typeface = Typeface.MONOSPACE
+            setPadding(0, 0, 0, dp(14))
+        })
+
+        fun sheetBtn(label: String, primary: Boolean, destructive: Boolean = false, onClick: () -> Unit): TextView {
+            return TextView(this).apply {
+                text = label
+                textSize = 12f
+                gravity = Gravity.CENTER
+                typeface = Typeface.DEFAULT_BOLD
+                setPadding(dp(12), dp(12), dp(12), dp(12))
+                setTextColor(
+                    when {
+                        destructive -> NC.ERROR
+                        primary -> NC.ON_PRIMARY
+                        else -> NC.PRIMARY
+                    }
+                )
+                background = GradientDrawable().apply {
+                    setColor(
+                        when {
+                            destructive -> NC.SURFACE_CONTAINER
+                            primary -> NC.PRIMARY_CON
+                            else -> NC.SURFACE_CONTAINER
+                        }
+                    )
+                    setStroke(dp(1), if (destructive) NC.ERROR else NC.PRIMARY)
+                }
+                layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f).apply {
+                    leftMargin = dp(4)
+                    rightMargin = dp(4)
+                }
+                setOnClickListener {
+                    dialog.dismiss()
+                    if (!mpBusy) onClick()
+                }
+            }
+        }
+        val btnRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        btnRow.addView(sheetBtn("CLOSE", primary = false) { })
+        if (!item.launchCommand.isNullOrBlank()) {
+            btnRow.addView(sheetBtn("LAUNCH", primary = true) { launchInstalledApp(item) })
+        }
+        btnRow.addView(sheetBtn("UNINSTALL", primary = false, destructive = true) {
+            showBrutalistConfirmDialog(
+                title = "Uninstall ${item.title}?",
+                message = "Removes marketplace install for ${item.id} in ${currentLinuxEnv()}.\nDependencies stay installed.",
+                confirmLabel = "UNINSTALL",
+                destructive = true,
+                onConfirm = { runAppsUninstall(item) }
+            )
+        })
+        card.addView(btnRow)
+        scrim.addView(card)
+        dialog.setContentView(scrim)
+        dialog.show()
+    }
+
+    private fun launchInstalledApp(item: AppListItem) {
+        val env = currentLinuxEnv()
+        val entry = item.registry
+        if (!entry.isApp || item.launchCommand.isNullOrBlank()) {
+            Toast.makeText(this, "Not a launchable app", Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (!guiDesktopRunning) {
+            Toast.makeText(this, "Start Graphical Desktop for best results", Toast.LENGTH_SHORT).show()
+        }
+        try {
+            val intent = Intent(this, Class.forName("com.termux.x11.MainActivity"))
+            intent.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            startActivity(intent)
+        } catch (_: Exception) { /* ignore */ }
+        if (mpBusy || isScriptRunning) {
+            Toast.makeText(this, "Busy — try again", Toast.LENGTH_SHORT).show()
+            return
+        }
+        mpBusy = true
+        // Prefer registry launch cmd; patch entry if only catalog had it
+        val launchEntry = if (entry.launchCommand.isNullOrBlank() && !item.launchCommand.isNullOrBlank()) {
+            entry.copy(launchCommand = item.launchCommand)
+        } else entry
+        executor.execute {
+            PackageInstallRunner.launchApp(this, launchEntry, env) { ev ->
+                mainHandler.post {
+                    when (ev) {
+                        is InstallEvent.Log -> Log.d("Apps", ev.line)
+                        is InstallEvent.Finished -> {
+                            mpBusy = false
+                            if (!ev.success) {
+                                Toast.makeText(this, "Launch failed", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                        else -> {}
+                    }
+                }
+            }
+        }
+    }
+
+    private fun runAppsUninstall(item: AppListItem) {
+        val env = currentLinuxEnv()
+        if (item.source != "marketplace" && item.registry.source != "marketplace") {
+            // v1: only marketplace-installed apps
+            Toast.makeText(this, "Only marketplace apps can be uninstalled here", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val cat = mpCatalog
+        if (cat == null) {
+            // Registry-only fallback (same as MP when catalog missing)
+            InstallRegistry.remove(this, env, item.id)
+            Toast.makeText(this, "Removed registry entry", Toast.LENGTH_SHORT).show()
+            refreshAppsPage(force = false)
+            if (::marketplaceScrollView.isInitialized) renderMarketplaceList()
+            return
+        }
+        if (mpBusy || isScriptRunning) {
+            Toast.makeText(this, "Another install is running", Toast.LENGTH_SHORT).show()
+            return
+        }
+        mpBusy = true
+        Toast.makeText(this, "Preparing uninstall ${item.id}…", Toast.LENGTH_SHORT).show()
+        executor.execute {
+            val prepared = PackageInstallRunner.prepareUninstall(this, cat, item.id, env)
+            mainHandler.post {
+                if (prepared.isFailure) {
+                    mpBusy = false
+                    Toast.makeText(
+                        this,
+                        prepared.exceptionOrNull()?.message ?: "Prepare failed",
+                        Toast.LENGTH_LONG
+                    ).show()
+                    return@post
+                }
+                // Keep Apps under installer on stack
+                while (pageStack.isNotEmpty() && pageStack.peek() == ID_MP_INSTALLER) {
+                    pageStack.pop()
+                }
+                if (pageStack.isEmpty() || pageStack.peek() != ID_APPS) {
+                    pageStack.push(ID_APPS)
+                }
+                startMarketplaceTerminal(prepared.getOrThrow())
+            }
+        }
+    }
+
     private fun buildSubPageHeader(
         title: String,
         subtitle: String,
@@ -11565,11 +12147,17 @@ class MainActivity : AppCompatActivity() {
         while (pageStack.isNotEmpty() && pageStack.peek() == ID_MP_INSTALLER) {
             pageStack.pop()
         }
-        if (pageStack.isEmpty() || pageStack.peek() != ID_MARKETPLACE) {
-            pageStack.push(ID_MARKETPLACE)
+        val target = when {
+            pageStack.isNotEmpty() && pageStack.peek() == ID_APPS -> ID_APPS
+            pageStack.isNotEmpty() && pageStack.peek() == ID_MARKETPLACE -> ID_MARKETPLACE
+            else -> {
+                pageStack.push(ID_MARKETPLACE)
+                ID_MARKETPLACE
+            }
         }
-        navigateToPage(ID_MARKETPLACE, false)
-        renderMarketplaceList()
+        navigateToPage(target, false)
+        if (target == ID_MARKETPLACE) renderMarketplaceList()
+        if (target == ID_APPS && ::appsScrollView.isInitialized) refreshAppsPage(force = true)
     }
 
     private fun setMpInstallerStatus(state: String, ok: Boolean?) {
@@ -11711,6 +12299,13 @@ class MainActivity : AppCompatActivity() {
                     smPackages = emptyList()
                     smScanEnv = null
                     if (::marketplaceScrollView.isInitialized) renderMarketplaceList()
+                    if (::appsScrollView.isInitialized) {
+                        // Registry may have changed; refresh cache for Apps page
+                        appsItems = emptyList()
+                        if (appsScrollView.visibility == View.VISIBLE) {
+                            refreshAppsPage(force = true)
+                        }
+                    }
                     if (::softwareManagerScrollView.isInitialized &&
                         softwareManagerScrollView.visibility == View.VISIBLE
                     ) {
@@ -11765,11 +12360,12 @@ class MainActivity : AppCompatActivity() {
         mpInstallerTerminalView.attachSession(session)
         isScriptRunning = true
 
-        // Keep marketplace under installer on stack so back is correct if used
+        // Keep Marketplace or Apps under installer on stack
         while (pageStack.isNotEmpty() && pageStack.peek() == ID_MP_INSTALLER) {
             pageStack.pop()
         }
-        if (pageStack.isEmpty() || pageStack.peek() != ID_MARKETPLACE) {
+        val under = if (pageStack.isNotEmpty()) pageStack.peek() else null
+        if (under != ID_MARKETPLACE && under != ID_APPS) {
             pageStack.push(ID_MARKETPLACE)
         }
         pageStack.push(ID_MP_INSTALLER)
@@ -11946,8 +12542,12 @@ class MainActivity : AppCompatActivity() {
 
     private fun onSetupComplete() {
         mainHandler.post {
-            startGuiBtn.isEnabled = true; startGuiBtn.alpha = 1f
-            stopGuiBtn.isEnabled = true; stopGuiBtn.alpha = 1f
+            if (::startGuiBtn.isInitialized) {
+                startGuiBtn.isEnabled = true; startGuiBtn.alpha = 1f
+            }
+            if (::stopGuiBtn.isInitialized) {
+                stopGuiBtn.isEnabled = true; stopGuiBtn.alpha = 1f
+            }
             if (::homeStatusLabel.isInitialized) {
                 homeStatusLabel.text = "Ready"
             }
@@ -12023,9 +12623,124 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    // ── Graphical Desktop log capture (VIEW LOGS / COPY) ─────────────────────
+    private val GUI_LOG_MAX_BYTES = 512L * 1024L
+
+    /** Host-only log file (app cache); never enters guest / isolation runners. */
+    private fun guiLogFile(): File = File(cacheDir, "gui_desktop.log")
+
+    /** Append one line with a ring cap: once over 512 KB, keep only the tail half. */
+    private fun guiLogAppend(line: String) {
+        try {
+            val f = guiLogFile()
+            val text = "$line\n"
+            if (f.exists() && f.length() + text.length > GUI_LOG_MAX_BYTES) {
+                val tail = f.readText().takeLast((GUI_LOG_MAX_BYTES / 2).toInt())
+                f.writeText(tail + text)
+            } else {
+                f.appendText(text)
+            }
+        } catch (_: Exception) {
+        }
+    }
+
+    private fun guiLogHeader(action: String, script: String, method: String) {
+        guiLogAppend("")
+        guiLogAppend("=== $action method=$method script=$script ===")
+    }
+
+    /** Disable START on Settings + Home while desktop start is in flight. */
+    private fun setGuiStartBusy() {
+        if (::startGuiBtn.isInitialized) {
+            startGuiBtn.isEnabled = false
+            startGuiBtn.alpha = 0.5f
+        }
+    }
+
+    /** Idle: full-width START only (no VIEW LOGS). */
+    private fun setGuiCardIdle() {
+        if (!::startGuiBtn.isInitialized || !::stopGuiBtn.isInitialized) return
+        guiDesktopRunning = false
+        startGuiBtn.visibility = View.VISIBLE
+        startGuiBtn.isEnabled = true
+        startGuiBtn.alpha = 1f
+        startGuiBtn.layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
+        stopGuiBtn.visibility = View.GONE
+        stopGuiBtn.isEnabled = false
+        stopGuiBtn.alpha = 0.5f
+        if (::viewLogsBtn.isInitialized) {
+            viewLogsBtn.visibility = View.GONE
+            viewLogsBtn.isEnabled = false
+            viewLogsBtn.alpha = 0.5f
+        }
+    }
+
+    /**
+     * Running: STOP + optional VIEW LOGS side-by-side.
+     * VIEW LOGS only when [showLogs]=true (healthy start has streamed output).
+     */
+    private fun setGuiCardRunning(showLogs: Boolean) {
+        if (!::startGuiBtn.isInitialized || !::stopGuiBtn.isInitialized) return
+        guiDesktopRunning = true
+        startGuiBtn.visibility = View.GONE
+        stopGuiBtn.visibility = View.VISIBLE
+        stopGuiBtn.isEnabled = true
+        stopGuiBtn.alpha = 1f
+        stopGuiBtn.layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
+        if (::viewLogsBtn.isInitialized) {
+            if (showLogs) {
+                viewLogsBtn.visibility = View.VISIBLE
+                viewLogsBtn.isEnabled = true
+                viewLogsBtn.alpha = 1f
+                viewLogsBtn.layoutParams =
+                    LinearLayout.LayoutParams(0, WRAP, 1f).apply { marginStart = dp(10) }
+            } else {
+                viewLogsBtn.visibility = View.GONE
+                viewLogsBtn.isEnabled = false
+                viewLogsBtn.alpha = 0.5f
+            }
+        }
+    }
+
+    /**
+     * First healthy start/stop log line while STOP row is (or should be) active:
+     * show STOP + VIEW LOGS, open display shortcut + X11 once.
+     */
+    private fun onGuiStreamHealthyLine() {
+        if (guiUserStopping) {
+            // Stop path: keep VIEW LOGS if already running; ensure STOP row visible
+            if (guiDesktopRunning || (::stopGuiBtn.isInitialized && stopGuiBtn.visibility == View.VISIBLE)) {
+                setGuiCardRunning(showLogs = true)
+            }
+            return
+        }
+        setGuiCardRunning(showLogs = true)
+        if (::displayBtn.isInitialized) {
+            displayBtn.visibility = View.VISIBLE
+        }
+        if (!guiX11Launched) {
+            guiX11Launched = true
+            mainHandler.postDelayed({
+                if (guiUserStopping || !guiDesktopRunning) return@postDelayed
+                val x11 = Intent(this, com.termux.x11.MainActivity::class.java)
+                x11.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                startActivity(x11)
+            }, 400)
+        }
+    }
+
+    /** Host bash + script argv (same isolation branch as before; not LinuxCommandBuilder). */
+    private fun guiHostScriptArgs(scriptName: String): Array<String> {
+        val bash = TermuxHostPaths.libBash(this).absolutePath
+        val script = File(TermuxHostPaths.HOME, scriptName)
+        return arrayOf(bash, script.absolutePath, "debian")
+    }
+
     /** Start XFCE: proot → start_gui.sh; chroot → start_gui_chroot.sh (host X11 + root DE). */
     private fun startGui() {
         ensurePostNotificationsPermission()
+        ensureBootstrapExtracted()
+        deployScripts()
         startNativeCodeFgs(Intent(this, BackgroundService::class.java))
 
         val method = getSharedPreferences("nativecode_prefs", MODE_PRIVATE).getString("linux_method", "proot") ?: "proot"
@@ -12035,22 +12750,65 @@ class MainActivity : AppCompatActivity() {
                 "Chroot not installed. Settings → Chroot Settings or Onboarding.",
                 Toast.LENGTH_LONG
             ).show()
+            // Still attempt stream so VIEW LOGS can capture script preflight text
         }
 
-        executor.execute {
-            val nld = applicationInfo.nativeLibraryDir
-            val bash = File(nld, "libbash.so").absolutePath
-            val scriptName = if (method == "chroot") "start_gui_chroot.sh" else "start_gui.sh"
-            val script = File(TermuxHostPaths.HOME, scriptName)
-            Log.i("GUI", "startGui method=$method script=${script.absolutePath}")
-            ShellCommandRunner.run(this, arrayOf(bash, script.absolutePath, "debian"))
+        // Streamed capture, NOT runScriptInTerminal: GUI is long-lived so it must
+        // never hold isScriptRunning (marketplace/back/other scripts stay free).
+        guiShellJob?.cancel()
+        guiUserStopping = false
+        guiDesktopRunning = false
+        guiX11Launched = false
+        val scriptName = if (method == "chroot") "start_gui_chroot.sh" else "start_gui.sh"
+        val script = File(TermuxHostPaths.HOME, scriptName)
+        if (!script.isFile) {
+            guiLogHeader("START", scriptName, method)
+            guiLogAppend("ERROR: missing host script ${script.absolutePath} (deployScripts failed?)")
+            Toast.makeText(this, "GUI script missing — check VIEW LOGS after fix", Toast.LENGTH_LONG).show()
+            setGuiCardIdle()
+            stopService(Intent(this, BackgroundService::class.java))
+            return
+        }
+        Log.i("GUI", "startGui method=$method script=${script.absolutePath}")
+        guiLogHeader("START", scriptName, method)
+        val supportLib = File(TermuxHostPaths.LIB, "libandroid-support.so")
+        if (!supportLib.isFile) {
+            guiLogAppend("WARN: missing ${supportLib.absolutePath} — libbash may fail to link; re-run host setup")
         }
 
-        mainHandler.postDelayed({
-            val x11 = Intent(this, com.termux.x11.MainActivity::class.java)
-            x11.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-            startActivity(x11)
-        }, 500)
+        guiShellJob = ShellCommandRunner.runStreamedCancelable(
+            this,
+            guiHostScriptArgs(scriptName),
+            onLine = { line ->
+                guiLogAppend(line)
+                // First real script output → STOP + VIEW LOGS (healthy enough)
+                onGuiStreamHealthyLine()
+            },
+            onDone = { code ->
+                guiLogAppend("[exit $code]")
+                when {
+                    // Cancelled by user STOP — stop click owns 5s flip
+                    code == -1 || guiUserStopping -> { /* leave card */ }
+                    code != 0 -> {
+                        Toast.makeText(
+                            this,
+                            "Desktop start failed (exit $code) — opening log",
+                            Toast.LENGTH_LONG
+                        ).show()
+                        revertGuiCardToStart()
+                        // Fail path: still open log page if we captured anything
+                        if (guiLogFile().length() > 0L && !isScriptRunning) {
+                            openGuiLogPage()
+                        }
+                    }
+                    else -> {
+                        // Clean desktop exit (session ended)
+                        revertGuiCardToStart()
+                    }
+                }
+            }
+        )
+        // X11 opens from onGuiStreamHealthyLine (first script output) — not blind 500ms
     }
 
     /** Stop XFCE: proot → stop_gui.sh; chroot → stop_gui_chroot.sh (no proot pkill). */
@@ -12060,15 +12818,164 @@ class MainActivity : AppCompatActivity() {
         sendBroadcast(stopBroadcast)
         stopService(Intent(this, BackgroundService::class.java))
 
+        deployScripts()
+        guiShellJob?.cancel()
         val method = getSharedPreferences("nativecode_prefs", MODE_PRIVATE).getString("linux_method", "proot") ?: "proot"
-        executor.execute {
-            val nld = applicationInfo.nativeLibraryDir
-            val bash = File(nld, "libbash.so").absolutePath
-            val scriptName = if (method == "chroot") "stop_gui_chroot.sh" else "stop_gui.sh"
-            val script = File(TermuxHostPaths.HOME, scriptName)
-            Log.i("GUI", "stopGui method=$method script=${script.absolutePath}")
-            ShellCommandRunner.run(this, arrayOf(bash, script.absolutePath, "debian"))
+        val scriptName = if (method == "chroot") "stop_gui_chroot.sh" else "stop_gui.sh"
+        Log.i("GUI", "stopGui method=$method script=${File(TermuxHostPaths.HOME, scriptName).absolutePath}")
+        guiLogHeader("STOP", scriptName, method)
+        guiShellJob = ShellCommandRunner.runStreamedCancelable(
+            this,
+            guiHostScriptArgs(scriptName),
+            onLine = { line ->
+                guiLogAppend(line)
+                // Stop phase: keep VIEW LOGS beside STOP
+                onGuiStreamHealthyLine()
+            },
+            onDone = { code ->
+                guiLogAppend("[exit $code]")
+            }
+        )
+    }
+
+    /** Start stream failed → card back to START (not stuck on STOP). */
+    private fun revertGuiCardToStart() {
+        guiDesktopRunning = false
+        setGuiCardIdle()
+        if (::displayBtn.isInitialized) {
+            displayBtn.visibility = View.GONE
         }
+        stopService(Intent(this, BackgroundService::class.java))
+    }
+
+    /** VIEW LOGS from Graphical Desktop card → short host cat on the script page. */
+    private fun openGuiLogPage() {
+        val f = guiLogFile()
+        if (!f.exists() || f.length() == 0L) {
+            Toast.makeText(this, "No desktop log yet", Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (isScriptRunning) {
+            // Real setup/uninstall in progress — do not steal the shared session
+            Toast.makeText(this, "Script runner busy", Toast.LENGTH_SHORT).show()
+            return
+        }
+        showLogFileInScriptPage(f, title = "Graphical Desktop Log")
+    }
+
+    /**
+     * Short host `cat` of a log file on script-install chrome.
+     * Uses /system/bin/sh (not libbash) so missing host libandroid-support.so
+     * cannot block log viewing. isScriptRunning only for cat duration (ms).
+     * Isolation builders untouched.
+     */
+    private fun showLogFileInScriptPage(file: File, title: String) {
+        if (::scriptInstallTerminalView.isInitialized) {
+            scriptInstallTerminalView.setTextSize(scriptFontSize)
+        }
+        if (::scriptInstallTitleTv.isInitialized) {
+            scriptInstallTitleTv.text = title
+        }
+
+        // System shell only — never libbash.so (avoids libandroid-support link errors)
+        val shell = "/system/bin/sh"
+        val cwd = File(filesDir, "home").absolutePath
+        val quoted = file.absolutePath.replace("'", "'\\''")
+        val args = arrayOf(shell, "-c", "cat '$quoted'")
+        // Minimal env — no Termux LD_* required for /system/bin/sh + cat
+        val env = arrayOf(
+            "PATH=/system/bin:/system/xbin",
+            "TERM=xterm-256color",
+            "HOME=$cwd"
+        )
+
+        val logViewClient = object : TerminalViewClient {
+            override fun onScale(scale: Float): Float {
+                if (scale < 0.9f || scale > 1.1f) {
+                    scriptFontSize = (scriptFontSize * scale).toInt().coerceIn(MIN_FONT_SIZE, MAX_FONT_SIZE)
+                    scriptInstallTerminalView.setTextSize(scriptFontSize)
+                    return 1.0f
+                }
+                return scale
+            }
+            override fun onSingleTapUp(e: MotionEvent) {}
+            override fun shouldBackButtonBeMappedToEscape(): Boolean = false
+            override fun shouldEnforceCharBasedInput(): Boolean      = false
+            override fun shouldUseCtrlSpaceWorkaround(): Boolean      = false
+            override fun isTerminalViewSelected(): Boolean            = false
+            override fun copyModeChanged(active: Boolean) {}
+            override fun onKeyDown(keyCode: Int, event: android.view.KeyEvent, session: TerminalSession): Boolean = true
+            override fun onKeyUp(keyCode: Int, event: android.view.KeyEvent): Boolean = true
+            override fun onLongPress(e: MotionEvent): Boolean = true
+            override fun readControlKey(): Boolean = false
+            override fun readAltKey(): Boolean     = false
+            override fun readShiftKey(): Boolean   = false
+            override fun readFnKey(): Boolean      = false
+            override fun onCodePoint(codePoint: Int, ctrlDown: Boolean, session: TerminalSession): Boolean = true
+            override fun onEmulatorSet() {}
+            override fun logError(tag: String, message: String)   {}
+            override fun logWarn(tag: String, message: String)    {}
+            override fun logInfo(tag: String, message: String)    {}
+            override fun logDebug(tag: String, message: String)   {}
+            override fun logVerbose(tag: String, message: String) {}
+            override fun logStackTraceWithMessage(tag: String, message: String, e: Exception) {}
+            override fun logStackTrace(tag: String, e: Exception) {}
+        }
+
+        val logSessionClient = object : TerminalSessionClient {
+            override fun onTextChanged(session: TerminalSession) {
+                scriptInstallTerminalView.onScreenUpdated()
+            }
+            override fun onTitleChanged(session: TerminalSession) {}
+            override fun onSessionFinished(session: TerminalSession) {
+                mainHandler.post {
+                    isScriptRunning = false
+                    if (pageStack.isNotEmpty() && pageStack.peek() == ID_SCRIPT_INSTALL &&
+                        ::scriptInstallBackBtn.isInitialized
+                    ) {
+                        scriptInstallBackBtn.visibility = View.VISIBLE
+                    }
+                }
+            }
+            override fun onCopyTextToClipboard(session: TerminalSession, text: String) {
+                val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                clipboard.setPrimaryClip(ClipData.newPlainText("", text))
+            }
+            override fun onPasteTextFromClipboard(session: TerminalSession) {
+                val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                val text = clipboard.primaryClip?.getItemAt(0)?.coerceToText(this@MainActivity)?.toString() ?: return
+                executor.execute {
+                    session.emulator?.paste(text) ?: session.write(text)
+                }
+            }
+            override fun onBell(session: TerminalSession) {}
+            override fun onColorsChanged(session: TerminalSession) {}
+            override fun onTerminalCursorStateChange(state: Boolean) {}
+            override fun getTerminalCursorStyle(): Int? = 1
+            override fun logError(tag: String, message: String) { Log.e(tag, message) }
+            override fun logWarn(tag: String, message: String) { Log.w(tag, message) }
+            override fun logInfo(tag: String, message: String) { Log.i(tag, message) }
+            override fun logDebug(tag: String, message: String) { Log.d(tag, message) }
+            override fun logVerbose(tag: String, message: String) { Log.v(tag, message) }
+            override fun logStackTraceWithMessage(tag: String, message: String, e: java.lang.Exception) { Log.e(tag, message, e) }
+            override fun logStackTrace(tag: String, e: java.lang.Exception) { Log.e(tag, "Stacktrace", e) }
+        }
+
+        // Finish prior session so we never stack libbash leftovers
+        scriptInstallSession?.finishIfRunning()
+        scriptInstallTerminalView.setTerminalViewClient(logViewClient)
+        val session = TerminalSession(shell, cwd, args, env, 10000, logSessionClient)
+        scriptInstallSession = session
+        scriptInstallTerminalView.attachSession(session)
+        isScriptRunning = true
+        if (::scriptInstallBackBtn.isInitialized) {
+            scriptInstallBackBtn.visibility = View.GONE
+        }
+
+        if (pageStack.isEmpty() || pageStack.peek() != ID_SCRIPT_INSTALL) {
+            pageStack.push(ID_SCRIPT_INSTALL)
+        }
+        navigateToPage(ID_SCRIPT_INSTALL)
     }
 
     private fun initTerminalView() {
