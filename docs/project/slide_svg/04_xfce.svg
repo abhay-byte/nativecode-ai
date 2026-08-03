@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="864" height="1152" viewBox="0 0 864 1152" fill="none">
+  <defs>
+    <style type="text/css"><![CDATA[
+      .mono { font-family: 'JetBrains Mono', 'DejaVu Sans Mono', ui-monospace, monospace; }
+    ]]></style>
+    <linearGradient id="chrome" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1c1c1c"/>
+      <stop offset="100%" stop-color="#121212"/>
+    </linearGradient>
+    <linearGradient id="desk" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1a2332"/>
+      <stop offset="100%" stop-color="#0d1520"/>
+    </linearGradient>
+    <clipPath id="phoneClip">
+      <rect x="72" y="48" width="720" height="1056" rx="36" ry="36"/>
+    </clipPath>
+    <!-- desktop window interior (below its own title bar) -->
+    <clipPath id="deskClip">
+      <rect x="128" y="278" width="608" height="560"/>
+    </clipPath>
+  </defs>
+
+  <rect width="864" height="1152" fill="#0a0a0a"/>
+  <rect x="84" y="60" width="720" height="1056" rx="36" ry="36" fill="#000000" opacity="0.5"/>
+  <rect x="72" y="48" width="720" height="1056" rx="36" ry="36" fill="#121212" stroke="#3c4a3f" stroke-width="2.5"/>
+
+  <g clip-path="url(#phoneClip)">
+    <!-- phone title -->
+    <rect x="72" y="48" width="720" height="76" fill="url(#chrome)"/>
+    <line x1="72" y1="124" x2="792" y2="124" stroke="#2a2a2a" stroke-width="1"/>
+    <circle cx="116" cy="86" r="10" fill="#ff5f57"/>
+    <circle cx="148" cy="86" r="10" fill="#febc2e"/>
+    <circle cx="180" cy="86" r="10" fill="#28c840"/>
+    <text x="210" y="94" class="mono" font-size="22" font-weight="700" fill="#e5e2e1">TERMUX-X11</text>
+    <rect x="670" y="70" width="96" height="32" rx="2" fill="none" stroke="#ff5f57" stroke-width="2"/>
+    <text x="718" y="92" class="mono" font-size="15" font-weight="700" fill="#ff5f57" text-anchor="middle" letter-spacing="1">PREVIEW</text>
+
+    <!-- section -->
+    <rect x="72" y="124" width="720" height="56" fill="#151515"/>
+    <path d="M108 142 L126 142 L117 158 Z" fill="#f5e663"/>
+    <text x="142" y="158" class="mono" font-size="20" font-weight="700" fill="#f5e663" letter-spacing="1">XFCE4 DESKTOP</text>
+    <rect x="142" y="166" width="178" height="3" fill="#f5e663"/>
+
+    <!-- tree panel: ends above footer (y=196..948) -->
+    <rect x="92" y="196" width="680" height="752" rx="4" fill="#0e0e0e" stroke="#3c4a3f" stroke-width="1.5"/>
+
+    <!-- XFCE window: fully inside panel with margins
+         panel 92+680=772, window x=128 w=608 → right=736
+         panel bottom 948, window y=242 h=596 → bottom=838 -->
+    <rect x="128" y="242" width="608" height="596" rx="4" fill="url(#desk)" stroke="#3ddc84" stroke-width="2"/>
+
+    <!-- window title bar (inside window) -->
+    <rect x="128" y="242" width="608" height="36" fill="#1e2a38"/>
+    <text x="144" y="266" class="mono" font-size="14" fill="#bbcbbc">File  Apps  Term  Settings</text>
+    <text x="432" y="266" class="mono" font-size="15" font-weight="700" fill="#60f99e" text-anchor="middle">XFCE4</text>
+    <!-- window controls — well inside right edge 736 -->
+    <circle cx="680" cy="260" r="6" fill="#ff5f57"/>
+    <circle cx="700" cy="260" r="6" fill="#febc2e"/>
+    <circle cx="720" cy="260" r="6" fill="#28c840"/>
+
+    <!-- all desktop content clipped to window body -->
+    <g clip-path="url(#deskClip)">
+      <text x="432" y="340" class="mono" font-size="22" font-weight="700" fill="#e5e2e1" text-anchor="middle">DESKTOP ACTIVE</text>
+      <rect x="312" y="354" width="240" height="4" fill="#f5e663"/>
+
+      <!-- inner Termux-X11 window — fully inside desk -->
+      <rect x="188" y="390" width="488" height="260" rx="3" fill="#0a0a0a" stroke="#3c4a3f" stroke-width="1.5"/>
+      <rect x="188" y="390" width="488" height="32" fill="#1a1a1a"/>
+      <text x="208" y="412" class="mono" font-size="15" fill="#bbcbbc">Termux-X11</text>
+
+      <text x="212" y="460" class="mono" font-size="17" fill="#60f99e">user@nativecode:~$</text>
+      <text x="212" y="500" class="mono" font-size="17" fill="#e5e2e1">termux-x11 --display :0</text>
+      <text x="212" y="548" class="mono" font-size="17" fill="#60f99e">user@nativecode:~$</text>
+      <rect x="448" y="532" width="12" height="20" fill="#60f99e" opacity="0.9"/>
+
+      <!-- dock centered inside window -->
+      <g transform="translate(292,690)">
+        <rect x="0" y="0" width="30" height="30" rx="5" fill="#2a3a2f"/>
+        <rect x="40" y="0" width="30" height="30" rx="5" fill="#3ddc84" opacity="0.75"/>
+        <rect x="80" y="0" width="30" height="30" rx="5" fill="#2a3a2f"/>
+        <rect x="120" y="0" width="30" height="30" rx="5" fill="#2a3a2f"/>
+        <rect x="160" y="0" width="30" height="30" rx="5" fill="#2a3a2f"/>
+        <rect x="200" y="0" width="30" height="30" rx="5" fill="#2a3a2f"/>
+      </g>
+
+      <!-- res label inside window bottom -->
+      <text x="432" y="760" class="mono" font-size="17" fill="#e5e2e1" text-anchor="middle">1920×1080 · X11 on Android</text>
+    </g>
+
+    <!-- footer -->
+    <rect x="92" y="956" width="680" height="48" fill="#121212"/>
+    <line x1="92" y1="956" x2="772" y2="956" stroke="#3c4a3f" stroke-width="1"/>
+    <text x="112" y="988" class="mono" font-size="18" fill="#60f99e">X11 ready</text>
+    <text x="246" y="988" class="mono" font-size="18" fill="#869587">·</text>
+    <text x="274" y="988" class="mono" font-size="18" fill="#60f99e">rootless</text>
+    <text x="400" y="988" class="mono" font-size="18" fill="#869587">·</text>
+    <text x="428" y="988" class="mono" font-size="18" fill="#60f99e">xfce4</text>
+  </g>
+  <rect x="372" y="1070" width="120" height="6" rx="3" fill="#353534"/>
+</svg>

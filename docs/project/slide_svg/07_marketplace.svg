@@ -1,0 +1,121 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="864" height="1152" viewBox="0 0 864 1152" fill="none">
+  <defs>
+    <style type="text/css"><![CDATA[
+      .mono { font-family: 'JetBrains Mono', 'DejaVu Sans Mono', ui-monospace, monospace; }
+    ]]></style>
+    <linearGradient id="chrome" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1c1c1c"/>
+      <stop offset="100%" stop-color="#121212"/>
+    </linearGradient>
+    <linearGradient id="rowHi" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#3ddc84" stop-opacity="0.18"/>
+      <stop offset="100%" stop-color="#3ddc84" stop-opacity="0.03"/>
+    </linearGradient>
+    <clipPath id="phoneClip">
+      <rect x="72" y="48" width="720" height="1056" rx="36" ry="36"/>
+    </clipPath>
+  </defs>
+
+  <rect width="864" height="1152" fill="#0a0a0a"/>
+  <rect x="84" y="60" width="720" height="1056" rx="36" ry="36" fill="#000000" opacity="0.5"/>
+  <rect x="72" y="48" width="720" height="1056" rx="36" ry="36" fill="#121212" stroke="#3c4a3f" stroke-width="2.5"/>
+
+  <g clip-path="url(#phoneClip)">
+    <!-- title chrome -->
+    <rect x="72" y="48" width="720" height="76" fill="url(#chrome)"/>
+    <line x1="72" y1="124" x2="792" y2="124" stroke="#2a2a2a" stroke-width="1"/>
+    <circle cx="116" cy="86" r="10" fill="#ff5f57"/>
+    <circle cx="148" cy="86" r="10" fill="#febc2e"/>
+    <circle cx="180" cy="86" r="10" fill="#28c840"/>
+    <text x="210" y="94" class="mono" font-size="22" font-weight="700" fill="#e5e2e1">MARKETPLACE</text>
+    <rect x="670" y="70" width="96" height="32" rx="2" fill="none" stroke="#ff5f57" stroke-width="2"/>
+    <text x="718" y="92" class="mono" font-size="15" font-weight="700" fill="#ff5f57" text-anchor="middle" letter-spacing="1">PREVIEW</text>
+
+    <!-- section -->
+    <rect x="72" y="124" width="720" height="56" fill="#151515"/>
+    <path d="M108 142 L126 142 L117 158 Z" fill="#f5e663"/>
+    <text x="142" y="158" class="mono" font-size="20" font-weight="700" fill="#f5e663" letter-spacing="1">CURATED CATALOG</text>
+    <rect x="142" y="166" width="210" height="3" fill="#f5e663"/>
+
+    <rect x="92" y="196" width="680" height="808" rx="4" fill="#0e0e0e" stroke="#3c4a3f" stroke-width="1.5"/>
+
+    <!-- env badge row -->
+    <rect x="108" y="214" width="648" height="44" rx="2" fill="#1a1a1a"/>
+    <rect x="120" y="224" width="90" height="24" rx="3" fill="#1a2e22" stroke="#3ddc84" stroke-width="1.5"/>
+    <text x="165" y="242" class="mono" font-size="14" font-weight="700" fill="#60f99e" text-anchor="middle">PROOT</text>
+    <text x="230" y="242" class="mono" font-size="16" fill="#bbcbbc">nativecode-marketplace</text>
+    <text x="720" y="242" class="mono" font-size="15" fill="#60f99e" text-anchor="end">12 pkgs</text>
+
+    <!-- category chips -->
+    <rect x="108" y="274" width="120" height="34" rx="3" fill="#3ddc84"/>
+    <text x="168" y="297" class="mono" font-size="15" font-weight="700" fill="#0e0e0e" text-anchor="middle">GPU</text>
+    <rect x="240" y="274" width="140" height="34" rx="3" fill="#1a1a1a" stroke="#3c4a3f" stroke-width="1.5"/>
+    <text x="310" y="297" class="mono" font-size="15" fill="#bbcbbc" text-anchor="middle">EMULATION</text>
+    <rect x="392" y="274" width="120" height="34" rx="3" fill="#1a1a1a" stroke="#3c4a3f" stroke-width="1.5"/>
+    <text x="452" y="297" class="mono" font-size="15" fill="#bbcbbc" text-anchor="middle">TOOLS</text>
+    <rect x="524" y="274" width="100" height="34" rx="3" fill="#1a1a1a" stroke="#3c4a3f" stroke-width="1.5"/>
+    <text x="574" y="297" class="mono" font-size="15" fill="#bbcbbc" text-anchor="middle">APPS</text>
+
+    <!-- package: box64 component -->
+    <rect x="108" y="328" width="648" height="88" rx="3" fill="#141414" stroke="#2a2a2a" stroke-width="1"/>
+    <rect x="124" y="348" width="48" height="48" rx="6" fill="#1a2e22" stroke="#3ddc84" stroke-width="1.5"/>
+    <text x="148" y="380" class="mono" font-size="16" font-weight="800" fill="#60f99e" text-anchor="middle">64</text>
+    <text x="190" y="364" class="mono" font-size="20" font-weight="700" fill="#e5e2e1">box64</text>
+    <rect x="290" y="346" width="120" height="24" rx="3" fill="#2a2a2a"/>
+    <text x="350" y="364" class="mono" font-size="13" font-weight="700" fill="#bbcbbc" text-anchor="middle">COMPONENT</text>
+    <text x="190" y="396" class="mono" font-size="16" fill="#869587">x86_64 Linux on ARM64</text>
+    <rect x="620" y="356" width="116" height="36" rx="3" fill="#1a2e22" stroke="#60f99e" stroke-width="1.5"/>
+    <text x="678" y="380" class="mono" font-size="16" font-weight="700" fill="#60f99e" text-anchor="middle">INSTALL</text>
+
+    <!-- package: blender app -->
+    <rect x="108" y="432" width="648" height="88" rx="3" fill="url(#rowHi)" stroke="#3c4a3f" stroke-width="1.5"/>
+    <rect x="124" y="452" width="48" height="48" rx="6" fill="#3d2a1a" stroke="#ffb175" stroke-width="1.5"/>
+    <text x="148" y="484" class="mono" font-size="15" font-weight="800" fill="#ffb175" text-anchor="middle">BL</text>
+    <text x="190" y="468" class="mono" font-size="20" font-weight="700" fill="#e5e2e1">Blender</text>
+    <rect x="310" y="450" width="70" height="24" rx="3" fill="#1a2e22" stroke="#3ddc84" stroke-width="1"/>
+    <text x="345" y="468" class="mono" font-size="13" font-weight="700" fill="#60f99e" text-anchor="middle">APP</text>
+    <text x="190" y="500" class="mono" font-size="16" fill="#869587">3D suite · X11 launch</text>
+    <rect x="620" y="460" width="116" height="36" rx="3" fill="#60f99e"/>
+    <text x="678" y="484" class="mono" font-size="16" font-weight="800" fill="#0e0e0e" text-anchor="middle">OPEN</text>
+
+    <!-- package: FEX -->
+    <rect x="108" y="536" width="648" height="88" rx="3" fill="#141414" stroke="#2a2a2a" stroke-width="1"/>
+    <rect x="124" y="556" width="48" height="48" rx="6" fill="#1a2230" stroke="#4fc3f7" stroke-width="1.5"/>
+    <text x="148" y="588" class="mono" font-size="15" font-weight="800" fill="#4fc3f7" text-anchor="middle">FX</text>
+    <text x="190" y="572" class="mono" font-size="20" font-weight="700" fill="#e5e2e1">FEX-Emu</text>
+    <rect x="310" y="554" width="120" height="24" rx="3" fill="#2a2a2a"/>
+    <text x="370" y="572" class="mono" font-size="13" font-weight="700" fill="#bbcbbc" text-anchor="middle">COMPONENT</text>
+    <text x="190" y="604" class="mono" font-size="16" fill="#869587">x86 userspace emulator</text>
+    <rect x="620" y="564" width="116" height="36" rx="3" fill="#1a2e22" stroke="#60f99e" stroke-width="1.5"/>
+    <text x="678" y="588" class="mono" font-size="16" font-weight="700" fill="#60f99e" text-anchor="middle">INSTALL</text>
+
+    <!-- package: glmark2 app -->
+    <rect x="108" y="640" width="648" height="88" rx="3" fill="#141414" stroke="#2a2a2a" stroke-width="1"/>
+    <rect x="124" y="660" width="48" height="48" rx="6" fill="#2a1a30" stroke="#ab47bc" stroke-width="1.5"/>
+    <text x="148" y="692" class="mono" font-size="14" font-weight="800" fill="#ce93d8" text-anchor="middle">GL</text>
+    <text x="190" y="676" class="mono" font-size="20" font-weight="700" fill="#e5e2e1">glmark2</text>
+    <rect x="320" y="658" width="70" height="24" rx="3" fill="#1a2e22" stroke="#3ddc84" stroke-width="1"/>
+    <text x="355" y="676" class="mono" font-size="13" font-weight="700" fill="#60f99e" text-anchor="middle">APP</text>
+    <text x="190" y="708" class="mono" font-size="16" fill="#869587">OpenGL ES benchmark</text>
+    <rect x="620" y="668" width="116" height="36" rx="3" fill="#1a2e22" stroke="#60f99e" stroke-width="1.5"/>
+    <text x="678" y="692" class="mono" font-size="16" font-weight="700" fill="#60f99e" text-anchor="middle">INSTALL</text>
+
+    <!-- install progress strip -->
+    <rect x="108" y="748" width="648" height="100" rx="3" fill="#121212" stroke="#3c4a3f" stroke-width="1.5"/>
+    <text x="128" y="782" class="mono" font-size="17" font-weight="700" fill="#f5e663">install.sh · box64</text>
+    <text x="128" y="816" class="mono" font-size="16" fill="#60f99e">✓ deps resolved  ·  staging /tmp/nc-mp</text>
+    <rect x="128" y="832" width="600" height="8" rx="2" fill="#2a2a2a"/>
+    <rect x="128" y="832" width="420" height="8" rx="2" fill="#60f99e"/>
+
+    <!-- footer -->
+    <rect x="92" y="956" width="680" height="48" fill="#121212"/>
+    <line x1="92" y1="956" x2="772" y2="956" stroke="#3c4a3f" stroke-width="1"/>
+    <text x="112" y="988" class="mono" font-size="18" fill="#60f99e">catalog</text>
+    <text x="230" y="988" class="mono" font-size="18" fill="#869587">·</text>
+    <text x="258" y="988" class="mono" font-size="18" fill="#60f99e">install</text>
+    <text x="366" y="988" class="mono" font-size="18" fill="#869587">·</text>
+    <text x="394" y="988" class="mono" font-size="18" fill="#60f99e">launch apps</text>
+  </g>
+  <rect x="372" y="1070" width="120" height="6" rx="3" fill="#353534"/>
+</svg>

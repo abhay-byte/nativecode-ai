@@ -434,18 +434,27 @@ class OnboardingActivity : AppCompatActivity() {
         val shadowOff = 6
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            // margin-mobile 16px (ui_design.md)
-            setPadding(dp(16), dp(16), dp(16), dp(16))
+            // Tightened from 16dp: reclaims vertical space so the hero image can dominate
+            setPadding(dp(12), dp(8), dp(12), dp(8))
             layoutParams = FrameLayout.LayoutParams(MATCH, MATCH)
         }
 
-        root.addView(smallHeader("Core Capabilities", R.drawable.ic_extension))
+        // Slim mono label replaces the 20sp smallHeader() used on other pages — that header
+        // alone cost ~36dp (20sp text + 16dp bottom pad) of hero space for little benefit here.
+        root.addView(TextView(this).apply {
+            text = "CORE CAPABILITIES"
+            textSize = 12f
+            letterSpacing = 0.06f
+            setTextColor(NC.ON_SURF_VAR)
+            typeface = Typeface.MONOSPACE
+            setPadding(0, 0, 0, dp(8))
+        })
 
         val contentFrame = FrameLayout(this).apply {
             layoutParams = LinearLayout.LayoutParams(MATCH, 0, 1f).apply {
-                topMargin = dp(8)
+                topMargin = dp(4)
                 // Bottom gap leaves room for card's 6dp extrusion + breathing room
-                bottomMargin = dp(12 + shadowOff)
+                bottomMargin = dp(4 + shadowOff)
             }
             clipChildren = false
             clipToPadding = false
@@ -489,6 +498,13 @@ class OnboardingActivity : AppCompatActivity() {
                 type = PreviewType.DEBIAN_ENV
             ),
             SlideData(
+                category = "MARKETPLACE",
+                title = "Software Marketplace",
+                iconResId = R.drawable.ic_extension,
+                desc = "Curated catalog from nativecode-marketplace: install scripts, deps, components (box64/FEX) and X11 apps with one-tap install & launch.",
+                type = PreviewType.MARKETPLACE
+            ),
+            SlideData(
                 category = "CONTROL",
                 title = "Git Diff & Version Control",
                 iconResId = R.drawable.ic_git,
@@ -505,12 +521,13 @@ class OnboardingActivity : AppCompatActivity() {
             PreviewType.DEV_SUITE -> R.drawable.img_slide_dev
             PreviewType.XFCE_GUI -> R.drawable.img_slide_xfce
             PreviewType.DEBIAN_ENV -> R.drawable.img_slide_debian
+            PreviewType.MARKETPLACE -> R.drawable.img_slide_marketplace
             PreviewType.GIT_DIFF -> R.drawable.img_slide_git
         }
 
         fun renderSlideCard(slideIdx: Int): View {
             val slide = slides[slideIdx]
-            // Single stacked card: hero graphic fills free height, meta pinned bottom
+            // Single stacked card: hero image full-bleed on top, fixed-height meta band below.
             val card = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 background = cyberBrutalistBg(
@@ -521,47 +538,46 @@ class OnboardingActivity : AppCompatActivity() {
                     cornerRadiusDp = 0,
                     rightFaceColor = NC.OUTLINE_VAR
                 )
-                // Keep children inside front face (LayerDrawable reserves right/bottom for shadow)
-                setPadding(dp(10), dp(10), dp(10 + shadowOff), dp(10 + shadowOff))
+                // Flush top/left so the hero image sits edge-to-edge on the card's front face
+                // (no inset gutter); right/bottom keep the shadow-extrusion reserve.
+                setPadding(0, 0, dp(shadowOff), dp(shadowOff))
                 layoutParams = FrameLayout.LayoutParams(MATCH, MATCH)
                 clipChildren = true
                 clipToPadding = true
             }
 
-            // Hero image zone — expands to fill remaining vertical space
+            // Hero image zone — width-first: MATCH width, takes all leftover height.
+            // No border here: a stroke on both this frame AND the outer card produced the
+            // "double frame / floating mock" look. The outer card supplies the single frame.
             val imageFrame = FrameLayout(this).apply {
                 layoutParams = LinearLayout.LayoutParams(MATCH, 0, 1f)
-                background = GradientDrawable().apply {
-                    shape = GradientDrawable.RECTANGLE
-                    setColor(NC.SURFACE_LOWEST)
-                    setStroke(dp(1), NC.BORDER)
-                }
+                setBackgroundColor(NC.SURFACE_LOWEST) // residual letterbox only, not a border
                 clipChildren = true
                 clipToPadding = true
             }
 
             val iv = ImageView(this).apply {
                 setImageResource(slideImageRes(slide.type))
-                // CENTER_CROP: portrait assets fill hero; landscape slides crop until redone
-                scaleType = ImageView.ScaleType.CENTER_CROP
+                // FIT_CENTER: preserves the mock's real aspect ratio. Never crops the window
+                // chrome (traffic lights / PREVIEW pill / tree root) and never stretches it.
+                scaleType = ImageView.ScaleType.FIT_CENTER
                 adjustViewBounds = false
                 layoutParams = FrameLayout.LayoutParams(MATCH, MATCH)
             }
             imageFrame.addView(iv)
             card.addView(imageFrame)
 
-            // Meta strip (category / title / desc)
+            // Meta band — WRAP (no weight) so it never starves the hero; type sized to
+            // design system label-sm / headline / body-md scale.
             val meta = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
-                layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply {
-                    topMargin = dp(12)
-                }
-                setPadding(dp(4), 0, dp(4), 0)
+                layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
+                setPadding(dp(14), dp(12), dp(14), dp(2))
             }
 
             val tagTv = TextView(this).apply {
                 text = "[ ${slide.category} — ${String.format("%02d", slideIdx + 1)} / ${String.format("%02d", slides.size)} ]"
-                textSize = 11f
+                textSize = 13f
                 setTextColor(NC.PRIMARY)
                 typeface = Typeface.MONOSPACE
                 setPadding(0, 0, 0, dp(8))
@@ -576,13 +592,13 @@ class OnboardingActivity : AppCompatActivity() {
             val iconIv = ImageView(this).apply {
                 setImageResource(slide.iconResId)
                 setColorFilter(NC.PRIMARY)
-                layoutParams = LinearLayout.LayoutParams(dp(24), dp(24)).apply {
+                layoutParams = LinearLayout.LayoutParams(dp(26), dp(26)).apply {
                     rightMargin = dp(10)
                 }
             }
             val titleTv = TextView(this).apply {
                 text = slide.title
-                textSize = 18f
+                textSize = 22f
                 setTextColor(NC.ON_SURFACE)
                 typeface = Typeface.DEFAULT_BOLD
             }
@@ -592,9 +608,9 @@ class OnboardingActivity : AppCompatActivity() {
 
             val descTv = TextView(this).apply {
                 text = slide.desc
-                textSize = 14f
+                textSize = 16f
                 setTextColor(NC.ON_SURF_VAR)
-                setLineSpacing(0f, 1.35f)
+                setLineSpacing(0f, 1.4f)
             }
             meta.addView(descTv)
 
@@ -609,7 +625,8 @@ class OnboardingActivity : AppCompatActivity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
             layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply {
-                bottomMargin = dp(16)
+                topMargin = dp(6)
+                bottomMargin = dp(8)
             }
         }
         val dotViews = mutableListOf<View>()
@@ -736,31 +753,94 @@ class OnboardingActivity : AppCompatActivity() {
         DEV_SUITE,
         XFCE_GUI,
         DEBIAN_ENV,
+        MARKETPLACE,
         GIT_DIFF
     }
 
 
-    // ── Page 3: Requirements (hard storage gate + soft RAM/swap/SoC) ──────────
+    // ── Page 3: Requirements (device probe dashboard) ─────────────────────────
     private fun buildRequirementsPage(): View {
         val shadowOff = 6
         val snap = DeviceRequirements.evaluate(this)
+        val byId = snap.checks.associateBy { it.id }
+        val storage = byId["storage"]
+        val ram = byId["ram"]
+        val swap = byId["swap"]
+        val cpu = byId["cpu"]
+
+        val passN = snap.checks.count { it.status == DeviceRequirements.Status.PASS }
+        val warnN = snap.checks.count {
+            it.status == DeviceRequirements.Status.WARN || it.status == DeviceRequirements.Status.UNKNOWN
+        }
+        val failN = snap.checks.count { it.status == DeviceRequirements.Status.FAIL }
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(16), dp(16), dp(16), dp(16))
+            setPadding(dp(14), dp(12), dp(14), dp(10))
             layoutParams = FrameLayout.LayoutParams(MATCH, MATCH)
         }
 
-        root.addView(smallHeader("Requirements", R.drawable.ic_dns_thick))
+        // ── Probe header ──────────────────────────────────────────────────────
+        val headerRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, 0, 0, dp(4))
+        }
+        val headerLeft = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
+        }
+        headerLeft.addView(TextView(this).apply {
+            text = "DEVICE PROBE"
+            textSize = 11f
+            letterSpacing = 0.12f
+            setTextColor(NC.PRIMARY)
+            typeface = Typeface.MONOSPACE
+        })
+        headerLeft.addView(TextView(this).apply {
+            text = "Hardware gate before install"
+            textSize = 18f
+            setTextColor(NC.ON_SURFACE)
+            typeface = Typeface.DEFAULT_BOLD
+            setPadding(0, dp(2), 0, 0)
+        })
+        headerRow.addView(headerLeft)
 
-        val subtitle = TextView(this).apply {
-            text = "Device checks before install. Storage is a hard gate."
-            textSize = 12f
+        // Score chip: PASS.WARN.FAIL lattice (compact)
+        val scoreChip = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.END
+            background = roundedBg(NC.SURFACE_LOWEST, NC.BORDER, 0)
+            setPadding(dp(8), dp(5), dp(8), dp(5))
+        }
+        scoreChip.addView(TextView(this).apply {
+            text = "$passN / ${snap.checks.size}"
+            textSize = 14f
+            setTextColor(NC.PRIMARY)
+            typeface = Typeface.MONOSPACE
+            gravity = Gravity.END
+        })
+        scoreChip.addView(TextView(this).apply {
+            text = buildString {
+                append("OK $passN")
+                if (warnN > 0) append(" · WARN $warnN")
+                if (failN > 0) append(" · FAIL $failN")
+            }
+            textSize = 8f
+            setTextColor(NC.ON_SURF_VAR)
+            typeface = Typeface.MONOSPACE
+            gravity = Gravity.END
+        })
+        headerRow.addView(scoreChip)
+        root.addView(headerRow)
+
+        root.addView(TextView(this).apply {
+            text = "Storage is a hard gate. RAM / swap / SoC are soft signals."
+            textSize = 11f
             setTextColor(NC.ON_SURF_VAR)
             typeface = Typeface.MONOSPACE
             setPadding(0, 0, 0, dp(12))
-        }
-        root.addView(subtitle)
+        })
 
         val scroll = ScrollView(this).apply {
             layoutParams = LinearLayout.LayoutParams(MATCH, 0, 1f)
@@ -769,58 +849,89 @@ class OnboardingActivity : AppCompatActivity() {
         }
         val list = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            // room for card 6dp extrusion on last item
             setPadding(0, 0, 0, dp(shadowOff + 8))
         }
 
-        for ((i, check) in snap.checks.withIndex()) {
-            list.addView(requirementCheckCard(check).apply {
+        // ── STORAGE hard-gate hero ────────────────────────────────────────────
+        if (storage != null) {
+            list.addView(reqStorageHeroCard(storage, snap, shadowOff).apply {
                 layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply {
-                    if (i < snap.checks.lastIndex) bottomMargin = dp(12)
+                    bottomMargin = dp(12)
                 }
             })
         }
 
-        // Summary banner
-        val summary = TextView(this).apply {
-            typeface = Typeface.MONOSPACE
-            textSize = 11f
-            setPadding(dp(14), dp(12), dp(14), dp(12))
+        // ── RAM + SWAP twin tiles (equal height) ──────────────────────────────
+        val twin = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
             layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply {
-                topMargin = dp(16)
-            }
-            when {
-                snap.hardBlocked -> {
-                    text = "BLOCKED — free more than 10 GB storage to continue."
-                    setTextColor(NC.ERROR)
-                    background = roundedBg(NC.ERROR_CON, NC.ERROR, 0)
-                }
-                snap.hasSoftWarnings -> {
-                    text = "You can continue, but performance may not be smooth below recommended RAM / swap / SoC."
-                    setTextColor(NC.TERTIARY)
-                    background = roundedBg(NC.SURFACE_CONTAINER, NC.TERTIARY_CON, 0)
-                }
-                else -> {
-                    text = "All checks look good. Ready for method selection."
-                    setTextColor(NC.PRIMARY)
-                    background = roundedBg(NC.SURFACE_CONTAINER, NC.PRIMARY, 0)
-                }
+                bottomMargin = dp(12)
             }
         }
-        list.addView(summary)
+        val twinTiles = mutableListOf<View>()
+        if (ram != null) {
+            val t = reqMetricTile(ram, snap.ramTotalMb, DeviceRequirements.MIN_RAM_MB, shadowOff)
+            t.layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f).apply { rightMargin = dp(8) }
+            twin.addView(t)
+            twinTiles.add(t)
+        }
+        if (swap != null) {
+            val t = reqMetricTile(swap, snap.swapTotalMb, DeviceRequirements.MIN_SWAP_MB, shadowOff)
+            t.layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
+            twin.addView(t)
+            twinTiles.add(t)
+        }
+        // Match heights after first measure so longer detail text doesn't make swap taller
+        if (twinTiles.size >= 2) {
+            twin.addOnLayoutChangeListener(object : View.OnLayoutChangeListener {
+                override fun onLayoutChange(
+                    v: View?, left: Int, top: Int, right: Int, bottom: Int,
+                    oldLeft: Int, oldTop: Int, oldRight: Int, oldBottom: Int
+                ) {
+                    val maxH = twinTiles.maxOf { it.height }
+                    if (maxH <= 0) return
+                    var changed = false
+                    for (tile in twinTiles) {
+                        val lp = tile.layoutParams as LinearLayout.LayoutParams
+                        if (lp.height != maxH) {
+                            lp.height = maxH
+                            tile.layoutParams = lp
+                            changed = true
+                        }
+                    }
+                    if (changed) twin.removeOnLayoutChangeListener(this)
+                }
+            })
+        }
+        list.addView(twin)
+
+        // ── SILICON SoC panel with brand logo ─────────────────────────────────
+        if (cpu != null) {
+            list.addView(reqSocCard(cpu, snap.socLabel, shadowOff).apply {
+                layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply {
+                    bottomMargin = dp(12)
+                }
+            })
+        }
+
+        // ── Verdict strip ─────────────────────────────────────────────────────
+        list.addView(reqVerdictBanner(snap).apply {
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
+        })
+
         scroll.addView(list)
         root.addView(scroll)
 
         val btnRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            setPadding(0, dp(12), 0, dp(shadowOff))
+            setPadding(0, dp(10), 0, dp(shadowOff))
         }
-        val prevBtn = secondaryButton("Back") { showPage(2) } // slideshow
+        val prevBtn = secondaryButton("Back") { showPage(2) }
         prevBtn.layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f).apply { rightMargin = dp(8) }
 
         val nextLabel = if (snap.hardBlocked) "Storage required" else "Continue"
         val nextBtn = primaryButton(nextLabel, if (snap.hardBlocked) null else R.drawable.ic_arrow_right) {
-            if (!snap.hardBlocked) showPage(4) // isolation
+            if (!snap.hardBlocked) showPage(4)
         }
         nextBtn.layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
         if (snap.hardBlocked) {
@@ -835,105 +946,396 @@ class OnboardingActivity : AppCompatActivity() {
         return root
     }
 
-    private fun requirementCheckCard(check: DeviceRequirements.CheckResult): LinearLayout {
-        val stroke: Int
-        val badgeBg: Int
-        val badgeFg: Int
-        val badgeText: String
-        when (check.status) {
-            DeviceRequirements.Status.PASS -> {
-                stroke = NC.PRIMARY
-                badgeBg = NC.PRIMARY_CON
-                badgeFg = NC.ON_PRIMARY_CON
-                badgeText = "PASS"
+    private fun reqStatusAccent(status: DeviceRequirements.Status): Int = when (status) {
+        DeviceRequirements.Status.PASS -> NC.PRIMARY
+        DeviceRequirements.Status.FAIL -> NC.ERROR
+        DeviceRequirements.Status.WARN -> NC.TERTIARY
+        DeviceRequirements.Status.UNKNOWN -> NC.SECONDARY
+    }
+
+    private fun reqStatusBadge(status: DeviceRequirements.Status): TextView {
+        val (bg, fg, label) = when (status) {
+            DeviceRequirements.Status.PASS -> Triple(NC.PRIMARY_CON, NC.ON_PRIMARY_CON, "PASS")
+            DeviceRequirements.Status.FAIL -> Triple(NC.ERROR_CON, NC.ON_ERROR_CON, "FAIL")
+            DeviceRequirements.Status.WARN -> Triple(NC.SURFACE_HIGHEST, NC.TERTIARY, "WARN")
+            DeviceRequirements.Status.UNKNOWN -> Triple(NC.SURFACE_HIGHEST, NC.SECONDARY, "????")
+        }
+        return textBadge(label, bg, fg)
+    }
+
+    /** Segmented bar 0f–1f fill via layout weights. */
+    private fun reqMeterBar(fraction: Float, fill: Int, track: Int = NC.SURFACE_HIGHEST): View {
+        val f = fraction.coerceIn(0f, 1f)
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutParams = LinearLayout.LayoutParams(MATCH, dp(8))
+            weightSum = 1f
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                setColor(track)
+                setStroke(dp(1), NC.BORDER)
             }
-            DeviceRequirements.Status.FAIL -> {
-                stroke = NC.ERROR
-                badgeBg = NC.ERROR_CON
-                badgeFg = NC.ON_ERROR_CON
-                badgeText = "FAIL"
+            if (f > 0f) {
+                addView(View(this@OnboardingActivity).apply {
+                    setBackgroundColor(fill)
+                    layoutParams = LinearLayout.LayoutParams(0, MATCH, f)
+                })
             }
-            DeviceRequirements.Status.WARN -> {
-                stroke = NC.TERTIARY_CON
-                badgeBg = NC.SURFACE_HIGHEST
-                badgeFg = NC.TERTIARY
-                badgeText = "WARN"
-            }
-            DeviceRequirements.Status.UNKNOWN -> {
-                stroke = NC.OUTLINE
-                badgeBg = NC.SURFACE_HIGHEST
-                badgeFg = NC.SECONDARY
-                badgeText = "UNKNOWN"
+            val rest = 1f - f
+            if (rest > 0.001f) {
+                addView(View(this@OnboardingActivity).apply {
+                    setBackgroundColor(Color.TRANSPARENT)
+                    layoutParams = LinearLayout.LayoutParams(0, MATCH, rest)
+                })
             }
         }
-        val severityLabel = if (check.severity == DeviceRequirements.Severity.HARD) "HARD" else "SOFT"
+    }
 
+    private fun reqStorageHeroCard(
+        check: DeviceRequirements.CheckResult,
+        snap: DeviceRequirements.Snapshot,
+        shadowOff: Int
+    ): View {
+        val accent = reqStatusAccent(check.status)
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             background = cyberBrutalistBg(
                 fillColor = NC.SURFACE_CONTAINER,
-                strokeColor = stroke,
+                strokeColor = accent,
                 shadowColor = NC.SURFACE_BRIGHT,
-                offsetDp = 6,
+                offsetDp = shadowOff,
                 cornerRadiusDp = 0,
                 rightFaceColor = NC.OUTLINE_VAR
             )
-            // pad right/bottom so content stays out of shadow extrusion
-            setPadding(dp(16), dp(14), dp(16 + 6), dp(14 + 6))
+            setPadding(dp(14), dp(14), dp(14 + shadowOff), dp(14 + shadowOff))
         }
 
         val top = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        val title = TextView(this).apply {
-            text = check.title.uppercase()
-            textSize = 14f
-            setTextColor(NC.ON_SURFACE)
-            typeface = Typeface.DEFAULT_BOLD
+        top.addView(TextView(this).apply {
+            text = "01  STORAGE"
+            textSize = 11f
+            letterSpacing = 0.08f
+            setTextColor(NC.ON_SURF_VAR)
+            typeface = Typeface.MONOSPACE
             layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
-        }
-        top.addView(title)
-        top.addView(textBadge(severityLabel, NC.SURFACE_HIGHEST, NC.ON_SURF_VAR).apply {
+        })
+        top.addView(textBadge("HARD GATE", NC.SURFACE_HIGHEST, NC.ON_SURF_VAR).apply {
             layoutParams = LinearLayout.LayoutParams(WRAP, WRAP).apply { rightMargin = dp(6) }
         })
-        top.addView(textBadge(badgeText, badgeBg, badgeFg))
+        top.addView(reqStatusBadge(check.status))
         card.addView(top)
 
-        val measured = TextView(this).apply {
+        card.addView(TextView(this).apply {
             text = check.measured
-            textSize = 18f
-            setTextColor(
-                when (check.status) {
-                    DeviceRequirements.Status.PASS -> NC.PRIMARY
-                    DeviceRequirements.Status.FAIL -> NC.ERROR
-                    DeviceRequirements.Status.WARN -> NC.TERTIARY
-                    DeviceRequirements.Status.UNKNOWN -> NC.SECONDARY
-                }
-            )
+            textSize = 28f
+            setTextColor(accent)
             typeface = Typeface.MONOSPACE
-            setPadding(0, dp(8), 0, dp(2))
-        }
-        card.addView(measured)
+            setPadding(0, dp(10), 0, dp(2))
+        })
 
-        val req = TextView(this).apply {
-            text = "need  ${check.requirement}"
+        val totalLabel = if (snap.totalStorageBytes > 0) {
+            DeviceRequirements.formatBytes(snap.totalStorageBytes) + " total"
+        } else {
+            "internal storage"
+        }
+        card.addView(TextView(this).apply {
+            text = "need ${check.requirement}  ·  $totalLabel"
             textSize = 11f
             setTextColor(NC.ON_SURF_VAR)
             typeface = Typeface.MONOSPACE
-        }
-        card.addView(req)
+            setPadding(0, 0, 0, dp(10))
+        })
 
-        val detail = TextView(this).apply {
+        val frac = if (snap.totalStorageBytes > 0) {
+            (snap.freeStorageBytes.toDouble() / snap.totalStorageBytes.toDouble()).toFloat()
+        } else {
+            if (check.status == DeviceRequirements.Status.PASS) 0.72f else 0.18f
+        }
+        card.addView(reqMeterBar(frac, accent))
+
+        card.addView(TextView(this).apply {
             text = check.detail
             textSize = 12f
             setTextColor(NC.ON_SURFACE)
-            setLineSpacing(dp(2).toFloat(), 1.2f)
-            setPadding(0, dp(8), 0, 0)
-        }
-        card.addView(detail)
-
+            setLineSpacing(0f, 1.3f)
+            setPadding(0, dp(10), 0, 0)
+        })
         return card
+    }
+
+    private fun reqMetricTile(
+        check: DeviceRequirements.CheckResult,
+        measuredMb: Long,
+        minMb: Long,
+        shadowOff: Int
+    ): View {
+        val accent = reqStatusAccent(check.status)
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = cyberBrutalistBg(
+                fillColor = NC.SURFACE_LOW,
+                strokeColor = accent,
+                shadowColor = NC.SURFACE_BRIGHT,
+                offsetDp = shadowOff,
+                cornerRadiusDp = 0,
+                rightFaceColor = NC.OUTLINE_VAR
+            )
+            setPadding(dp(12), dp(12), dp(12 + shadowOff), dp(12 + shadowOff))
+        }
+
+        val top = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        top.addView(TextView(this).apply {
+            text = check.title.uppercase()
+            textSize = 10f
+            letterSpacing = 0.06f
+            setTextColor(NC.ON_SURF_VAR)
+            typeface = Typeface.MONOSPACE
+            layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+        })
+        top.addView(reqStatusBadge(check.status))
+        card.addView(top)
+
+        // Big value: prefer short number
+        val big = when {
+            measuredMb >= 1024 -> String.format(java.util.Locale.US, "%.1f GB", measuredMb / 1024.0)
+            measuredMb > 0 -> "$measuredMb MB"
+            else -> "—"
+        }
+        card.addView(TextView(this).apply {
+            text = big
+            textSize = 20f
+            setTextColor(accent)
+            typeface = Typeface.MONOSPACE
+            setPadding(0, dp(8), 0, dp(2))
+        })
+
+        card.addView(TextView(this).apply {
+            text = "soft · need >${minMb / 1000} GB"
+            textSize = 10f
+            setTextColor(NC.ON_SURF_VAR)
+            typeface = Typeface.MONOSPACE
+            setPadding(0, 0, 0, dp(6))
+        })
+
+        val frac = if (measuredMb > 0 && minMb > 0) {
+            (measuredMb.toFloat() / (minMb * 1.35f)).coerceIn(0f, 1f)
+        } else 0.05f
+        card.addView(reqMeterBar(frac, accent))
+
+        // Fixed 2-line detail slot so RAM/Swap cards share the same text budget
+        card.addView(TextView(this).apply {
+            text = check.detail
+            textSize = 11f
+            setTextColor(NC.ON_SURFACE)
+            setLineSpacing(0f, 1.2f)
+            maxLines = 2
+            minLines = 2
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            setPadding(0, dp(8), 0, 0)
+        })
+        return card
+    }
+
+    private fun reqSocLogoRes(label: String): Int? {
+        val t = label.lowercase()
+        return when {
+            t.contains("snapdragon") || t.contains("qualcomm") ||
+                Regex("""\bsm\d{4}\b""").containsMatchIn(t) -> R.drawable.logo_soc_snapdragon
+            t.contains("dimensity") || t.contains("mediatek") || t.contains("helio") ||
+                t.contains("mtk") || Regex("""\bmt\d{4}\b""").containsMatchIn(t) ->
+                R.drawable.logo_soc_mediatek
+            t.contains("exynos") || t.contains("samsung") && t.contains("s5e") ->
+                R.drawable.logo_soc_exynos
+            t.contains("tensor") -> R.drawable.logo_soc_tensor
+            else -> null
+        }
+    }
+
+    private fun reqSocCard(
+        check: DeviceRequirements.CheckResult,
+        socLabel: String,
+        shadowOff: Int
+    ): View {
+        val accent = reqStatusAccent(check.status)
+        val logoRes = reqSocLogoRes(socLabel.ifBlank { check.measured })
+
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = cyberBrutalistBg(
+                fillColor = NC.SURFACE_CONTAINER,
+                strokeColor = accent,
+                shadowColor = NC.SURFACE_BRIGHT,
+                offsetDp = shadowOff,
+                cornerRadiusDp = 0,
+                rightFaceColor = NC.OUTLINE_VAR
+            )
+            setPadding(dp(14), dp(14), dp(14 + shadowOff), dp(14 + shadowOff))
+        }
+
+        val top = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        top.addView(TextView(this).apply {
+            text = "04  SILICON"
+            textSize = 11f
+            letterSpacing = 0.08f
+            setTextColor(NC.ON_SURF_VAR)
+            typeface = Typeface.MONOSPACE
+            layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
+        })
+        top.addView(textBadge("SOFT", NC.SURFACE_HIGHEST, NC.ON_SURF_VAR).apply {
+            layoutParams = LinearLayout.LayoutParams(WRAP, WRAP).apply { rightMargin = dp(6) }
+        })
+        top.addView(reqStatusBadge(check.status))
+        card.addView(top)
+
+        val body = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, dp(12), 0, 0)
+        }
+
+        // Logo plate
+        val logoPlate = FrameLayout(this).apply {
+            layoutParams = LinearLayout.LayoutParams(dp(72), dp(72)).apply {
+                rightMargin = dp(14)
+            }
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                setColor(NC.SURFACE_LOWEST)
+                setStroke(dp(1), NC.BORDER)
+            }
+        }
+        if (logoRes != null) {
+            logoPlate.addView(ImageView(this).apply {
+                setImageResource(logoRes)
+                scaleType = ImageView.ScaleType.FIT_CENTER
+                setPadding(dp(8), dp(8), dp(8), dp(8))
+                layoutParams = FrameLayout.LayoutParams(MATCH, MATCH)
+            })
+        } else {
+            logoPlate.addView(TextView(this).apply {
+                text = "SoC"
+                textSize = 14f
+                setTextColor(NC.ON_SURF_VAR)
+                typeface = Typeface.MONOSPACE
+                gravity = Gravity.CENTER
+                layoutParams = FrameLayout.LayoutParams(MATCH, MATCH)
+            })
+        }
+        body.addView(logoPlate)
+
+        val textCol = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
+        }
+        textCol.addView(TextView(this).apply {
+            text = check.measured
+            textSize = 16f
+            setTextColor(NC.ON_SURFACE)
+            typeface = Typeface.DEFAULT_BOLD
+            setLineSpacing(0f, 1.15f)
+        })
+        textCol.addView(TextView(this).apply {
+            text = "floor  ${check.requirement}"
+            textSize = 11f
+            setTextColor(NC.ON_SURF_VAR)
+            typeface = Typeface.MONOSPACE
+            setPadding(0, dp(6), 0, 0)
+        })
+        textCol.addView(TextView(this).apply {
+            text = check.detail
+            textSize = 12f
+            setTextColor(NC.ON_SURFACE)
+            setLineSpacing(0f, 1.3f)
+            setPadding(0, dp(6), 0, 0)
+        })
+        body.addView(textCol)
+        card.addView(body)
+
+        // Vendor strip under body
+        val vendor = when {
+            logoRes == R.drawable.logo_soc_snapdragon -> "QUALCOMM  ·  SNAPDRAGON"
+            logoRes == R.drawable.logo_soc_mediatek -> "MEDIATEK  ·  DIMENSITY"
+            logoRes == R.drawable.logo_soc_exynos -> "SAMSUNG  ·  EXYNOS"
+            logoRes == R.drawable.logo_soc_tensor -> "GOOGLE  ·  TENSOR"
+            else -> "VENDOR  ·  UNIDENTIFIED"
+        }
+        card.addView(TextView(this).apply {
+            text = vendor
+            textSize = 10f
+            letterSpacing = 0.1f
+            setTextColor(accent)
+            typeface = Typeface.MONOSPACE
+            setPadding(0, dp(12), 0, 0)
+        })
+        return card
+    }
+
+    private fun reqVerdictBanner(snap: DeviceRequirements.Snapshot): View {
+        data class Verdict(val label: String, val detail: String, val stroke: Int, val fg: Int, val tagBg: Int, val tagFg: Int)
+        val v = when {
+            snap.hardBlocked -> Verdict(
+                "BLOCKED",
+                "Free more than 10 GB storage to continue setup.",
+                NC.ERROR,
+                NC.ERROR,
+                NC.ERROR_CON,
+                NC.ON_ERROR_CON
+            )
+            snap.hasSoftWarnings -> Verdict(
+                "SOFT WARN",
+                "You can continue — performance may stutter below recommended RAM / swap / SoC.",
+                NC.TERTIARY_CON,
+                NC.TERTIARY,
+                NC.TERTIARY_CON,
+                NC.ON_TERTIARY
+            )
+            else -> Verdict(
+                "ALL CLEAR",
+                "Checks look good. Ready for method selection.",
+                NC.PRIMARY,
+                NC.PRIMARY,
+                NC.PRIMARY_CON,
+                NC.ON_PRIMARY_CON
+            )
+        }
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            background = roundedBg(NC.SURFACE_LOWEST, v.stroke, 0)
+            setPadding(dp(12), dp(12), dp(12), dp(12))
+        }
+        row.addView(TextView(this).apply {
+            text = v.label
+            textSize = 11f
+            setTextColor(v.tagFg)
+            typeface = Typeface.MONOSPACE
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                setColor(v.tagBg)
+            }
+            setPadding(dp(8), dp(4), dp(8), dp(4))
+            layoutParams = LinearLayout.LayoutParams(WRAP, WRAP).apply { rightMargin = dp(10) }
+        })
+        row.addView(TextView(this).apply {
+            text = v.detail
+            textSize = 12f
+            setTextColor(v.fg)
+            typeface = Typeface.MONOSPACE
+            setLineSpacing(0f, 1.25f)
+            layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
+        })
+        return row
     }
 
     // ── Page 4: Method ────────────────────────────────────────────────────────

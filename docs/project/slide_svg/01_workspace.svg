@@ -1,0 +1,138 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="864" height="1152" viewBox="0 0 864 1152" fill="none">
+  <defs>
+    <style type="text/css"><![CDATA[
+      .mono { font-family: 'JetBrains Mono', 'DejaVu Sans Mono', ui-monospace, monospace; }
+    ]]></style>
+    <linearGradient id="rowHi" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#3ddc84" stop-opacity="0.20"/>
+      <stop offset="100%" stop-color="#3ddc84" stop-opacity="0.03"/>
+    </linearGradient>
+    <linearGradient id="chrome" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1c1c1c"/>
+      <stop offset="100%" stop-color="#121212"/>
+    </linearGradient>
+    <clipPath id="phoneClip">
+      <rect x="72" y="48" width="720" height="1056" rx="36" ry="36"/>
+    </clipPath>
+  </defs>
+
+  <rect width="864" height="1152" fill="#0a0a0a"/>
+  <rect x="84" y="60" width="720" height="1056" rx="36" ry="36" fill="#000000" opacity="0.5"/>
+  <rect x="72" y="48" width="720" height="1056" rx="36" ry="36" fill="#121212" stroke="#3c4a3f" stroke-width="2.5"/>
+
+  <g clip-path="url(#phoneClip)">
+    <rect x="72" y="48" width="720" height="76" fill="url(#chrome)"/>
+    <line x1="72" y1="124" x2="792" y2="124" stroke="#2a2a2a" stroke-width="1"/>
+    <circle cx="116" cy="86" r="10" fill="#ff5f57"/>
+    <circle cx="148" cy="86" r="10" fill="#febc2e"/>
+    <circle cx="180" cy="86" r="10" fill="#28c840"/>
+    <text x="210" y="94" class="mono" font-size="22" font-weight="700" fill="#e5e2e1">WORKSPACE</text>
+    <rect x="670" y="70" width="96" height="32" rx="2" fill="none" stroke="#ff5f57" stroke-width="2"/>
+    <text x="718" y="92" class="mono" font-size="15" font-weight="700" fill="#ff5f57" text-anchor="middle" letter-spacing="1">PREVIEW</text>
+
+    <rect x="72" y="124" width="720" height="56" fill="#151515"/>
+    <path d="M108 142 L126 142 L117 158 Z" fill="#60f99e"/>
+    <text x="142" y="158" class="mono" font-size="20" font-weight="700" fill="#60f99e" letter-spacing="1">WORKSPACE EXPLORER</text>
+    <rect x="142" y="166" width="248" height="3" fill="#60f99e"/>
+
+    <rect x="92" y="196" width="680" height="808" rx="4" fill="#0e0e0e" stroke="#3c4a3f" stroke-width="1.5"/>
+
+    <!-- path root -->
+    <rect x="100" y="210" width="664" height="48" rx="2" fill="#1a1a1a"/>
+    <rect x="114" y="222" width="26" height="22" rx="2" fill="#3ddc84"/>
+    <text x="154" y="242" class="mono" font-size="20" font-weight="600" fill="#60f99e">~/projects/nativecode</text>
+
+    <!-- selected -->
+    <rect x="100" y="266" width="664" height="46" fill="url(#rowHi)"/>
+    <circle cx="128" cy="289" r="5" fill="#60f99e"/>
+    <rect x="146" y="276" width="24" height="22" rx="2" fill="#3ddc84"/>
+    <text x="184" y="296" class="mono" font-size="20" font-weight="700" fill="#e5e2e1">nativecode</text>
+    <text x="744" y="296" class="mono" font-size="18" font-weight="700" fill="#60f99e" text-anchor="end">M</text>
+
+    <!-- tree rows: step 48 -->
+    <g transform="translate(0,324)">
+      <path d="M154 16 L164 26 L154 36" fill="none" stroke="#869587" stroke-width="2.5" stroke-linecap="square"/>
+      <rect x="176" y="10" width="24" height="22" rx="2" fill="#febc2e"/>
+      <text x="214" y="30" class="mono" font-size="20" fill="#e5e2e1">projects/</text>
+    </g>
+    <g transform="translate(0,372)">
+      <path d="M178 16 L188 26 L178 36" fill="none" stroke="#869587" stroke-width="2.5" stroke-linecap="square"/>
+      <rect x="200" y="10" width="24" height="22" rx="2" fill="#febc2e"/>
+      <text x="238" y="30" class="mono" font-size="20" fill="#e5e2e1">nativecode/</text>
+      <text x="744" y="30" class="mono" font-size="18" font-weight="700" fill="#60f99e" text-anchor="end">M</text>
+    </g>
+    <g transform="translate(0,420)">
+      <circle cx="212" cy="24" r="4.5" fill="#3ddc84"/>
+      <rect x="230" y="10" width="32" height="24" rx="3" fill="#4fc3f7"/>
+      <text x="246" y="28" class="mono" font-size="14" font-weight="800" fill="#0e0e0e" text-anchor="middle">K</text>
+      <text x="274" y="30" class="mono" font-size="20" fill="#c8e6c9">MainActivity.kt</text>
+    </g>
+    <g transform="translate(0,468)">
+      <circle cx="212" cy="24" r="4.5" fill="#3ddc84"/>
+      <rect x="230" y="10" width="32" height="24" rx="3" fill="#4fc3f7"/>
+      <text x="246" y="28" class="mono" font-size="14" font-weight="800" fill="#0e0e0e" text-anchor="middle">K</text>
+      <text x="274" y="30" class="mono" font-size="20" fill="#c8e6c9">OnboardingActivity.kt</text>
+      <text x="744" y="30" class="mono" font-size="18" font-weight="700" fill="#60f99e" text-anchor="end">M</text>
+    </g>
+    <g transform="translate(0,516)">
+      <circle cx="212" cy="24" r="4.5" fill="#3ddc84"/>
+      <rect x="230" y="10" width="40" height="24" rx="3" fill="#66bb6a"/>
+      <text x="250" y="28" class="mono" font-size="13" font-weight="800" fill="#0e0e0e" text-anchor="middle">C++</text>
+      <text x="282" y="30" class="mono" font-size="20" fill="#c8e6c9">main.cpp</text>
+      <text x="744" y="30" class="mono" font-size="18" font-weight="700" fill="#60f99e" text-anchor="end">M</text>
+    </g>
+    <g transform="translate(0,564)">
+      <circle cx="212" cy="24" r="4.5" fill="#3ddc84"/>
+      <rect x="230" y="10" width="40" height="24" rx="3" fill="#66bb6a"/>
+      <text x="250" y="28" class="mono" font-size="13" font-weight="800" fill="#0e0e0e" text-anchor="middle">C++</text>
+      <text x="282" y="30" class="mono" font-size="20" fill="#c8e6c9">CMakeLists.txt</text>
+    </g>
+    <g transform="translate(0,612)">
+      <path d="M178 12 L196 12 L187 30 Z" fill="#869587"/>
+      <rect x="200" y="10" width="24" height="22" rx="2" fill="#febc2e"/>
+      <text x="238" y="30" class="mono" font-size="20" fill="#bbcbbc">build/</text>
+      <text x="744" y="30" class="mono" font-size="18" font-weight="700" fill="#60f99e" text-anchor="end">M</text>
+    </g>
+    <g transform="translate(0,660)">
+      <circle cx="188" cy="24" r="4.5" fill="#3ddc84"/>
+      <rect x="206" y="10" width="36" height="24" rx="3" fill="#ab47bc"/>
+      <text x="224" y="28" class="mono" font-size="13" font-weight="800" fill="#fff" text-anchor="middle">MD</text>
+      <text x="254" y="30" class="mono" font-size="20" fill="#c8e6c9">README.md</text>
+      <text x="744" y="30" class="mono" font-size="18" font-weight="700" fill="#60f99e" text-anchor="end">M</text>
+    </g>
+    <g transform="translate(0,708)">
+      <path d="M178 12 L196 12 L187 30 Z" fill="#869587"/>
+      <rect x="200" y="10" width="24" height="22" rx="2" fill="#616161"/>
+      <text x="238" y="30" class="mono" font-size="20" fill="#bbcbbc">.gitignore</text>
+    </g>
+    <g transform="translate(0,756)">
+      <circle cx="188" cy="24" r="4.5" fill="#3ddc84"/>
+      <rect x="206" y="10" width="32" height="24" rx="3" fill="#42a5f5"/>
+      <text x="222" y="28" class="mono" font-size="14" font-weight="800" fill="#0e0e0e" text-anchor="middle">G</text>
+      <text x="250" y="30" class="mono" font-size="20" fill="#c8e6c9">settings.gradle</text>
+    </g>
+
+    <g stroke="#1c1b1b" stroke-width="1">
+      <line x1="124" y1="820" x2="744" y2="820"/>
+      <line x1="124" y1="868" x2="744" y2="868"/>
+      <line x1="124" y1="916" x2="744" y2="916"/>
+    </g>
+
+    <rect x="92" y="956" width="680" height="48" fill="#121212"/>
+    <line x1="92" y1="956" x2="772" y2="956" stroke="#3c4a3f" stroke-width="1"/>
+    <text x="112" y="988" class="mono" font-size="18" fill="#60f99e">18 items</text>
+    <text x="240" y="988" class="mono" font-size="18" fill="#869587">·</text>
+    <text x="268" y="988" class="mono" font-size="18" fill="#60f99e">3 modified</text>
+    <text x="428" y="988" class="mono" font-size="18" fill="#869587">·</text>
+    <text x="456" y="988" class="mono" font-size="18" fill="#bbcbbc">branch:</text>
+    <text x="560" y="988" class="mono" font-size="18" font-weight="700" fill="#60f99e">master</text>
+    <g transform="translate(720,966)" fill="none" stroke="#60f99e" stroke-width="2.2" stroke-linecap="round">
+      <circle cx="6" cy="6" r="4"/>
+      <circle cx="6" cy="26" r="4"/>
+      <circle cx="22" cy="16" r="4"/>
+      <path d="M6 10 V22 M10 6 H14 C18 6 22 9 22 12"/>
+    </g>
+  </g>
+  <rect x="372" y="1070" width="120" height="6" rx="3" fill="#353534"/>
+</svg>
